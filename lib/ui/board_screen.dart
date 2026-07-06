@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../state/board_state.dart';
+import 'card_sheet.dart';
 import 'widgets/card_tile.dart';
 
 const _columnWidth = 300.0;
@@ -179,9 +180,7 @@ class _DraggableCard extends StatelessWidget {
     final tile = CardTile(
       card: card,
       state: state,
-      onTap: () {
-        // Card detail sheet lands in Task 11.
-      },
+      onTap: () => showCardSheet(context, card.boardId, card.id),
     );
     return LongPressDraggable<PlankaCard>(
       data: card,
