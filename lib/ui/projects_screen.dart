@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../api/envelope.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
+import '../state/notifications_state.dart';
 
 final projectsProvider = FutureProvider<Envelope>(
     (ref) => PlankaRepo(ref.watch(apiProvider)).projects());
@@ -20,7 +21,11 @@ class ProjectsScreen extends ConsumerWidget {
         title: const Text('Projects'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications_outlined),
+            icon: Badge.count(
+              count: ref.watch(unreadCountProvider),
+              isLabelVisible: ref.watch(unreadCountProvider) > 0,
+              child: const Icon(Icons.notifications_outlined),
+            ),
             onPressed: () => context.push('/notifications'),
           ),
           const _AccountSwitcher(),

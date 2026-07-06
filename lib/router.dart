@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'auth/auth_providers.dart';
 import 'ui/board_screen.dart';
 import 'ui/login_screen.dart';
-import 'ui/placeholder_screens.dart';
+import 'ui/notifications_screen.dart';
 import 'ui/projects_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -24,7 +24,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               BoardScreen(boardId: state.pathParameters['boardId']!)),
       GoRoute(
           path: '/notifications',
-          builder: (_, _) => const NotificationsScreenStub()),
+          builder: (_, _) => const NotificationsScreen()),
     ],
   );
 });
