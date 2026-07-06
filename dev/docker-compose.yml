@@ -1,0 +1,26 @@
+services:
+  planka:
+    image: ghcr.io/plankanban/planka:latest
+    ports: ["3000:1337"]
+    environment:
+      BASE_URL: http://localhost:3000
+      SECRET_KEY: dev-secret-key
+      DATABASE_URL: postgresql://postgres@postgres/planka
+      DEFAULT_ADMIN_EMAIL: demo@demo.demo
+      DEFAULT_ADMIN_PASSWORD: demo
+      DEFAULT_ADMIN_NAME: Demo
+      DEFAULT_ADMIN_USERNAME: demo
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: planka
+      POSTGRES_HOST_AUTH_METHOD: trust
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d planka"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
