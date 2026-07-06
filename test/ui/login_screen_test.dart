@@ -26,6 +26,30 @@ class RecordingApi extends PlankaApi {
       });
 }
 
+/// Fresh server: first login needs terms, then succeeds after acceptTerms.
+class TermsApi extends PlankaApi {
+  TermsApi(super.serverUrl, super.token);
+  int acceptCalls = 0;
+
+  @override
+  Future<String> login(String emailOrUsername, String password) async {
+    throw TermsRequiredException('pt1');
+  }
+
+  @override
+  Future<String> acceptTerms(String pendingToken) async {
+    acceptCalls++;
+    token = 'jwt-test';
+    return 'jwt-test';
+  }
+
+  @override
+  Future<Envelope> get(String path, {Map<String, dynamic>? query}) async =>
+      Envelope.parse({
+        'item': {'id': 'u1', 'name': 'Demo', 'username': 'demo'}
+      });
+}
+
 class MemStorage implements SecureKeyValueStore {
   final Map<String, String> data = {};
   @override
@@ -71,6 +95,60 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.calls, [('demo@d.d', 'pw')]);
     expect(find.text('PROJECTS'), findsOneWidget);
+  });
+
+  group('fresh-server terms step', () {
+    late TermsApi termsApi;
+
+    Widget termsApp() {
+      router = GoRouter(initialLocation: '/login', routes: [
+        GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+        GoRoute(
+            path: '/projects',
+            builder: (_, _) => const Scaffold(body: Text('PROJECTS'))),
+      ]);
+      return ProviderScope(
+        overrides: [
+          apiFactoryProvider.overrideWithValue((url) {
+            termsApi = TermsApi(url, null);
+            return termsApi;
+          }),
+          accountStoreProvider.overrideWithValue(AccountStore(MemStorage())),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      );
+    }
+
+    Future<void> fillAndSubmit(WidgetTester tester) async {
+      await tester.pumpWidget(termsApp());
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Server URL'), 'http://x');
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Email or username'), 'demo@d.d');
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Password'), 'pw');
+      await tester.tap(find.text('Log in'));
+      await tester.pump(); // let login throw and the terms dialog build
+      await tester.pump();
+    }
+
+    testWidgets('accepting the dialog logs in', (tester) async {
+      await fillAndSubmit(tester);
+      expect(find.text('Accept Terms of Service?'), findsOneWidget);
+      await tester.tap(find.text('Accept'));
+      await tester.pumpAndSettle();
+      expect(termsApi.acceptCalls, 1);
+      expect(find.text('PROJECTS'), findsOneWidget);
+    });
+
+    testWidgets('cancelling stays on login without accepting', (tester) async {
+      await fillAndSubmit(tester);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(termsApi.acceptCalls, 0);
+      expect(find.text('PROJECTS'), findsNothing);
+      expect(find.widgetWithText(TextFormField, 'Server URL'), findsOneWidget);
+    });
   });
 
   testWidgets('empty fields show Required', (tester) async {

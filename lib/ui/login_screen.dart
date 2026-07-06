@@ -49,13 +49,46 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  /// Logs in, handling a fresh server's Terms-of-Service step. Returns false
+  /// only when the user declines the terms (a clean cancel, not an error).
+  Future<bool> _authenticate(PlankaApi api) async {
+    final email = _emailCtrl.text.trim();
+    try {
+      await api.login(email, _passwordCtrl.text);
+    } on TermsRequiredException catch (e) {
+      if (!mounted || !await _confirmTerms()) return false;
+      await api.acceptTerms(e.pendingToken); // returns & stores the token
+    }
+    return true;
+  }
+
+  Future<bool> _confirmTerms() async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Accept Terms of Service?'),
+        content: const Text(
+            'This server requires you to accept its Terms of Service to log in.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Accept')),
+        ],
+      ),
+    );
+    return accepted ?? false;
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
     final serverUrl = _serverCtrl.text.trim().replaceAll(RegExp(r'/+$'), '');
     try {
       final api = ref.read(apiFactoryProvider)(serverUrl);
-      await api.login(_emailCtrl.text.trim(), _passwordCtrl.text);
+      if (!await _authenticate(api)) return; // user declined the terms
       final me = await api.get('/users/me');
       final account = Account(
         serverUrl: serverUrl,

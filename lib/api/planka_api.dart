@@ -11,6 +11,17 @@ class ApiException implements Exception {
   String toString() => 'ApiException($statusCode): $message';
 }
 
+/// A fresh Planka server requires accepting its Terms of Service before it
+/// will issue a token. [login] throws this instead of returning; the caller
+/// confirms with the user, calls [PlankaApi.acceptTerms], then retries login.
+class TermsRequiredException implements Exception {
+  final String pendingToken;
+  TermsRequiredException(this.pendingToken);
+
+  @override
+  String toString() => 'TermsRequiredException';
+}
+
 class PlankaApi {
   final String serverUrl;
   String? token;
@@ -34,9 +45,33 @@ class PlankaApi {
     final res = await _request(() => dio.post<Map<String, dynamic>>(
         '/access-tokens',
         data: {'emailOrUsername': emailOrUsername, 'password': password}));
+    // A fresh server answers this with 403 {step:accept-terms} — surfaced as
+    // TermsRequiredException from _request, so we never reach here in that case.
     final item = res['item'];
     if (item is! String) {
       throw ApiException(null, 'Unexpected login response');
+    }
+    token = item;
+    return item;
+  }
+
+  /// Accept the server's Terms of Service using the [pendingToken] from a
+  /// [TermsRequiredException]. The accept-terms endpoint returns a real access
+  /// token, which this stores and returns — no re-login needed.
+  Future<String> acceptTerms(String pendingToken) async {
+    final opts = Options(headers: {'Authorization': 'Bearer $pendingToken'});
+    final terms = await _request(
+        () => dio.get<Map<String, dynamic>>('/terms', options: opts));
+    final signature = (terms['item'] as Map?)?['signature'];
+    if (signature is! String) {
+      throw ApiException(null, 'Unexpected terms response');
+    }
+    final res = await _request(() => dio.post<Map<String, dynamic>>(
+        '/access-tokens/accept-terms',
+        data: {'pendingToken': pendingToken, 'signature': signature}));
+    final item = res['item'];
+    if (item is! String) {
+      throw ApiException(null, 'Unexpected accept-terms response');
     }
     token = item;
     return item;
@@ -67,6 +102,13 @@ class PlankaApi {
       return res.data ?? const {};
     } on DioException catch (e) {
       final data = e.response?.data;
+      // Fresh server rejects login with 403 {step:accept-terms, pendingToken};
+      // not a failure — the caller must accept terms then continue.
+      if (data is Map &&
+          data['step'] == 'accept-terms' &&
+          data['pendingToken'] is String) {
+        throw TermsRequiredException(data['pendingToken'] as String);
+      }
       final message = data is Map && data['message'] is String
           ? data['message'] as String
           : e.message ?? 'Request failed';
