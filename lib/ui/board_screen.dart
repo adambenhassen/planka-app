@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../state/board_state.dart';
+import 'api_error.dart';
 import 'card_sheet.dart';
 import 'widgets/card_tile.dart';
 
@@ -266,10 +267,7 @@ class _AddCardFieldState extends State<_AddCardField> {
     try {
       await widget.onSubmit(name);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
+      if (mounted) showApiError(context, e);
     }
   }
 
@@ -325,10 +323,7 @@ class _AddListColumnState extends State<_AddListColumn> {
     try {
       await widget.onSubmit(name);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
+      if (mounted) showApiError(context, e);
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../api/planka_api.dart';
 import '../auth/accounts.dart';
 import '../auth/auth_providers.dart';
+import 'api_error.dart';
 
 /// Factory so tests can inject a fake API.
 final apiFactoryProvider =
@@ -23,6 +24,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Session-expired landing: prefill the server and explain why we're here.
+    final expired = ref.read(authExpiredProvider);
+    if (expired != null) {
+      _serverCtrl.text = expired.serverUrl;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Session expired — log in again')));
+        ref.read(authExpiredProvider.notifier).clear();
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -50,12 +67,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await ref.read(currentAccountProvider.notifier).select(account);
       if (mounted) context.go('/projects');
     } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(e.statusCode == 401 ? 'Invalid credentials' : e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ));
-      }
+      if (mounted) showApiError(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

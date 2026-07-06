@@ -58,8 +58,24 @@ class CurrentAccountNotifier extends Notifier<Account?> {
   }
 }
 
+/// Set when a request 401s with a token: the session expired.
+/// Carries the expired account so the login screen can prefill.
+final authExpiredProvider =
+    NotifierProvider<AuthExpiredNotifier, Account?>(AuthExpiredNotifier.new);
+
+class AuthExpiredNotifier extends Notifier<Account?> {
+  @override
+  Account? build() => null;
+
+  void expire(Account account) => state = account;
+  void clear() => state = null;
+}
+
 final apiProvider = Provider<PlankaApi>((ref) {
   final account = ref.watch(currentAccountProvider);
   if (account == null) throw StateError('No account selected');
-  return PlankaApi(account.serverUrl, account.token);
+  return PlankaApi(account.serverUrl, account.token, onUnauthorized: () {
+    ref.read(authExpiredProvider.notifier).expire(account);
+    ref.read(currentAccountProvider.notifier).select(null);
+  });
 });

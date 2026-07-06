@@ -16,7 +16,10 @@ class PlankaApi {
   String? token;
   late final Dio dio;
 
-  PlankaApi(this.serverUrl, this.token) {
+  /// Called once per 401 on an authenticated request (session expiry).
+  final void Function()? onUnauthorized;
+
+  PlankaApi(this.serverUrl, this.token, {this.onUnauthorized}) {
     dio = Dio(BaseOptions(baseUrl: '$serverUrl/api'));
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
@@ -67,6 +70,10 @@ class PlankaApi {
       final message = data is Map && data['message'] is String
           ? data['message'] as String
           : e.message ?? 'Request failed';
+      // 401 with a token = expired session; 401 without = bad credentials.
+      if (e.response?.statusCode == 401 && token != null) {
+        onUnauthorized?.call();
+      }
       throw ApiException(e.response?.statusCode, message);
     }
   }

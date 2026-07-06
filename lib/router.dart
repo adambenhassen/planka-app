@@ -8,7 +8,7 @@ import 'ui/notifications_screen.dart';
 import 'ui/projects_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  return GoRouter(
+  final router = GoRouter(
     initialLocation: '/projects',
     redirect: (context, state) {
       final loggedIn = ref.read(currentAccountProvider) != null;
@@ -27,4 +27,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           builder: (_, _) => const NotificationsScreen()),
     ],
   );
+  // Re-run redirect when the session changes (login/logout/401 expiry).
+  ref.listen(currentAccountProvider, (_, _) => router.refresh());
+  ref.onDispose(router.dispose);
+  return router;
 });

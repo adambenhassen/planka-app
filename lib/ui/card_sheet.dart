@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
+import 'api_error.dart';
 import '../state/board_state.dart';
 import 'card_sections/attachments.dart';
 import 'card_sections/comments.dart';
@@ -46,12 +46,7 @@ class CardSheet extends ConsumerWidget {
 
   void _guard(BuildContext context, Future<void> future) {
     future.catchError((Object e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(e is ApiException ? e.message : '$e'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ));
-      }
+      if (context.mounted) showApiError(context, e);
     });
   }
 
