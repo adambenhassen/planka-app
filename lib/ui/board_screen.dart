@@ -216,12 +216,16 @@ class _CardDropTarget extends StatelessWidget {
       key: ValueKey('drop-$listId-${beforeCard?.id}-${afterCard?.id}'),
       onWillAcceptWithDetails: (d) =>
           d.data.id != beforeCard?.id && d.data.id != afterCard?.id,
-      onAcceptWithDetails: (d) => notifier.moveCard(
+      onAcceptWithDetails: (d) => notifier
+          .moveCard(
         d.data.id,
         listId,
         beforeCardId: beforeCard?.id,
         afterCardId: afterCard?.id,
-      ),
+      )
+          .catchError((Object e) {
+        if (context.mounted) showApiError(context, e);
+      }),
       builder: (context, candidates, _) => AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         height: candidates.isNotEmpty ? 56 : 8,

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../api/models.dart';
 import '../state/notifications_state.dart';
+import 'api_error.dart';
 
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
@@ -25,8 +26,12 @@ class NotificationsScreen extends ConsumerWidget {
         title: const Text('Notifications'),
         actions: [
           TextButton(
-            onPressed: () =>
-                ref.read(notificationsProvider.notifier).markAllRead(),
+            onPressed: () => ref
+                .read(notificationsProvider.notifier)
+                .markAllRead()
+                .catchError((Object e) {
+              if (context.mounted) showApiError(context, e);
+            }),
             child: const Text('Mark all read'),
           ),
         ],
@@ -67,7 +72,12 @@ class _NotificationTile extends ConsumerWidget {
           ? null
           : Text(_relative(n.createdAt!.toLocal())),
       onTap: () {
-        ref.read(notificationsProvider.notifier).markRead(n.id);
+        ref
+            .read(notificationsProvider.notifier)
+            .markRead(n.id)
+            .catchError((Object e) {
+          if (context.mounted) showApiError(context, e);
+        });
         if (boardId != null) context.push('/boards/$boardId');
       },
     );

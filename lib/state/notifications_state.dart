@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
@@ -23,7 +24,8 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     if (account == null) return [];
     final socket = PlankaSocket(account.serverUrl, account.token);
     ref.onDispose(socket.dispose);
-    socket.events.listen(apply, onError: (Object _) {});
+    socket.events.listen(apply,
+        onError: (Object e) => debugPrint('notifications socket error: $e'));
     await socket.connect();
     final env = await _repo.notifications();
     return env.items.map(PlankaNotification.fromJson).toList();
@@ -53,7 +55,8 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     try {
       await _repo.markNotificationRead(id);
     } catch (_) {
-      state = AsyncData(list);
+      // Refetch rather than restoring a possibly-stale snapshot.
+      ref.invalidateSelf();
       rethrow;
     }
   }
@@ -68,7 +71,7 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     try {
       await _repo.readAllNotifications();
     } catch (_) {
-      state = AsyncData(list);
+      ref.invalidateSelf();
       rethrow;
     }
   }

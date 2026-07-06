@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/envelope.dart';
@@ -229,13 +230,11 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     final socket = PlankaSocket(account.serverUrl, account.token);
     _socket = socket;
     ref.onDispose(socket.dispose);
-    socket.events.listen(_onEvent, onError: (Object _) {});
-    socket.connected.listen((c) async {
+    socket.events.listen(_onEvent,
+        onError: (Object e) => debugPrint('board socket error: $e'));
+    socket.connected.listen((c) {
       // On reconnect the socket re-subscribes itself; refetch to fill the gap.
-      if (c) {
-        final fresh = await _repo.board(arg);
-        state = AsyncData(BoardState.fromEnvelope(fresh));
-      }
+      if (c) _refetch();
     });
     await socket.connect();
     await socket.subscribeBoard(arg);
@@ -251,13 +250,22 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   Future<void> _optimistic(
       BoardState next, Future<Envelope> Function() call) async {
-    final prev = state.value;
     state = AsyncData(next);
     try {
       await call();
     } on ApiException {
-      if (prev != null) state = AsyncData(prev);
+      // Don't restore a snapshot — concurrent socket events/actions may have
+      // landed since. The server is the source of truth: refetch.
+      await _refetch();
       rethrow;
+    }
+  }
+
+  Future<void> _refetch() async {
+    try {
+      state = AsyncData(BoardState.fromEnvelope(await _repo.board(arg)));
+    } on ApiException {
+      // Keep current state; next socket event or user retry will heal it.
     }
   }
 
@@ -340,9 +348,13 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
           final env = await _repo.addCardLabel(cardId, labelId);
           final cur = state.value;
           if (cur != null) {
+            final real = CardLabel.fromJson(env.item);
+            // Drop the temp AND any socket echo that beat us here.
             state = AsyncData(cur.copyWith(cardLabels: [
-              ...cur.cardLabels.where((cl) => cl.id != temp.id),
-              CardLabel.fromJson(env.item),
+              ...cur.cardLabels.where((cl) =>
+                  cl.id != temp.id &&
+                  !(cl.cardId == real.cardId && cl.labelId == real.labelId)),
+              real,
             ]));
           }
           return env;
@@ -373,9 +385,12 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
           final env = await _repo.addCardMember(cardId, userId);
           final cur = state.value;
           if (cur != null) {
+            final real = CardMembership.fromJson(env.item);
             state = AsyncData(cur.copyWith(cardMemberships: [
-              ...cur.cardMemberships.where((m) => m.id != temp.id),
-              CardMembership.fromJson(env.item),
+              ...cur.cardMemberships.where((m) =>
+                  m.id != temp.id &&
+                  !(m.cardId == real.cardId && m.userId == real.userId)),
+              real,
             ]));
           }
           return env;
