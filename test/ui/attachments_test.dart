@@ -34,7 +34,6 @@ void main() {
         home: Scaffold(
           body: CardAttachmentsSection(
             attachments: attachments,
-            serverUrl: 'http://x',
             token: 'tok',
             onUpload: onUpload,
             onDelete: onDelete,

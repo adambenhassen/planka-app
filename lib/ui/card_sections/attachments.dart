@@ -8,24 +8,20 @@ class CardAttachmentsSection extends StatelessWidget {
   const CardAttachmentsSection({
     super.key,
     required this.attachments,
-    required this.serverUrl,
     required this.token,
     required this.onUpload,
     required this.onDelete,
   });
 
   final List<PlankaAttachment> attachments;
-  final String serverUrl;
   final String token;
   final void Function(String filePath, String name) onUpload;
   final ValueChanged<String> onDelete;
 
   String? _thumbUrl(PlankaAttachment a) {
-    final data = a.data;
-    if (data == null) return null;
-    final image = data['image'];
-    if (image == null) return null;
-    return '$serverUrl/attachments/${a.id}/download/thumbnails/cover-256.${data['extension'] ?? 'png'}';
+    final thumbs = a.data?['thumbnailUrls'];
+    if (thumbs is! Map) return null;
+    return (thumbs['outside360'] ?? thumbs['outside720']) as String?;
   }
 
   Future<void> _pick() async {
@@ -46,7 +42,7 @@ class CardAttachmentsSection extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                     child: CachedNetworkImage(
                       imageUrl: _thumbUrl(a)!,
-                      httpHeaders: {'Authorization': 'Bearer $token'},
+                      httpHeaders: {'Cookie': 'accessToken=$token'},
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,

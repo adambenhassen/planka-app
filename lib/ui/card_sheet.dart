@@ -152,7 +152,6 @@ class CardSheet extends ConsumerWidget {
           CardAttachmentsSection(
             attachments:
                 state.attachments.where((a) => a.cardId == cardId).toList(),
-            serverUrl: account?.serverUrl ?? '',
             token: account?.token ?? '',
             onUpload: (path, name) =>
                 _guard(context, notifier.uploadAttachment(cardId, path, name)),
