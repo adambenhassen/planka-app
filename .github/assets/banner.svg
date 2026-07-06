@@ -1,0 +1,24 @@
+<svg width="960" height="240" viewBox="0 0 960 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Planka App banner">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="960" y2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1a237e"/>
+      <stop offset="1" stop-color="#3949ab"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="240" rx="16" fill="url(#bg)"/>
+  <!-- kanban columns -->
+  <g opacity="0.22" stroke="#ffffff" stroke-width="3" fill="none">
+    <rect x="640" y="48" width="80" height="144" rx="10"/>
+    <rect x="740" y="48" width="80" height="110" rx="10"/>
+    <rect x="840" y="48" width="80" height="128" rx="10"/>
+  </g>
+  <g opacity="0.45" fill="#ffffff">
+    <rect x="652" y="62" width="56" height="22" rx="6"/>
+    <rect x="652" y="92" width="56" height="22" rx="6"/>
+    <rect x="752" y="62" width="56" height="22" rx="6"/>
+    <rect x="852" y="62" width="56" height="22" rx="6"/>
+    <rect x="852" y="92" width="56" height="22" rx="6"/>
+  </g>
+  <text x="64" y="118" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="52" font-weight="700" fill="#ffffff">Planka App</text>
+  <text x="64" y="162" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" fill="#c5cae9">A Flutter mobile client for self-hosted Planka boards</text>
+</svg>
