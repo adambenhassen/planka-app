@@ -2,14 +2,6 @@ import 'package:flutter/material.dart';
 
 // ponytail: stubs so routing lands before the real screens (Tasks 9, 10, 12).
 
-class ProjectsScreenStub extends StatelessWidget {
-  const ProjectsScreenStub({super.key});
-  @override
-  Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Projects')),
-      body: const Center(child: Text('Projects (Task 9)')));
-}
-
 class BoardScreenStub extends StatelessWidget {
   const BoardScreenStub({super.key, required this.boardId});
   final String boardId;

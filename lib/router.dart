@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'auth/auth_providers.dart';
 import 'ui/login_screen.dart';
 import 'ui/placeholder_screens.dart';
+import 'ui/projects_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -15,7 +16,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
-      GoRoute(path: '/projects', builder: (_, _) => const ProjectsScreenStub()),
+      GoRoute(path: '/projects', builder: (_, _) => const ProjectsScreen()),
       GoRoute(
           path: '/boards/:boardId',
           builder: (_, state) =>
