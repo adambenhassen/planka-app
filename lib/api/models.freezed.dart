@@ -836,7 +836,7 @@ as double?,
 /// @nodoc
 mixin _$PlankaList {
 
- String get id; String get boardId; String get type; String? get name;@JsonKey(fromJson: _toDouble) double? get position;
+ String get id; String get boardId;@JsonKey(unknownEnumValue: PlankaListType.unknown) PlankaListType get type; String? get name;@JsonKey(fromJson: _toDouble) double? get position;
 /// Create a copy of PlankaList
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -869,7 +869,7 @@ abstract mixin class $PlankaListCopyWith<$Res>  {
   factory $PlankaListCopyWith(PlankaList value, $Res Function(PlankaList) _then) = _$PlankaListCopyWithImpl;
 @useResult
 $Res call({
- String id, String boardId, String type, String? name,@JsonKey(fromJson: _toDouble) double? position
+ String id, String boardId,@JsonKey(unknownEnumValue: PlankaListType.unknown) PlankaListType type, String? name,@JsonKey(fromJson: _toDouble) double? position
 });
 
 
@@ -891,7 +891,7 @@ class _$PlankaListCopyWithImpl<$Res>
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,boardId: null == boardId ? _self.boardId : boardId // ignore: cast_nullable_to_non_nullable
 as String,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
-as String,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as PlankaListType,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String?,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
 as double?,
   ));
@@ -978,7 +978,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String boardId,  String type,  String? name, @JsonKey(fromJson: _toDouble)  double? position)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown)  PlankaListType type,  String? name, @JsonKey(fromJson: _toDouble)  double? position)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlankaList() when $default != null:
 return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);case _:
@@ -999,7 +999,7 @@ return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);cas
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String boardId,  String type,  String? name, @JsonKey(fromJson: _toDouble)  double? position)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown)  PlankaListType type,  String? name, @JsonKey(fromJson: _toDouble)  double? position)  $default,) {final _that = this;
 switch (_that) {
 case _PlankaList():
 return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);case _:
@@ -1019,7 +1019,7 @@ return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);cas
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String boardId,  String type,  String? name, @JsonKey(fromJson: _toDouble)  double? position)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown)  PlankaListType type,  String? name, @JsonKey(fromJson: _toDouble)  double? position)?  $default,) {final _that = this;
 switch (_that) {
 case _PlankaList() when $default != null:
 return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);case _:
@@ -1034,12 +1034,12 @@ return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);cas
 @JsonSerializable()
 
 class _PlankaList implements PlankaList {
-  const _PlankaList({required this.id, required this.boardId, required this.type, this.name, @JsonKey(fromJson: _toDouble) this.position});
+  const _PlankaList({required this.id, required this.boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown) required this.type, this.name, @JsonKey(fromJson: _toDouble) this.position});
   factory _PlankaList.fromJson(Map<String, dynamic> json) => _$PlankaListFromJson(json);
 
 @override final  String id;
 @override final  String boardId;
-@override final  String type;
+@override@JsonKey(unknownEnumValue: PlankaListType.unknown) final  PlankaListType type;
 @override final  String? name;
 @override@JsonKey(fromJson: _toDouble) final  double? position;
 
@@ -1076,7 +1076,7 @@ abstract mixin class _$PlankaListCopyWith<$Res> implements $PlankaListCopyWith<$
   factory _$PlankaListCopyWith(_PlankaList value, $Res Function(_PlankaList) _then) = __$PlankaListCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String boardId, String type, String? name,@JsonKey(fromJson: _toDouble) double? position
+ String id, String boardId,@JsonKey(unknownEnumValue: PlankaListType.unknown) PlankaListType type, String? name,@JsonKey(fromJson: _toDouble) double? position
 });
 
 
@@ -1098,7 +1098,7 @@ class __$PlankaListCopyWithImpl<$Res>
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,boardId: null == boardId ? _self.boardId : boardId // ignore: cast_nullable_to_non_nullable
 as String,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
-as String,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as PlankaListType,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String?,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
 as double?,
   ));
@@ -3597,7 +3597,7 @@ as DateTime?,
 /// @nodoc
 mixin _$PlankaNotification {
 
- String get id; String get userId; String get type; bool get isRead; String? get cardId; Map<String, dynamic>? get data; DateTime? get createdAt;
+ String get id; String get userId;@JsonKey(unknownEnumValue: PlankaNotificationType.unknown) PlankaNotificationType get type; bool get isRead; String? get cardId; Map<String, dynamic>? get data; DateTime? get createdAt;
 /// Create a copy of PlankaNotification
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -3630,7 +3630,7 @@ abstract mixin class $PlankaNotificationCopyWith<$Res>  {
   factory $PlankaNotificationCopyWith(PlankaNotification value, $Res Function(PlankaNotification) _then) = _$PlankaNotificationCopyWithImpl;
 @useResult
 $Res call({
- String id, String userId, String type, bool isRead, String? cardId, Map<String, dynamic>? data, DateTime? createdAt
+ String id, String userId,@JsonKey(unknownEnumValue: PlankaNotificationType.unknown) PlankaNotificationType type, bool isRead, String? cardId, Map<String, dynamic>? data, DateTime? createdAt
 });
 
 
@@ -3652,7 +3652,7 @@ class _$PlankaNotificationCopyWithImpl<$Res>
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
-as String,isRead: null == isRead ? _self.isRead : isRead // ignore: cast_nullable_to_non_nullable
+as PlankaNotificationType,isRead: null == isRead ? _self.isRead : isRead // ignore: cast_nullable_to_non_nullable
 as bool,cardId: freezed == cardId ? _self.cardId : cardId // ignore: cast_nullable_to_non_nullable
 as String?,data: freezed == data ? _self.data : data // ignore: cast_nullable_to_non_nullable
 as Map<String, dynamic>?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
@@ -3741,7 +3741,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId,  String type,  bool isRead,  String? cardId,  Map<String, dynamic>? data,  DateTime? createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId, @JsonKey(unknownEnumValue: PlankaNotificationType.unknown)  PlankaNotificationType type,  bool isRead,  String? cardId,  Map<String, dynamic>? data,  DateTime? createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlankaNotification() when $default != null:
 return $default(_that.id,_that.userId,_that.type,_that.isRead,_that.cardId,_that.data,_that.createdAt);case _:
@@ -3762,7 +3762,7 @@ return $default(_that.id,_that.userId,_that.type,_that.isRead,_that.cardId,_that
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId,  String type,  bool isRead,  String? cardId,  Map<String, dynamic>? data,  DateTime? createdAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId, @JsonKey(unknownEnumValue: PlankaNotificationType.unknown)  PlankaNotificationType type,  bool isRead,  String? cardId,  Map<String, dynamic>? data,  DateTime? createdAt)  $default,) {final _that = this;
 switch (_that) {
 case _PlankaNotification():
 return $default(_that.id,_that.userId,_that.type,_that.isRead,_that.cardId,_that.data,_that.createdAt);case _:
@@ -3782,7 +3782,7 @@ return $default(_that.id,_that.userId,_that.type,_that.isRead,_that.cardId,_that
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId,  String type,  bool isRead,  String? cardId,  Map<String, dynamic>? data,  DateTime? createdAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId, @JsonKey(unknownEnumValue: PlankaNotificationType.unknown)  PlankaNotificationType type,  bool isRead,  String? cardId,  Map<String, dynamic>? data,  DateTime? createdAt)?  $default,) {final _that = this;
 switch (_that) {
 case _PlankaNotification() when $default != null:
 return $default(_that.id,_that.userId,_that.type,_that.isRead,_that.cardId,_that.data,_that.createdAt);case _:
@@ -3797,12 +3797,12 @@ return $default(_that.id,_that.userId,_that.type,_that.isRead,_that.cardId,_that
 @JsonSerializable()
 
 class _PlankaNotification implements PlankaNotification {
-  const _PlankaNotification({required this.id, required this.userId, required this.type, required this.isRead, this.cardId, final  Map<String, dynamic>? data, this.createdAt}): _data = data;
+  const _PlankaNotification({required this.id, required this.userId, @JsonKey(unknownEnumValue: PlankaNotificationType.unknown) required this.type, required this.isRead, this.cardId, final  Map<String, dynamic>? data, this.createdAt}): _data = data;
   factory _PlankaNotification.fromJson(Map<String, dynamic> json) => _$PlankaNotificationFromJson(json);
 
 @override final  String id;
 @override final  String userId;
-@override final  String type;
+@override@JsonKey(unknownEnumValue: PlankaNotificationType.unknown) final  PlankaNotificationType type;
 @override final  bool isRead;
 @override final  String? cardId;
  final  Map<String, dynamic>? _data;
@@ -3849,7 +3849,7 @@ abstract mixin class _$PlankaNotificationCopyWith<$Res> implements $PlankaNotifi
   factory _$PlankaNotificationCopyWith(_PlankaNotification value, $Res Function(_PlankaNotification) _then) = __$PlankaNotificationCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String userId, String type, bool isRead, String? cardId, Map<String, dynamic>? data, DateTime? createdAt
+ String id, String userId,@JsonKey(unknownEnumValue: PlankaNotificationType.unknown) PlankaNotificationType type, bool isRead, String? cardId, Map<String, dynamic>? data, DateTime? createdAt
 });
 
 
@@ -3871,7 +3871,7 @@ class __$PlankaNotificationCopyWithImpl<$Res>
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
-as String,isRead: null == isRead ? _self.isRead : isRead // ignore: cast_nullable_to_non_nullable
+as PlankaNotificationType,isRead: null == isRead ? _self.isRead : isRead // ignore: cast_nullable_to_non_nullable
 as bool,cardId: freezed == cardId ? _self.cardId : cardId // ignore: cast_nullable_to_non_nullable
 as String?,data: freezed == data ? _self._data : data // ignore: cast_nullable_to_non_nullable
 as Map<String, dynamic>?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable

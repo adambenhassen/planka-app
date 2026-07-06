@@ -22,6 +22,16 @@ class TermsRequiredException implements Exception {
   String toString() => 'TermsRequiredException';
 }
 
+/// Planka serves attachment and cover images behind session-cookie auth rather
+/// than the Bearer header the REST API uses. Both image widgets send exactly
+/// these headers — the single source of truth for the download-auth scheme.
+Map<String, String> imageAuthHeaders(String token) =>
+    {'Cookie': 'accessToken=$token'};
+
+/// The `Authorization` header value for token auth. Single source for the REST
+/// interceptor, the accept-terms call, and the socket handshake.
+String bearerAuth(String token) => 'Bearer $token';
+
 class PlankaApi {
   final String serverUrl;
   String? token;
@@ -35,7 +45,7 @@ class PlankaApi {
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
         final t = token;
-        if (t != null) options.headers['Authorization'] = 'Bearer $t';
+        if (t != null) options.headers['Authorization'] = bearerAuth(t);
         handler.next(options);
       },
     ));
@@ -59,7 +69,7 @@ class PlankaApi {
   /// [TermsRequiredException]. The accept-terms endpoint returns a real access
   /// token, which this stores and returns — no re-login needed.
   Future<String> acceptTerms(String pendingToken) async {
-    final opts = Options(headers: {'Authorization': 'Bearer $pendingToken'});
+    final opts = Options(headers: {'Authorization': bearerAuth(pendingToken)});
     final terms = await _request(
         () => dio.get<Map<String, dynamic>>('/terms', options: opts));
     final signature = (terms['item'] as Map?)?['signature'];

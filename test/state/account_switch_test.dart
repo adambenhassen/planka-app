@@ -4,7 +4,7 @@ import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
-import 'package:planka_app/ui/projects_screen.dart';
+import 'package:planka_app/state/projects_state.dart';
 
 /// Returns projects tagged by server, so each account yields a distinct list.
 class _FakeApi extends PlankaApi {
@@ -48,12 +48,12 @@ void main() {
         .read(currentAccountProvider.notifier)
         .select(account('http://a'));
     final first = await container.read(projectsProvider.future);
-    expect(first.items.map((p) => p['name']), ['Project @ http://a']);
+    expect(first.projects.map((p) => p.name), ['Project @ http://a']);
 
     await container
         .read(currentAccountProvider.notifier)
         .select(account('http://b'));
     final second = await container.read(projectsProvider.future);
-    expect(second.items.map((p) => p['name']), ['Project @ http://b']);
+    expect(second.projects.map((p) => p.name), ['Project @ http://b']);
   });
 }

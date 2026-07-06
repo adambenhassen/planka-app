@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../api/models.dart';
 import '../api/planka_api.dart';
+import '../api/repositories.dart';
 import '../auth/accounts.dart';
 import '../auth/auth_providers.dart';
-import 'api_error.dart';
-
-/// Factory so tests can inject a fake API.
-final apiFactoryProvider =
-    Provider<PlankaApi Function(String serverUrl)>((ref) => (url) => PlankaApi(url, null));
+import 'error_handling.dart';
+import 'widgets/confirm_dialog.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -50,7 +49,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   /// Logs in, handling a fresh server's Terms-of-Service step. Returns false
-  /// only when the user declines the terms (a clean cancel, not an error).
+  /// when the terms step cannot complete (user declined, or the widget was
+  /// disposed mid-flow) — a clean cancel, not an error.
   Future<bool> _authenticate(PlankaApi api) async {
     final email = _emailCtrl.text.trim();
     try {
@@ -62,25 +62,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return true;
   }
 
-  Future<bool> _confirmTerms() async {
-    final accepted = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Accept Terms of Service?'),
-        content: const Text(
-            'This server requires you to accept its Terms of Service to log in.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Accept')),
-        ],
-      ),
-    );
-    return accepted ?? false;
-  }
+  Future<bool> _confirmTerms() => confirmDialog(
+        context,
+        title: 'Accept Terms of Service?',
+        message:
+            'This server requires you to accept its Terms of Service to log in.',
+        confirmLabel: 'Accept',
+      );
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -89,12 +77,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final api = ref.read(apiFactoryProvider)(serverUrl);
       if (!await _authenticate(api)) return; // user declined the terms
-      final me = await api.get('/users/me');
+      final me = PlankaUser.fromJson((await PlankaRepo(api).me()).item);
       final account = Account(
         serverUrl: serverUrl,
         token: api.token!,
-        userId: me.item['id'] as String,
-        displayName: (me.item['name'] ?? me.item['username'] ?? '') as String,
+        userId: me.id,
+        displayName: me.name.isNotEmpty ? me.name : (me.username ?? ''),
       );
       await ref.read(accountsProvider.notifier).upsert(account);
       await ref.read(currentAccountProvider.notifier).select(account);

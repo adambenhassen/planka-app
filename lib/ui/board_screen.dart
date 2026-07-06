@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../state/board_state.dart';
-import 'api_error.dart';
+import 'error_handling.dart';
 import 'card_sheet.dart';
+import 'widgets/async_retry.dart';
 import 'widgets/card_tile.dart';
+import 'widgets/inline_add_field.dart';
 
 const _columnWidth = 300.0;
 
@@ -18,22 +20,10 @@ class BoardScreen extends ConsumerWidget {
     final board = ref.watch(boardProvider(boardId));
     return Scaffold(
       appBar: AppBar(title: Text(board.value?.board.name ?? 'Board')),
-      body: board.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('$e'),
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: () => ref.invalidate(boardProvider(boardId)),
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
-        data: (state) => _BoardBody(boardId: boardId, state: state),
+      body: asyncRetry(
+        board,
+        () => ref.invalidate(boardProvider(boardId)),
+        (state) => _BoardBody(boardId: boardId, state: state),
       ),
     );
   }
@@ -62,7 +52,13 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
             padding: const EdgeInsets.all(8),
             itemCount: columns.length + 1,
             itemBuilder: (context, i) => i == columns.length
-                ? _AddListColumn(onSubmit: notifier.createList)
+                ? InlineAddField(
+                    label: 'Add list',
+                    hintText: 'List name',
+                    columnWidth: _columnWidth,
+                    onSubmit: (name) =>
+                        guardMutation(context, notifier.createList(name)),
+                  )
                 : _ListColumn(
                     list: columns[i],
                     state: widget.state,
@@ -158,7 +154,12 @@ class _ListColumn extends StatelessWidget {
               ],
             ),
           ),
-          _AddCardField(onSubmit: (name) => notifier.createCard(list.id, name)),
+          InlineAddField(
+            label: 'Add card',
+            hintText: 'Card name',
+            onSubmit: (name) =>
+                guardMutation(context, notifier.createCard(list.id, name)),
+          ),
         ],
       ),
     );
@@ -216,16 +217,15 @@ class _CardDropTarget extends StatelessWidget {
       key: ValueKey('drop-$listId-${beforeCard?.id}-${afterCard?.id}'),
       onWillAcceptWithDetails: (d) =>
           d.data.id != beforeCard?.id && d.data.id != afterCard?.id,
-      onAcceptWithDetails: (d) => notifier
-          .moveCard(
-        d.data.id,
-        listId,
-        beforeCardId: beforeCard?.id,
-        afterCardId: afterCard?.id,
-      )
-          .catchError((Object e) {
-        if (context.mounted) showApiError(context, e);
-      }),
+      onAcceptWithDetails: (d) => guardMutation(
+        context,
+        notifier.moveCard(
+          d.data.id,
+          listId,
+          beforeCardId: beforeCard?.id,
+          afterCardId: afterCard?.id,
+        ),
+      ),
       builder: (context, candidates, _) => AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         height: candidates.isNotEmpty ? 56 : 8,
@@ -242,121 +242,3 @@ class _CardDropTarget extends StatelessWidget {
   }
 }
 
-class _AddCardField extends StatefulWidget {
-  const _AddCardField({required this.onSubmit});
-  final Future<void> Function(String name) onSubmit;
-
-  @override
-  State<_AddCardField> createState() => _AddCardFieldState();
-}
-
-class _AddCardFieldState extends State<_AddCardField> {
-  bool _editing = false;
-  final _ctrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final name = _ctrl.text.trim();
-    if (name.isEmpty) {
-      setState(() => _editing = false);
-      return;
-    }
-    _ctrl.clear();
-    setState(() => _editing = false);
-    try {
-      await widget.onSubmit(name);
-    } catch (e) {
-      if (mounted) showApiError(context, e);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_editing) {
-      return TextButton.icon(
-        icon: const Icon(Icons.add),
-        label: const Text('Add card'),
-        onPressed: () => setState(() => _editing = true),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: TextField(
-        controller: _ctrl,
-        autofocus: true,
-        decoration: const InputDecoration(
-          hintText: 'Card name',
-          border: OutlineInputBorder(),
-          isDense: true,
-        ),
-        onSubmitted: (_) => _submit(),
-        onTapOutside: (_) => _submit(),
-      ),
-    );
-  }
-}
-
-class _AddListColumn extends StatefulWidget {
-  const _AddListColumn({required this.onSubmit});
-  final Future<void> Function(String name) onSubmit;
-
-  @override
-  State<_AddListColumn> createState() => _AddListColumnState();
-}
-
-class _AddListColumnState extends State<_AddListColumn> {
-  bool _editing = false;
-  final _ctrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final name = _ctrl.text.trim();
-    setState(() => _editing = false);
-    if (name.isEmpty) return;
-    _ctrl.clear();
-    try {
-      await widget.onSubmit(name);
-    } catch (e) {
-      if (mounted) showApiError(context, e);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: _columnWidth,
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      alignment: Alignment.topCenter,
-      child: _editing
-          ? Padding(
-              padding: const EdgeInsets.all(8),
-              child: TextField(
-                controller: _ctrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'List name',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onSubmitted: (_) => _submit(),
-                onTapOutside: (_) => _submit(),
-              ),
-            )
-          : TextButton.icon(
-              icon: const Icon(Icons.add),
-              label: const Text('Add list'),
-              onPressed: () => setState(() => _editing = true),
-            ),
-    );
-  }
-}

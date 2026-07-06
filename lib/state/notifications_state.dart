@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
+import '../api/planka_api.dart';
 import '../api/planka_socket.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
@@ -24,7 +25,7 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     if (account == null) return [];
     final socket = PlankaSocket(account.serverUrl, account.token);
     ref.onDispose(socket.dispose);
-    socket.events.listen(apply,
+    socket.events.listen(applyEvent,
         onError: (Object e) => debugPrint('notifications socket error: $e'));
     await socket.connect();
     final env = await _repo.notifications();
@@ -32,7 +33,7 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
   }
 
   /// Fold a socket event into the list. Exposed for tests.
-  void apply(SocketEvent event) {
+  void applyEvent(SocketEvent event) {
     final list = state.value;
     if (list == null) return;
     switch (event.name) {
@@ -45,34 +46,37 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     }
   }
 
-  Future<void> markRead(String id) async {
-    final list = state.value;
-    if (list == null) return;
-    state = AsyncData([
-      for (final n in list)
-        n.id == id ? PlankaNotification.fromJson({...n.toJson(), 'isRead': true}) : n
-    ]);
+  /// Applies [next] optimistically, then runs [call]. On failure, refetches
+  /// from the server (via [build]) rather than restoring a possibly-stale
+  /// snapshot — the board notifier's `_optimistic` uses the same convention.
+  Future<void> _optimistic(
+      List<PlankaNotification> next, Future<void> Function() call) async {
+    state = AsyncData(next);
     try {
-      await _repo.markNotificationRead(id);
-    } catch (_) {
-      // Refetch rather than restoring a possibly-stale snapshot.
+      await call();
+    } on ApiException {
       ref.invalidateSelf();
       rethrow;
     }
   }
 
+  Future<void> markRead(String id) async {
+    final list = state.value;
+    if (list == null) return;
+    await _optimistic([
+      for (final n in list)
+        n.id == id
+            ? PlankaNotification.fromJson({...n.toJson(), 'isRead': true})
+            : n
+    ], () => _repo.markNotificationRead(id));
+  }
+
   Future<void> markAllRead() async {
     final list = state.value;
     if (list == null) return;
-    state = AsyncData([
+    await _optimistic([
       for (final n in list)
         PlankaNotification.fromJson({...n.toJson(), 'isRead': true})
-    ]);
-    try {
-      await _repo.readAllNotifications();
-    } catch (_) {
-      ref.invalidateSelf();
-      rethrow;
-    }
+    ], () => _repo.markAllNotificationsRead());
   }
 }

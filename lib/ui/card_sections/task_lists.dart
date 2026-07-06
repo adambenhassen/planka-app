@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../api/models.dart';
+import '../widgets/inline_add_field.dart';
 
 class CardTaskListsSection extends StatelessWidget {
   const CardTaskListsSection({
@@ -32,7 +33,7 @@ class CardTaskListsSection extends StatelessWidget {
           ),
           const SizedBox(height: 8),
         ],
-        _InlineAddField(hint: 'Add checklist', onSubmit: onAddTaskList),
+        InlineAddField(label: 'Add checklist', onSubmit: onAddTaskList),
       ],
     );
   }
@@ -76,58 +77,9 @@ class _TaskList extends StatelessWidget {
             ),
             onChanged: (v) => onToggleTask(t.id, v ?? false),
           ),
-        _InlineAddField(hint: 'Add task', onSubmit: onAddTask),
+        InlineAddField(label: 'Add task', onSubmit: onAddTask),
       ],
     );
   }
 }
 
-class _InlineAddField extends StatefulWidget {
-  const _InlineAddField({required this.hint, required this.onSubmit});
-  final String hint;
-  final ValueChanged<String> onSubmit;
-
-  @override
-  State<_InlineAddField> createState() => _InlineAddFieldState();
-}
-
-class _InlineAddFieldState extends State<_InlineAddField> {
-  bool _editing = false;
-  final _ctrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final text = _ctrl.text.trim();
-    setState(() => _editing = false);
-    if (text.isEmpty) return;
-    _ctrl.clear();
-    widget.onSubmit(text);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_editing) {
-      return TextButton.icon(
-        icon: const Icon(Icons.add, size: 18),
-        label: Text(widget.hint),
-        onPressed: () => setState(() => _editing = true),
-      );
-    }
-    return TextField(
-      controller: _ctrl,
-      autofocus: true,
-      decoration: InputDecoration(
-        hintText: widget.hint,
-        border: const OutlineInputBorder(),
-        isDense: true,
-      ),
-      onSubmitted: (_) => _submit(),
-      onTapOutside: (_) => _submit(),
-    );
-  }
-}

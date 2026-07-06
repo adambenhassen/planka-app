@@ -67,9 +67,16 @@ class AccountStore {
   Future<List<Account>> load() async {
     final raw = await _storage.read(_key);
     if (raw == null) return [];
-    return (jsonDecode(raw) as List)
-        .map((e) => Account.fromJson((e as Map).cast<String, dynamic>()))
-        .toList();
+    try {
+      return (jsonDecode(raw) as List)
+          .map((e) => Account.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      // Corrupt or schema-evolved storage must not crash app start (this runs
+      // during boot via session restore): treat it as no saved accounts and
+      // let the user re-authenticate.
+      return [];
+    }
   }
 
   Future<void> save(List<Account> accounts) => _storage.write(

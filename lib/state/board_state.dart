@@ -41,11 +41,48 @@ class BoardState {
 
   /// Kanban columns: user lists only (server also sends archive/trash lists).
   List<PlankaList> get columns =>
-      lists.where((l) => l.type == 'active' || l.type == 'closed').toList();
+      lists
+          .where((l) =>
+              l.type == PlankaListType.active ||
+              l.type == PlankaListType.closed)
+          .toList();
 
   List<PlankaCard> cardsOf(String listId) =>
       cards.values.where((c) => c.listId == listId).toList()
         ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
+
+  /// The labels attached to a card (cardLabels junction joined to labels).
+  List<PlankaLabel> labelsOf(String cardId) => cardLabels
+      .where((cl) => cl.cardId == cardId)
+      .map((cl) => labels.where((l) => l.id == cl.labelId).firstOrNull)
+      .nonNulls
+      .toList();
+
+  /// The users assigned to a card (cardMemberships junction joined to users).
+  List<PlankaUser> membersOf(String cardId) => cardMemberships
+      .where((m) => m.cardId == cardId)
+      .map((m) => users.where((u) => u.id == m.userId).firstOrNull)
+      .nonNulls
+      .toList();
+
+  List<PlankaTaskList> taskListsOf(String cardId) =>
+      taskLists.where((t) => t.cardId == cardId).toList()
+        ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
+
+  /// All tasks across a card's task lists.
+  List<PlankaTask> tasksOfCard(String cardId) {
+    final ids =
+        taskLists.where((t) => t.cardId == cardId).map((t) => t.id).toSet();
+    return tasks.where((t) => ids.contains(t.taskListId)).toList();
+  }
+
+  List<PlankaAttachment> attachmentsOf(String cardId) =>
+      attachments.where((a) => a.cardId == cardId).toList();
+
+  List<PlankaComment> commentsOf(String cardId) =>
+      comments.where((c) => c.cardId == cardId).toList()
+        ..sort((a, b) => (a.createdAt ?? DateTime(0))
+            .compareTo(b.createdAt ?? DateTime(0)));
 
   factory BoardState.fromEnvelope(Envelope env) {
     final included = env.included;
@@ -215,17 +252,17 @@ final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState,
     String>(BoardNotifier.new);
 
 class BoardNotifier extends AsyncNotifier<BoardState> {
-  BoardNotifier(this.arg);
+  BoardNotifier(this.boardId);
 
   /// The board id this notifier manages.
-  final String arg;
+  final String boardId;
 
   PlankaRepo get _repo => PlankaRepo(ref.read(apiProvider));
   PlankaSocket? _socket;
 
   @override
   Future<BoardState> build() async {
-    final env = await _repo.board(arg);
+    final env = await _repo.board(boardId);
     final account = ref.read(currentAccountProvider)!;
     final socket = PlankaSocket(account.serverUrl, account.token);
     _socket = socket;
@@ -237,7 +274,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       if (c) _refetch();
     });
     await socket.connect();
-    await socket.subscribeBoard(arg);
+    await socket.subscribeBoard(boardId);
     return BoardState.fromEnvelope(env);
   }
 
@@ -263,7 +300,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   Future<void> _refetch() async {
     try {
-      state = AsyncData(BoardState.fromEnvelope(await _repo.board(arg)));
+      state = AsyncData(BoardState.fromEnvelope(await _repo.board(boardId)));
     } on ApiException {
       // Keep current state; next socket event or user retry will heal it.
     }
@@ -283,44 +320,49 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
+  /// Awaits a create request and folds the parsed server row into the current
+  /// state via [upsert] — but only if the board is still loaded. Shared
+  /// reconcile tail for every create* operation.
+  Future<void> _createInto<T>(
+    Future<Envelope> create,
+    T Function(Map<String, dynamic>) fromJson,
+    BoardState Function(BoardState, T) upsert,
+  ) async {
+    final env = await create;
+    final cur = state.value;
+    if (cur != null) state = AsyncData(upsert(cur, fromJson(env.item)));
+  }
+
   Future<void> createCard(String listId, String name) async {
     final s = state.value;
     if (s == null) return;
     final last = s.cardsOf(listId).lastOrNull?.position;
-    final env =
-        await _repo.createCard(listId, name: name, position: last == null ? kPositionGap : last + kPositionGap);
-    final card = PlankaCard.fromJson(env.item);
-    final cur = state.value;
-    if (cur != null) {
-      state = AsyncData(cur.copyWith(cards: {...cur.cards, card.id: card}));
-    }
-  }
-
-  Future<void> renameCard(String cardId, String name) async {
-    final s = state.value;
-    final card = s?.cards[cardId];
-    if (s == null || card == null) return;
-    await _optimistic(
-      s.copyWith(cards: {...s.cards, cardId: _mergeCard(card, {'name': name})}),
-      () => _repo.updateCard(cardId, {'name': name}),
+    await _createInto(
+      _repo.createCard(listId,
+          name: name, position: last == null ? kPositionGap : last + kPositionGap),
+      PlankaCard.fromJson,
+      (b, c) => b.copyWith(cards: {...b.cards, c.id: c}),
     );
   }
+
+  Future<void> renameCard(String cardId, String name) =>
+      _patchCard(cardId, {'name': name});
 
   Future<void> createList(String name) async {
     final s = state.value;
     if (s == null) return;
     final last = s.lists.lastOrNull?.position;
-    final env = await _repo.createList(arg,
-        name: name, position: last == null ? kPositionGap : last + kPositionGap);
-    final list = PlankaList.fromJson(env.item);
-    final cur = state.value;
-    if (cur != null) {
-      state = AsyncData(
-          cur.copyWith(lists: _upsert(cur.lists, list, (l) => l.id)));
-    }
+    await _createInto(
+      _repo.createList(boardId,
+          name: name, position: last == null ? kPositionGap : last + kPositionGap),
+      PlankaList.fromJson,
+      (b, l) => b.copyWith(lists: _upsert(b.lists, l, (x) => x.id)),
+    );
   }
 
-  Future<void> updateCard(String cardId, Map<String, dynamic> patch) async {
+  /// Optimistically applies a partial card patch and PATCHes it server-side.
+  /// Private: callers use the typed setters below rather than raw field maps.
+  Future<void> _patchCard(String cardId, Map<String, dynamic> patch) async {
     final s = state.value;
     final card = s?.cards[cardId];
     if (s == null || card == null) return;
@@ -330,123 +372,131 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
-  Future<void> setDueDate(String cardId, DateTime? dueDate) =>
-      updateCard(cardId, {'dueDate': dueDate?.toUtc().toIso8601String()});
+  Future<void> setDescription(String cardId, String description) =>
+      _patchCard(cardId, {'description': description});
 
-  Future<void> toggleLabel(String cardId, String labelId) async {
+  Future<void> setDueDate(String cardId, DateTime? dueDate) =>
+      _patchCard(cardId, {'dueDate': dueDate?.toUtc().toIso8601String()});
+
+  Future<void> setDueCompleted(String cardId, bool isDueCompleted) =>
+      _patchCard(cardId, {'isDueCompleted': isDueCompleted});
+
+  /// Toggles a card↔junction row (label, member). When [existing] is present it
+  /// is dropped optimistically and deleted server-side; otherwise [temp] is
+  /// inserted optimistically, created via [add], then reconciled — the temp and
+  /// any socket echo matching [sameKey] are replaced by the real server row.
+  Future<void> _toggleJunction<T>({
+    required T? existing,
+    required List<T> Function(BoardState) list,
+    required BoardState Function(BoardState, List<T>) withList,
+    required String Function(T) id,
+    required T temp,
+    required Future<Envelope> Function() add,
+    required T Function(Map<String, dynamic>) fromJson,
+    required bool Function(T real, T candidate) sameKey,
+    required Future<Envelope> Function() remove,
+  }) async {
     final s = state.value;
     if (s == null) return;
-    final existing = s.cardLabels
+    if (existing != null) {
+      await _optimistic(
+        withList(s, list(s).where((e) => id(e) != id(existing)).toList()),
+        remove,
+      );
+      return;
+    }
+    await _optimistic(
+      withList(s, [...list(s), temp]),
+      () async {
+        final env = await add();
+        final cur = state.value;
+        if (cur != null) {
+          final real = fromJson(env.item);
+          state = AsyncData(withList(cur, [
+            ...list(cur).where((e) => id(e) != id(temp) && !sameKey(real, e)),
+            real,
+          ]));
+        }
+        return env;
+      },
+    );
+  }
+
+  Future<void> toggleLabel(String cardId, String labelId) async {
+    final existing = state.value?.cardLabels
         .where((cl) => cl.cardId == cardId && cl.labelId == labelId)
         .firstOrNull;
-    if (existing == null) {
-      // Optimistic entry with a temp id; the socket/REST echo upserts the real one.
-      final temp = CardLabel(id: 'tmp-$cardId-$labelId', cardId: cardId, labelId: labelId);
-      await _optimistic(
-        s.copyWith(cardLabels: [...s.cardLabels, temp]),
-        () async {
-          final env = await _repo.addCardLabel(cardId, labelId);
-          final cur = state.value;
-          if (cur != null) {
-            final real = CardLabel.fromJson(env.item);
-            // Drop the temp AND any socket echo that beat us here.
-            state = AsyncData(cur.copyWith(cardLabels: [
-              ...cur.cardLabels.where((cl) =>
-                  cl.id != temp.id &&
-                  !(cl.cardId == real.cardId && cl.labelId == real.labelId)),
-              real,
-            ]));
-          }
-          return env;
-        },
-      );
-    } else {
-      await _optimistic(
-        s.copyWith(
-            cardLabels:
-                s.cardLabels.where((cl) => cl.id != existing.id).toList()),
-        () => _repo.removeCardLabel(cardId, labelId),
-      );
-    }
+    await _toggleJunction<CardLabel>(
+      existing: existing,
+      list: (b) => b.cardLabels,
+      withList: (b, l) => b.copyWith(cardLabels: l),
+      id: (cl) => cl.id,
+      temp: CardLabel(
+          id: 'tmp-$cardId-$labelId', cardId: cardId, labelId: labelId),
+      add: () => _repo.addCardLabel(cardId, labelId),
+      fromJson: CardLabel.fromJson,
+      sameKey: (real, cl) =>
+          cl.cardId == real.cardId && cl.labelId == real.labelId,
+      remove: () => _repo.removeCardLabel(cardId, labelId),
+    );
   }
 
   Future<void> toggleMember(String cardId, String userId) async {
-    final s = state.value;
-    if (s == null) return;
-    final existing = s.cardMemberships
+    final existing = state.value?.cardMemberships
         .where((m) => m.cardId == cardId && m.userId == userId)
         .firstOrNull;
-    if (existing == null) {
-      final temp = CardMembership(
-          id: 'tmp-$cardId-$userId', cardId: cardId, userId: userId);
-      await _optimistic(
-        s.copyWith(cardMemberships: [...s.cardMemberships, temp]),
-        () async {
-          final env = await _repo.addCardMember(cardId, userId);
-          final cur = state.value;
-          if (cur != null) {
-            final real = CardMembership.fromJson(env.item);
-            state = AsyncData(cur.copyWith(cardMemberships: [
-              ...cur.cardMemberships.where((m) =>
-                  m.id != temp.id &&
-                  !(m.cardId == real.cardId && m.userId == real.userId)),
-              real,
-            ]));
-          }
-          return env;
-        },
-      );
-    } else {
-      await _optimistic(
-        s.copyWith(
-            cardMemberships:
-                s.cardMemberships.where((m) => m.id != existing.id).toList()),
-        () => _repo.removeCardMember(cardId, userId),
-      );
-    }
+    await _toggleJunction<CardMembership>(
+      existing: existing,
+      list: (b) => b.cardMemberships,
+      withList: (b, l) => b.copyWith(cardMemberships: l),
+      id: (m) => m.id,
+      temp: CardMembership(
+          id: 'tmp-$cardId-$userId', cardId: cardId, userId: userId),
+      add: () => _repo.addCardMember(cardId, userId),
+      fromJson: CardMembership.fromJson,
+      sameKey: (real, m) => m.cardId == real.cardId && m.userId == real.userId,
+      remove: () => _repo.removeCardMember(cardId, userId),
+    );
   }
 
-  Future<void> createLabel({String? name, required String color}) async {
+  Future<void> createLabel(String color, {String? name}) async {
     final s = state.value;
     if (s == null) return;
-    final env = await _repo.createLabel(arg,
-        name: name,
-        color: color,
-        position: positionBetween(s.labels.lastOrNull?.position, null));
-    final cur = state.value;
-    if (cur != null) {
-      state = AsyncData(cur.copyWith(labels: _upsert(
-          cur.labels, PlankaLabel.fromJson(env.item), (l) => l.id)));
-    }
+    await _createInto(
+      _repo.createLabel(boardId,
+          name: name,
+          color: color,
+          position: positionBetween(s.labels.lastOrNull?.position, null)),
+      PlankaLabel.fromJson,
+      (b, l) => b.copyWith(labels: _upsert(b.labels, l, (x) => x.id)),
+    );
   }
 
-  Future<void> addTaskList(String cardId, String name) async {
+  Future<void> createTaskList(String cardId, String name) async {
     final s = state.value;
     if (s == null) return;
     final last = s.taskLists.where((t) => t.cardId == cardId).lastOrNull;
-    final env = await _repo.createTaskList(cardId,
-        name: name, position: positionBetween(last?.position, null));
-    final cur = state.value;
-    if (cur != null) {
-      state = AsyncData(cur.copyWith(taskLists: _upsert(
-          cur.taskLists, PlankaTaskList.fromJson(env.item), (t) => t.id)));
-    }
+    await _createInto(
+      _repo.createTaskList(cardId,
+          name: name, position: positionBetween(last?.position, null)),
+      PlankaTaskList.fromJson,
+      (b, t) => b.copyWith(taskLists: _upsert(b.taskLists, t, (x) => x.id)),
+    );
   }
 
-  Future<void> addTask(String taskListId, String name) async {
+  Future<void> createTask(String taskListId, String name) async {
     final s = state.value;
     if (s == null) return;
     final last = s.tasks.where((t) => t.taskListId == taskListId).lastOrNull;
-    final env = await _repo.createTask(taskListId,
-        name: name, position: positionBetween(last?.position, null));
-    final cur = state.value;
-    if (cur != null) {
-      state = AsyncData(cur.copyWith(
-          tasks: _upsert(cur.tasks, PlankaTask.fromJson(env.item), (t) => t.id)));
-    }
+    await _createInto(
+      _repo.createTask(taskListId,
+          name: name, position: positionBetween(last?.position, null)),
+      PlankaTask.fromJson,
+      (b, t) => b.copyWith(tasks: _upsert(b.tasks, t, (x) => x.id)),
+    );
   }
 
-  Future<void> toggleTask(String taskId, bool isCompleted) async {
+  Future<void> setTaskCompleted(String taskId, bool isCompleted) async {
     final s = state.value;
     final task = s?.tasks.where((t) => t.id == taskId).firstOrNull;
     if (s == null || task == null) return;
@@ -458,13 +508,12 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
-  Future<void> addComment(String cardId, String text) async {
-    final env = await _repo.createComment(cardId, text);
-    final cur = state.value;
-    if (cur != null) {
-      state = AsyncData(cur.copyWith(comments: _upsert(
-          cur.comments, PlankaComment.fromJson(env.item), (c) => c.id)));
-    }
+  Future<void> createComment(String cardId, String text) async {
+    await _createInto(
+      _repo.createComment(cardId, text: text),
+      PlankaComment.fromJson,
+      (b, c) => b.copyWith(comments: _upsert(b.comments, c, (x) => x.id)),
+    );
   }
 
   Future<void> deleteComment(String commentId) async {
@@ -476,15 +525,13 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
-  Future<void> uploadAttachment(
-      String cardId, String filePath, String name) async {
-    final env = await _repo.uploadAttachment(cardId, filePath, name);
-    final cur = state.value;
-    if (cur != null) {
-      state = AsyncData(cur.copyWith(attachments: _upsert(
-          cur.attachments, PlankaAttachment.fromJson(env.item), (a) => a.id)));
-    }
-  }
+  Future<void> uploadAttachment(String cardId,
+          {required String filePath, required String name}) =>
+      _createInto(
+        _repo.uploadAttachment(cardId, filePath: filePath, name: name),
+        PlankaAttachment.fromJson,
+        (b, a) => b.copyWith(attachments: _upsert(b.attachments, a, (x) => x.id)),
+      );
 
   Future<void> deleteAttachment(String attachmentId) async {
     final s = state.value;

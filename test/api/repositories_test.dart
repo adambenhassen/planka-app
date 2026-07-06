@@ -57,8 +57,8 @@ void main() {
       (() => repo.deleteCard('c1'), 'DELETE', '/api/cards/c1', null),
       (() => repo.cardsOfList('l1'), 'GET', '/api/lists/l1/cards', null),
       (() => repo.comments('c1'), 'GET', '/api/cards/c1/comments', null),
-      (() => repo.createComment('c1', 'hi'), 'POST', '/api/cards/c1/comments', {'text': 'hi'}),
-      (() => repo.updateComment('m1', 'yo'), 'PATCH', '/api/comments/m1', {'text': 'yo'}),
+      (() => repo.createComment('c1', text: 'hi'), 'POST', '/api/cards/c1/comments', {'text': 'hi'}),
+      (() => repo.updateComment('m1', text: 'yo'), 'PATCH', '/api/comments/m1', {'text': 'yo'}),
       (() => repo.deleteComment('m1'), 'DELETE', '/api/comments/m1', null),
       (
         () => repo.createLabel('b1', name: 'bug', color: 'berry-red', position: 16384),
@@ -91,7 +91,7 @@ void main() {
       (() => repo.deleteAttachment('a1'), 'DELETE', '/api/attachments/a1', null),
       (() => repo.notifications(), 'GET', '/api/notifications', null),
       (() => repo.markNotificationRead('n1'), 'PATCH', '/api/notifications/n1', {'isRead': true}),
-      (() => repo.readAllNotifications(), 'POST', '/api/notifications/read-all', null),
+      (() => repo.markAllNotificationsRead(), 'POST', '/api/notifications/read-all', null),
       (() => repo.me(), 'GET', '/api/users/me', null),
     ];
 
@@ -107,7 +107,7 @@ void main() {
   test('uploadAttachment posts multipart to attachments endpoint', () async {
     final tmp = File('${Directory.systemTemp.path}/planka_upload_test.txt')
       ..writeAsStringSync('data');
-    await repo.uploadAttachment('c1', tmp.path, 'f.txt');
+    await repo.uploadAttachment('c1', filePath: tmp.path, name: 'f.txt');
     expect(method, 'POST');
     expect(path, '/api/cards/c1/attachments');
     tmp.deleteSync();

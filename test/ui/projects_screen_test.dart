@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:planka_app/api/envelope.dart';
+import 'package:planka_app/api/models.dart';
+import 'package:planka_app/state/projects_state.dart';
 import 'package:planka_app/ui/projects_screen.dart';
 
 void main() {
@@ -13,6 +15,10 @@ void main() {
     final env = Envelope.parse(jsonDecode(
             File('test/fixtures/projects_index.json').readAsStringSync())
         as Map<String, dynamic>);
+    final view = ProjectsView(
+      projects: env.items.map(PlankaProject.fromJson).toList(),
+      boards: env.included.boards,
+    );
     String? navigatedTo;
     final router = GoRouter(initialLocation: '/projects', routes: [
       GoRoute(path: '/projects', builder: (_, _) => const ProjectsScreen()),
@@ -28,7 +34,7 @@ void main() {
     ]);
 
     await tester.pumpWidget(ProviderScope(
-      overrides: [projectsProvider.overrideWith((ref) async => env)],
+      overrides: [projectsProvider.overrideWith((ref) async => view)],
       child: MaterialApp.router(routerConfig: router),
     ));
     await tester.pumpAndSettle();

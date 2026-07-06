@@ -10,7 +10,7 @@ import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/ui/board_screen.dart';
 
 class FakeBoardNotifier extends BoardNotifier {
-  FakeBoardNotifier(super.arg);
+  FakeBoardNotifier(super.boardId);
   final moves = <(String, String)>[];
 
   @override

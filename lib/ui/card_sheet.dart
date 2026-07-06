@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_providers.dart';
-import 'api_error.dart';
+import 'error_handling.dart';
 import '../state/board_state.dart';
 import 'card_sections/attachments.dart';
 import 'card_sections/comments.dart';
@@ -44,12 +44,6 @@ class CardSheet extends ConsumerWidget {
   final String cardId;
   final ScrollController? scrollController;
 
-  void _guard(BuildContext context, Future<void> future) {
-    future.catchError((Object e) {
-      if (context.mounted) showApiError(context, e);
-    });
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(boardProvider(boardId)).value;
@@ -60,12 +54,8 @@ class CardSheet extends ConsumerWidget {
     }
     final notifier = ref.read(boardProvider(boardId).notifier);
     final account = ref.watch(currentAccountProvider);
-    final cardTaskLists =
-        state.taskLists.where((t) => t.cardId == cardId).toList()
-          ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
-    final comments = state.comments.where((c) => c.cardId == cardId).toList()
-      ..sort((a, b) => (a.createdAt ?? DateTime(0))
-          .compareTo(b.createdAt ?? DateTime(0)));
+    final cardTaskLists = state.taskListsOf(cardId);
+    final comments = state.commentsOf(cardId);
 
     Widget section(String title, Widget child) => Padding(
           padding: const EdgeInsets.only(top: 16),
@@ -96,42 +86,36 @@ class CardSheet extends ConsumerWidget {
         ),
         CardHeaderSection(
           card: card,
-          onRename: (name) => _guard(context, notifier.renameCard(cardId, name)),
+          onRename: (name) => guardMutation(context, notifier.renameCard(cardId, name)),
           onDescriptionChanged: (desc) =>
-              _guard(context, notifier.updateCard(cardId, {'description': desc})),
+              guardMutation(context, notifier.setDescription(cardId, desc)),
         ),
         CardDueDateSection(
           card: card,
-          onChanged: (d) => _guard(context, notifier.setDueDate(cardId, d)),
+          onChanged: (d) => guardMutation(context, notifier.setDueDate(cardId, d)),
           onCompletedToggle: (v) =>
-              _guard(context, notifier.updateCard(cardId, {'isDueCompleted': v})),
+              guardMutation(context, notifier.setDueCompleted(cardId, v)),
         ),
         section(
           'Labels',
           CardLabelsSection(
             boardLabels: state.labels,
-            activeLabelIds: state.cardLabels
-                .where((cl) => cl.cardId == cardId)
-                .map((cl) => cl.labelId)
-                .toSet(),
+            activeLabelIds:
+                state.labelsOf(cardId).map((l) => l.id).toSet(),
             onToggle: (labelId) =>
-                _guard(context, notifier.toggleLabel(cardId, labelId)),
-            onCreate: (name, color) => _guard(
+                guardMutation(context, notifier.toggleLabel(cardId, labelId)),
+            onCreate: (name, color) => guardMutation(
                 context,
-                notifier.createLabel(
-                    name: name.isEmpty ? null : name, color: color)),
+                notifier.createLabel(color, name: name.isEmpty ? null : name)),
           ),
         ),
         section(
           'Members',
           CardMembersSection(
             boardUsers: state.users,
-            memberUserIds: state.cardMemberships
-                .where((m) => m.cardId == cardId)
-                .map((m) => m.userId)
-                .toSet(),
+            memberUserIds: state.membersOf(cardId).map((u) => u.id).toSet(),
             onToggle: (userId) =>
-                _guard(context, notifier.toggleMember(cardId, userId)),
+                guardMutation(context, notifier.toggleMember(cardId, userId)),
           ),
         ),
         section(
@@ -140,22 +124,22 @@ class CardSheet extends ConsumerWidget {
             taskLists: cardTaskLists,
             tasks: state.tasks,
             onToggleTask: (taskId, v) =>
-                _guard(context, notifier.toggleTask(taskId, v)),
+                guardMutation(context, notifier.setTaskCompleted(taskId, v)),
             onAddTask: (taskListId, name) =>
-                _guard(context, notifier.addTask(taskListId, name)),
+                guardMutation(context, notifier.createTask(taskListId, name)),
             onAddTaskList: (name) =>
-                _guard(context, notifier.addTaskList(cardId, name)),
+                guardMutation(context, notifier.createTaskList(cardId, name)),
           ),
         ),
         section(
           'Attachments',
           CardAttachmentsSection(
-            attachments:
-                state.attachments.where((a) => a.cardId == cardId).toList(),
-            token: account?.token ?? '',
+            attachments: state.attachmentsOf(cardId),
+            token: account?.token,
             onUpload: (path, name) =>
-                _guard(context, notifier.uploadAttachment(cardId, path, name)),
-            onDelete: (id) => _guard(context, notifier.deleteAttachment(id)),
+                guardMutation(context,
+                    notifier.uploadAttachment(cardId, filePath: path, name: name)),
+            onDelete: (id) => guardMutation(context, notifier.deleteAttachment(id)),
           ),
         ),
         section(
@@ -164,8 +148,8 @@ class CardSheet extends ConsumerWidget {
             comments: comments,
             users: state.users,
             currentUserId: account?.userId ?? '',
-            onSend: (text) => _guard(context, notifier.addComment(cardId, text)),
-            onDelete: (id) => _guard(context, notifier.deleteComment(id)),
+            onSend: (text) => guardMutation(context, notifier.createComment(cardId, text)),
+            onDelete: (id) => guardMutation(context, notifier.deleteComment(id)),
           ),
         ),
       ],

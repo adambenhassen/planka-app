@@ -9,7 +9,7 @@ import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/ui/card_sheet.dart';
 
 class FakeBoardNotifier extends BoardNotifier {
-  FakeBoardNotifier(super.arg);
+  FakeBoardNotifier(super.boardId);
   final calls = <(String, Object?)>[];
 
   @override
@@ -18,12 +18,12 @@ class FakeBoardNotifier extends BoardNotifier {
           as Map<String, dynamic>));
 
   @override
-  Future<void> toggleTask(String taskId, bool isCompleted) async =>
-      calls.add(('toggleTask', (taskId, isCompleted)));
+  Future<void> setTaskCompleted(String taskId, bool isCompleted) async =>
+      calls.add(('setTaskCompleted', (taskId, isCompleted)));
 
   @override
-  Future<void> addComment(String cardId, String text) async =>
-      calls.add(('addComment', text));
+  Future<void> createComment(String cardId, String text) async =>
+      calls.add(('createComment', text));
 
   @override
   Future<void> toggleLabel(String cardId, String labelId) async =>
@@ -75,7 +75,7 @@ void main() {
 
     // Toggle first task checkbox.
     await tester.tap(find.byType(CheckboxListTile).first);
-    expect(notifier.calls.where((c) => c.$1 == 'toggleTask'), hasLength(1));
+    expect(notifier.calls.where((c) => c.$1 == 'setTaskCompleted'), hasLength(1));
 
     // Toggle a label chip.
     await tester.tap(find.byType(FilterChip).first);
@@ -85,6 +85,6 @@ void main() {
     await tester.enterText(
         find.widgetWithText(TextField, 'Write a comment…'), 'hello test');
     await tester.tap(find.byIcon(Icons.send));
-    expect(notifier.calls, contains(('addComment', 'hello test')));
+    expect(notifier.calls, contains(('createComment', 'hello test')));
   });
 }

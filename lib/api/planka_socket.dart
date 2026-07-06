@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import 'envelope.dart';
+import 'planka_api.dart';
 
 /// Planka server-push event names (verbatim).
 const kPlankaSocketEvents = [
@@ -42,7 +43,7 @@ Map<String, dynamic> sailsRequestFrame({
     {
       'method': method,
       'url': url,
-      'headers': {'Authorization': 'Bearer $token'},
+      'headers': {'Authorization': bearerAuth(token)},
       'data': data ?? {},
     };
 
@@ -96,6 +97,10 @@ class PlankaSocket {
     socket.connect();
   }
 
+  /// Subscribes to realtime updates for [boardId]. The returned future always
+  /// completes normally (never throws) — a failed/timed-out subscription is
+  /// reported asynchronously as an error on the [events] stream, so callers
+  /// observe failure there rather than by awaiting this method.
   Future<void> subscribeBoard(String boardId) async {
     _currentBoardId = boardId;
     final socket = _socket;

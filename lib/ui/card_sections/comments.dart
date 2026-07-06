@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../api/models.dart';
+import '../widgets/confirm_dialog.dart';
 
 class CardCommentsSection extends StatefulWidget {
   const CardCommentsSection({
@@ -49,21 +50,10 @@ class _CardCommentsSectionState extends State<CardCommentsSection> {
           GestureDetector(
             onLongPress: c.userId == widget.currentUserId
                 ? () async {
-                    final delete = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Delete comment?'),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel')),
-                          FilledButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text('Delete')),
-                        ],
-                      ),
-                    );
-                    if (delete == true) widget.onDelete(c.id);
+                    if (await confirmDialog(context,
+                        title: 'Delete comment?', confirmLabel: 'Delete')) {
+                      widget.onDelete(c.id);
+                    }
                   }
                 : null,
             child: Padding(

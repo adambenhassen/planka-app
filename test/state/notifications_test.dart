@@ -21,7 +21,11 @@ class SeededNotifier extends NotificationsNotifier {
 }
 
 PlankaNotification n(String id, {bool isRead = false}) =>
-    PlankaNotification(id: id, userId: 'u1', type: 'commentCard', isRead: isRead);
+    PlankaNotification(
+        id: id,
+        userId: 'u1',
+        type: PlankaNotificationType.commentCard,
+        isRead: isRead);
 
 void main() {
   test('unreadCount, notificationCreate increments, markRead flips', () async {
@@ -36,12 +40,12 @@ void main() {
 
     final notifier =
         container.read(notificationsProvider.notifier) as SeededNotifier;
-    notifier.apply(SocketEvent.parse('notificationCreate', {
+    notifier.applyEvent(SocketEvent.parse('notificationCreate', {
       'item': {'id': '3', 'userId': 'u1', 'type': 'commentCard', 'isRead': false}
     }));
     expect(container.read(unreadCountProvider), 2);
 
-    notifier.apply(SocketEvent.parse('notificationUpdate', {
+    notifier.applyEvent(SocketEvent.parse('notificationUpdate', {
       'item': {'id': '3', 'userId': 'u1', 'type': 'commentCard', 'isRead': true}
     }));
     expect(container.read(unreadCountProvider), 1);

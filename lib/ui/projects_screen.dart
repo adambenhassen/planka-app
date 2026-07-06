@@ -3,14 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../api/envelope.dart';
-import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
 import '../state/notifications_state.dart';
+import '../state/projects_state.dart';
 import '../update/update_service.dart';
-
-final projectsProvider = FutureProvider<Envelope>(
-    (ref) => PlankaRepo(ref.watch(apiProvider)).projects());
+import 'widgets/async_retry.dart';
 
 class ProjectsScreen extends ConsumerWidget {
   const ProjectsScreen({super.key});
@@ -47,24 +44,12 @@ class ProjectsScreen extends ConsumerWidget {
           const _AccountSwitcher(),
         ],
       ),
-      body: projects.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('$e'),
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: () => ref.invalidate(projectsProvider),
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
-        data: (env) => RefreshIndicator(
+      body: asyncRetry(
+        projects,
+        () => ref.invalidate(projectsProvider),
+        (view) => RefreshIndicator(
           onRefresh: () => ref.refresh(projectsProvider.future),
-          child: _ProjectList(env: env),
+          child: _ProjectList(view: view),
         ),
       ),
     );
@@ -72,13 +57,13 @@ class ProjectsScreen extends ConsumerWidget {
 }
 
 class _ProjectList extends StatelessWidget {
-  const _ProjectList({required this.env});
-  final Envelope env;
+  const _ProjectList({required this.view});
+  final ProjectsView view;
 
   @override
   Widget build(BuildContext context) {
-    final boards = env.included.boards;
-    final projects = env.items;
+    final boards = view.boards;
+    final projects = view.projects;
     if (projects.isEmpty) {
       return ListView(children: const [
         SizedBox(height: 120),
@@ -90,10 +75,10 @@ class _ProjectList extends StatelessWidget {
         for (final p in projects) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text(p['name'] as String? ?? '',
+            child: Text(p.name,
                 style: Theme.of(context).textTheme.titleMedium),
           ),
-          for (final b in boards.where((b) => b.projectId == p['id']))
+          for (final b in boards.where((b) => b.projectId == p.id))
             ListTile(
               leading: const Icon(Icons.view_kanban_outlined),
               title: Text(b.name),

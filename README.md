@@ -25,7 +25,7 @@
 - 🔔 **Notifications** — realtime unread badge, mark read / mark all read
 - ⚡ **Realtime everywhere** — changes from the web UI appear instantly, and vice versa
 
-> **Status:** in active development. Core API layer, auth, and realtime socket client are done; UI screens are landing next.
+> **Status:** actively maintained. The API layer, auth, realtime socket client, and all UI screens (login, projects, board, card sheet, notifications) are built and shipping.
 
 ## Requirements
 

@@ -5,6 +5,34 @@ part 'models.g.dart';
 
 double? _toDouble(dynamic v) => v == null ? null : (v as num).toDouble();
 
+/// Planka's fixed set of board-list types. [unknown] is a forward-compat
+/// fallback for any value a newer server introduces, so parsing never throws.
+enum PlankaListType {
+  @JsonValue('active')
+  active,
+  @JsonValue('closed')
+  closed,
+  @JsonValue('archive')
+  archive,
+  @JsonValue('trash')
+  trash,
+  unknown,
+}
+
+/// Notification kinds the UI renders distinctly. [unknown] is a forward-compat
+/// fallback so a new server notification type parses and shows a default icon.
+enum PlankaNotificationType {
+  @JsonValue('commentCard')
+  commentCard,
+  @JsonValue('moveCard')
+  moveCard,
+  @JsonValue('addMemberToCard')
+  addMemberToCard,
+  @JsonValue('mentionInComment')
+  mentionInComment,
+  unknown,
+}
+
 @freezed
 abstract class PlankaUser with _$PlankaUser {
   const factory PlankaUser({
@@ -45,7 +73,8 @@ abstract class PlankaList with _$PlankaList {
   const factory PlankaList({
     required String id,
     required String boardId,
-    required String type, // active | closed | archive | trash
+    @JsonKey(unknownEnumValue: PlankaListType.unknown)
+    required PlankaListType type,
     String? name,
     @JsonKey(fromJson: _toDouble) double? position,
   }) = _PlankaList;
@@ -176,7 +205,8 @@ abstract class PlankaNotification with _$PlankaNotification {
   const factory PlankaNotification({
     required String id,
     required String userId,
-    required String type,
+    @JsonKey(unknownEnumValue: PlankaNotificationType.unknown)
+    required PlankaNotificationType type,
     required bool isRead,
     String? cardId,
     Map<String, dynamic>? data,

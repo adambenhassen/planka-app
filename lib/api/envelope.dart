@@ -9,24 +9,28 @@ class Included {
           .map((e) => fromJson((e as Map).cast<String, dynamic>()))
           .toList();
 
-  List<PlankaUser> get users => _list('users', PlankaUser.fromJson);
-  List<PlankaProject> get projects => _list('projects', PlankaProject.fromJson);
-  List<PlankaBoard> get boards => _list('boards', PlankaBoard.fromJson);
-  List<PlankaList> get lists => _list('lists', PlankaList.fromJson);
-  List<PlankaCard> get cards => _list('cards', PlankaCard.fromJson);
-  List<PlankaLabel> get labels => _list('labels', PlankaLabel.fromJson);
-  List<CardLabel> get cardLabels => _list('cardLabels', CardLabel.fromJson);
-  List<CardMembership> get cardMemberships =>
+  // Parsed once on first access, then cached — accessors are cheap to re-read.
+  late final List<PlankaUser> users = _list('users', PlankaUser.fromJson);
+  late final List<PlankaProject> projects =
+      _list('projects', PlankaProject.fromJson);
+  late final List<PlankaBoard> boards = _list('boards', PlankaBoard.fromJson);
+  late final List<PlankaList> lists = _list('lists', PlankaList.fromJson);
+  late final List<PlankaCard> cards = _list('cards', PlankaCard.fromJson);
+  late final List<PlankaLabel> labels = _list('labels', PlankaLabel.fromJson);
+  late final List<CardLabel> cardLabels =
+      _list('cardLabels', CardLabel.fromJson);
+  late final List<CardMembership> cardMemberships =
       _list('cardMemberships', CardMembership.fromJson);
-  List<BoardMembership> get boardMemberships =>
+  late final List<BoardMembership> boardMemberships =
       _list('boardMemberships', BoardMembership.fromJson);
-  List<PlankaTaskList> get taskLists =>
+  late final List<PlankaTaskList> taskLists =
       _list('taskLists', PlankaTaskList.fromJson);
-  List<PlankaTask> get tasks => _list('tasks', PlankaTask.fromJson);
-  List<PlankaComment> get comments => _list('comments', PlankaComment.fromJson);
-  List<PlankaAttachment> get attachments =>
+  late final List<PlankaTask> tasks = _list('tasks', PlankaTask.fromJson);
+  late final List<PlankaComment> comments =
+      _list('comments', PlankaComment.fromJson);
+  late final List<PlankaAttachment> attachments =
       _list('attachments', PlankaAttachment.fromJson);
-  List<PlankaNotification> get notifications =>
+  late final List<PlankaNotification> notifications =
       _list('notifications', PlankaNotification.fromJson);
 }
 

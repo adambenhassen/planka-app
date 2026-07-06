@@ -71,6 +71,12 @@ class AuthExpiredNotifier extends Notifier<Account?> {
   void clear() => state = null;
 }
 
+/// Builds an unauthenticated API client for an arbitrary server URL — used by
+/// the login flow before an account exists. A provider so tests can inject a
+/// fake API.
+final apiFactoryProvider = Provider<PlankaApi Function(String serverUrl)>(
+    (ref) => (url) => PlankaApi(url, null));
+
 final apiProvider = Provider<PlankaApi>((ref) {
   final account = ref.watch(currentAccountProvider);
   if (account == null) throw StateError('No account selected');

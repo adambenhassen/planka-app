@@ -4,41 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../api/models.dart';
+import '../../api/planka_api.dart';
 import '../../auth/auth_providers.dart';
 import '../../state/board_state.dart';
-
-/// Planka label color names → display colors (subset of Planka's palette;
-/// unknown names fall back to a neutral).
-const _labelColors = <String, Color>{
-  'berry-red': Color(0xFFE04556),
-  'pumpkin-orange': Color(0xFFF0982D),
-  'lagoon-blue': Color(0xFF109DC0),
-  'pink-tulip': Color(0xFFF97394),
-  'light-mud': Color(0xFFC7A57B),
-  'orange-peel': Color(0xFFFAB623),
-  'bright-moss': Color(0xFFA5C261),
-  'antique-blue': Color(0xFF6A85A0),
-  'dark-granite': Color(0xFF8B8680),
-  'turquoise-sea': Color(0xFF29A886),
-  'lagune-blue': Color(0xFF109DC0),
-  'sunny-grass': Color(0xFFBDC847),
-  'morning-sky': Color(0xFF66A8D4),
-  'light-orange': Color(0xFFECA66E),
-  'midnight-blue': Color(0xFF2B394F),
-  'tank-green': Color(0xFF9AA177),
-  'gun-metal': Color(0xFF5C6772),
-  'wet-moss': Color(0xFF3F8955),
-  'red-burgundy': Color(0xFFAD5F7D),
-  'light-concrete': Color(0xFFAFB0A4),
-  'apricot-red': Color(0xFFF56B62),
-  'desert-sand': Color(0xFFEDCB76),
-  'navy-blue': Color(0xFF16344D),
-  'egg-yellow': Color(0xFFF7D036),
-  'coral-green': Color(0xFF4FD683),
-  'light-cocoa': Color(0xFFAD8D71),
-};
-
-Color labelColor(String name) => _labelColors[name] ?? const Color(0xFF8B8680);
+import 'label_colors.dart';
 
 /// Cover thumbnail URL for a card, or null when it has no image cover.
 /// Planka serves attachment images under data.thumbnailUrls (absolute URLs).
@@ -67,27 +36,11 @@ class CardTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final coverUrl = cardCoverUrl(card, state);
-    final labels = state.cardLabels
-        .where((cl) => cl.cardId == card.id)
-        .map((cl) => state.labels.where((l) => l.id == cl.labelId).firstOrNull)
-        .nonNulls
-        .toList();
-    final members = state.cardMemberships
-        .where((m) => m.cardId == card.id)
-        .map((m) => state.users.where((u) => u.id == m.userId).firstOrNull)
-        .nonNulls
-        .toList();
-    final taskListIds = state.taskLists
-        .where((t) => t.cardId == card.id)
-        .map((t) => t.id)
-        .toSet();
-    final tasks = state.tasks
-        .where((t) => taskListIds.contains(t.taskListId))
-        .toList();
+    final labels = state.labelsOf(card.id);
+    final members = state.membersOf(card.id);
+    final tasks = state.tasksOfCard(card.id);
     final done = tasks.where((t) => t.isCompleted).length;
-    final attachmentCount = state.attachments
-        .where((a) => a.cardId == card.id)
-        .length;
+    final attachmentCount = state.attachmentsOf(card.id).length;
     final due = card.dueDate;
 
     // Downloads authenticate via the accessToken cookie, not a Bearer header.
@@ -105,7 +58,7 @@ class CardTile extends ConsumerWidget {
             if (coverUrl != null && token != null)
               CachedNetworkImage(
                 imageUrl: coverUrl,
-                httpHeaders: {'Cookie': 'accessToken=$token'},
+                httpHeaders: imageAuthHeaders(token),
                 width: double.infinity,
                 height: 140,
                 fit: BoxFit.cover,

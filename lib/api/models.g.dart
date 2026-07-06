@@ -47,7 +47,11 @@ Map<String, dynamic> _$PlankaBoardToJson(_PlankaBoard instance) =>
 _PlankaList _$PlankaListFromJson(Map<String, dynamic> json) => _PlankaList(
   id: json['id'] as String,
   boardId: json['boardId'] as String,
-  type: json['type'] as String,
+  type: $enumDecode(
+    _$PlankaListTypeEnumMap,
+    json['type'],
+    unknownValue: PlankaListType.unknown,
+  ),
   name: json['name'] as String?,
   position: _toDouble(json['position']),
 );
@@ -56,10 +60,18 @@ Map<String, dynamic> _$PlankaListToJson(_PlankaList instance) =>
     <String, dynamic>{
       'id': instance.id,
       'boardId': instance.boardId,
-      'type': instance.type,
+      'type': _$PlankaListTypeEnumMap[instance.type]!,
       'name': instance.name,
       'position': instance.position,
     };
+
+const _$PlankaListTypeEnumMap = {
+  PlankaListType.active: 'active',
+  PlankaListType.closed: 'closed',
+  PlankaListType.archive: 'archive',
+  PlankaListType.trash: 'trash',
+  PlankaListType.unknown: 'unknown',
+};
 
 _PlankaCard _$PlankaCardFromJson(Map<String, dynamic> json) => _PlankaCard(
   id: json['id'] as String,
@@ -233,7 +245,11 @@ _PlankaNotification _$PlankaNotificationFromJson(Map<String, dynamic> json) =>
     _PlankaNotification(
       id: json['id'] as String,
       userId: json['userId'] as String,
-      type: json['type'] as String,
+      type: $enumDecode(
+        _$PlankaNotificationTypeEnumMap,
+        json['type'],
+        unknownValue: PlankaNotificationType.unknown,
+      ),
       isRead: json['isRead'] as bool,
       cardId: json['cardId'] as String?,
       data: json['data'] as Map<String, dynamic>?,
@@ -246,9 +262,17 @@ Map<String, dynamic> _$PlankaNotificationToJson(_PlankaNotification instance) =>
     <String, dynamic>{
       'id': instance.id,
       'userId': instance.userId,
-      'type': instance.type,
+      'type': _$PlankaNotificationTypeEnumMap[instance.type]!,
       'isRead': instance.isRead,
       'cardId': instance.cardId,
       'data': instance.data,
       'createdAt': instance.createdAt?.toIso8601String(),
     };
+
+const _$PlankaNotificationTypeEnumMap = {
+  PlankaNotificationType.commentCard: 'commentCard',
+  PlankaNotificationType.moveCard: 'moveCard',
+  PlankaNotificationType.addMemberToCard: 'addMemberToCard',
+  PlankaNotificationType.mentionInComment: 'mentionInComment',
+  PlankaNotificationType.unknown: 'unknown',
+};

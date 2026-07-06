@@ -1,17 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../api/models.dart';
-import '../widgets/card_tile.dart' show labelColor;
-
-/// Planka's fixed label color names (create-label dialog palette).
-const kPlankaLabelColorNames = [
-  'berry-red', 'pumpkin-orange', 'lagoon-blue', 'pink-tulip', 'light-mud',
-  'orange-peel', 'bright-moss', 'antique-blue', 'dark-granite',
-  'turquoise-sea', 'sunny-grass', 'morning-sky', 'light-orange',
-  'midnight-blue', 'tank-green', 'gun-metal', 'wet-moss', 'red-burgundy',
-  'light-concrete', 'apricot-red', 'desert-sand', 'navy-blue', 'egg-yellow',
-  'coral-green', 'light-cocoa',
-];
+import '../widgets/label_colors.dart';
 
 class CardLabelsSection extends StatelessWidget {
   const CardLabelsSection({
@@ -29,7 +19,7 @@ class CardLabelsSection extends StatelessWidget {
 
   Future<void> _createDialog(BuildContext context) async {
     final nameCtrl = TextEditingController();
-    var color = kPlankaLabelColorNames.first;
+    var color = kLabelColorNames.first;
     final created = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -48,7 +38,7 @@ class CardLabelsSection extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final c in kPlankaLabelColorNames)
+                  for (final c in kLabelColorNames)
                     InkWell(
                       onTap: () => setState(() => color = c),
                       borderRadius: BorderRadius.circular(6),
@@ -80,6 +70,7 @@ class CardLabelsSection extends StatelessWidget {
       ),
     );
     if (created == true) onCreate(nameCtrl.text.trim(), color);
+    nameCtrl.dispose();
   }
 
   @override

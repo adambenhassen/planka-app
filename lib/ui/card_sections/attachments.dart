@@ -3,6 +3,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../api/models.dart';
+import '../../api/planka_api.dart';
 
 class CardAttachmentsSection extends StatelessWidget {
   const CardAttachmentsSection({
@@ -14,7 +15,7 @@ class CardAttachmentsSection extends StatelessWidget {
   });
 
   final List<PlankaAttachment> attachments;
-  final String token;
+  final String? token;
   final void Function(String filePath, String name) onUpload;
   final ValueChanged<String> onDelete;
 
@@ -37,12 +38,12 @@ class CardAttachmentsSection extends StatelessWidget {
         for (final a in attachments)
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: _thumbUrl(a) != null
+            leading: _thumbUrl(a) != null && token != null
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(6),
                     child: CachedNetworkImage(
                       imageUrl: _thumbUrl(a)!,
-                      httpHeaders: {'Cookie': 'accessToken=$token'},
+                      httpHeaders: imageAuthHeaders(token!),
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,

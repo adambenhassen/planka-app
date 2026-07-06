@@ -28,9 +28,9 @@ class PlankaRepo {
   Future<Envelope> cardsOfList(String listId) => api.get('/lists/$listId/cards');
 
   Future<Envelope> comments(String cardId) => api.get('/cards/$cardId/comments');
-  Future<Envelope> createComment(String cardId, String text) =>
+  Future<Envelope> createComment(String cardId, {required String text}) =>
       api.post('/cards/$cardId/comments', {'text': text});
-  Future<Envelope> updateComment(String id, String text) =>
+  Future<Envelope> updateComment(String id, {required String text}) =>
       api.patch('/comments/$id', {'text': text});
   Future<Envelope> deleteComment(String id) => api.delete('/comments/$id');
 
@@ -67,8 +67,8 @@ class PlankaRepo {
       api.patch('/tasks/$id', patch);
   Future<Envelope> deleteTask(String id) => api.delete('/tasks/$id');
 
-  Future<Envelope> uploadAttachment(
-          String cardId, String filePath, String name) async =>
+  Future<Envelope> uploadAttachment(String cardId,
+          {required String filePath, required String name}) async =>
       api.post(
           '/cards/$cardId/attachments',
           FormData.fromMap({
@@ -81,7 +81,7 @@ class PlankaRepo {
   Future<Envelope> notifications() => api.get('/notifications');
   Future<Envelope> markNotificationRead(String id) =>
       api.patch('/notifications/$id', {'isRead': true});
-  Future<Envelope> readAllNotifications() =>
+  Future<Envelope> markAllNotificationsRead() =>
       api.post('/notifications/read-all', null);
 
   Future<Envelope> me() => api.get('/users/me');
