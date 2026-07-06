@@ -15,7 +15,8 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
   Future<List<Account>> build() => ref.read(accountStoreProvider).load();
 
   Future<void> upsert(Account account) async {
-    final list = <Account>[...state.value ?? const []]
+    // Await the loaded list so a call during loading can't drop stored accounts.
+    final list = <Account>[...await future]
       ..removeWhere((a) => a.id == account.id)
       ..add(account);
     await ref.read(accountStoreProvider).save(list);
@@ -23,10 +24,14 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
   }
 
   Future<void> remove(String accountId) async {
-    final list = <Account>[...state.value ?? const []]
+    final list = <Account>[...await future]
       ..removeWhere((a) => a.id == accountId);
     await ref.read(accountStoreProvider).save(list);
     state = AsyncData(list);
+    final current = ref.read(currentAccountProvider);
+    if (current?.id == accountId) {
+      await ref.read(currentAccountProvider.notifier).select(null);
+    }
   }
 }
 

@@ -1,0 +1,28 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import 'auth/auth_providers.dart';
+import 'ui/login_screen.dart';
+import 'ui/placeholder_screens.dart';
+
+final routerProvider = Provider<GoRouter>((ref) {
+  return GoRouter(
+    initialLocation: '/projects',
+    redirect: (context, state) {
+      final loggedIn = ref.read(currentAccountProvider) != null;
+      if (!loggedIn && state.matchedLocation != '/login') return '/login';
+      return null;
+    },
+    routes: [
+      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(path: '/projects', builder: (_, _) => const ProjectsScreenStub()),
+      GoRoute(
+          path: '/boards/:boardId',
+          builder: (_, state) =>
+              BoardScreenStub(boardId: state.pathParameters['boardId']!)),
+      GoRoute(
+          path: '/notifications',
+          builder: (_, _) => const NotificationsScreenStub()),
+    ],
+  );
+});

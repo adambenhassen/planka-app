@@ -16,14 +16,14 @@ SocketEvent ev(String name, Map<String, dynamic> payload) =>
 void main() {
   test('seeds from board_show fixture', () {
     final s = seed();
-    expect(s.lists, isNotEmpty);
+    expect(s.columns, isNotEmpty);
     expect(s.cards, isNotEmpty);
-    expect(s.cardsOf(s.lists.first.id), isNotEmpty);
+    expect(s.cardsOf(s.columns.first.id), isNotEmpty);
   });
 
   test('cardCreate adds', () {
     final s = seed();
-    final listId = s.lists.first.id;
+    final listId = s.columns.first.id;
     final next = applyEvent(
         s,
         ev('cardCreate', {
@@ -89,7 +89,7 @@ void main() {
 
   test('listClear drops that list cards, keeps others', () {
     final s = seed();
-    final listId = s.lists.first.id;
+    final listId = s.columns.first.id;
     final next = applyEvent(s, ev('listClear', {'item': {'id': listId}}));
     expect(next.cardsOf(listId), isEmpty);
   });

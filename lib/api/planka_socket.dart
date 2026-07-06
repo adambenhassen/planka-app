@@ -91,6 +91,7 @@ class PlankaSocket {
       if (boardId != null) subscribeBoard(boardId);
     });
     socket.onDisconnect((_) => _connected.add(false));
+    socket.on('connect_error', (_) => _connected.add(false));
 
     socket.connect();
   }
@@ -99,14 +100,17 @@ class PlankaSocket {
     _currentBoardId = boardId;
     final socket = _socket;
     if (socket == null || !socket.connected) return;
-    final ack = await socket.emitWithAckAsync(
-      'get',
-      sailsRequestFrame(
-        method: 'get',
-        url: '/api/boards/$boardId?subscribe=true',
-        token: token,
-      ),
-    );
+    final ack = await socket
+        .emitWithAckAsync(
+          'get',
+          sailsRequestFrame(
+            method: 'get',
+            url: '/api/boards/$boardId?subscribe=true',
+            token: token,
+          ),
+        )
+        .timeout(const Duration(seconds: 10),
+            onTimeout: () => {'statusCode': 'timeout'});
     final status = ack is Map ? ack['statusCode'] : null;
     if (status != 200) {
       _events.addError(StateError('board subscribe failed: $ack'));

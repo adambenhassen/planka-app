@@ -38,6 +38,10 @@ class BoardState {
   }) : lists = [...lists]
           ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
 
+  /// Kanban columns: user lists only (server also sends archive/trash lists).
+  List<PlankaList> get columns =>
+      lists.where((l) => l.type == 'active' || l.type == 'closed').toList();
+
   List<PlankaCard> cardsOf(String listId) =>
       cards.values.where((c) => c.listId == listId).toList()
         ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
