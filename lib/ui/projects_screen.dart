@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/envelope.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
 import '../state/notifications_state.dart';
+import '../update/update_service.dart';
 
 final projectsProvider = FutureProvider<Envelope>(
     (ref) => PlankaRepo(ref.watch(apiProvider)).projects());
@@ -16,6 +18,20 @@ class ProjectsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final projects = ref.watch(projectsProvider);
+    // Prompt once if a newer APK has been published (Android sideload).
+    ref.listen(updateCheckProvider, (_, next) {
+      final info = next.value;
+      if (info == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Update available (v${info.version})'),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: 'Get',
+          onPressed: () =>
+              launchUrl(Uri.parse(info.url), mode: LaunchMode.externalApplication),
+        ),
+      ));
+    });
     return Scaffold(
       appBar: AppBar(
         title: const Text('Projects'),
