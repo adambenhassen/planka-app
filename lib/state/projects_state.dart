@@ -9,7 +9,12 @@ import '../auth/auth_providers.dart';
 class ProjectsView {
   final List<PlankaProject> projects;
   final List<PlankaBoard> boards;
-  const ProjectsView({required this.projects, required this.boards});
+  final List<PlankaBackgroundImage> backgroundImages;
+  const ProjectsView({
+    required this.projects,
+    required this.boards,
+    required this.backgroundImages,
+  });
 }
 
 final projectsProvider = FutureProvider<ProjectsView>((ref) async {
@@ -17,5 +22,6 @@ final projectsProvider = FutureProvider<ProjectsView>((ref) async {
   return ProjectsView(
     projects: env.items.map(PlankaProject.fromJson).toList(),
     boards: env.included.boards,
+    backgroundImages: env.included.backgroundImages,
   );
 });

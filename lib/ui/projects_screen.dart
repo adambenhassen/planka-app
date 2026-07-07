@@ -8,8 +8,8 @@ import '../auth/auth_providers.dart';
 import '../state/notifications_state.dart';
 import '../state/projects_state.dart';
 import '../update/update_service.dart';
-import 'theme/app_theme.dart';
 import 'widgets/async_retry.dart';
+import 'widgets/board_background.dart';
 
 class ProjectsScreen extends ConsumerWidget {
   const ProjectsScreen({super.key});
@@ -21,15 +21,19 @@ class ProjectsScreen extends ConsumerWidget {
     ref.listen(updateCheckProvider, (_, next) {
       final info = next.value;
       if (info == null) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Update available (v${info.version})'),
-        duration: const Duration(seconds: 8),
-        action: SnackBarAction(
-          label: 'Get',
-          onPressed: () =>
-              launchUrl(Uri.parse(info.url), mode: LaunchMode.externalApplication),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Update available (v${info.version})'),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'Get',
+            onPressed: () => launchUrl(
+              Uri.parse(info.url),
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
         ),
-      ));
+      );
     });
     return Scaffold(
       appBar: AppBar(
@@ -51,7 +55,10 @@ class ProjectsScreen extends ConsumerWidget {
         () => ref.invalidate(projectsProvider),
         (view) => RefreshIndicator(
           onRefresh: () => ref.refresh(projectsProvider.future),
-          child: _ProjectList(view: view),
+          child: _ProjectList(
+            view: view,
+            token: ref.watch(currentAccountProvider)?.token,
+          ),
         ),
       ),
     );
@@ -59,18 +66,21 @@ class ProjectsScreen extends ConsumerWidget {
 }
 
 class _ProjectList extends StatelessWidget {
-  const _ProjectList({required this.view});
+  const _ProjectList({required this.view, required this.token});
   final ProjectsView view;
+  final String? token;
 
   @override
   Widget build(BuildContext context) {
     final boards = view.boards;
     final projects = view.projects;
     if (projects.isEmpty) {
-      return ListView(children: const [
-        SizedBox(height: 120),
-        Center(child: Text('No projects yet')),
-      ]);
+      return ListView(
+        children: const [
+          SizedBox(height: 120),
+          Center(child: Text('No projects yet')),
+        ],
+      );
     }
     return ListView(
       padding: const EdgeInsets.all(12),
@@ -78,11 +88,12 @@ class _ProjectList extends StatelessWidget {
         for (final p in projects) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
-            child: Text(p.name,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700)),
+            child: Text(
+              p.name,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
           ),
           GridView.extent(
             shrinkWrap: true,
@@ -94,8 +105,18 @@ class _ProjectList extends StatelessWidget {
             crossAxisSpacing: 12,
             childAspectRatio: 16 / 9,
             children: [
+              // Boards inherit their project's Planka background (gradient or
+              // image); a deterministic color when the project has none.
               for (final b in boards.where((b) => b.projectId == p.id))
-                _BoardTile(board: b),
+                _BoardTile(
+                  board: b,
+                  background: resolveBoardBackground(
+                    p,
+                    view.backgroundImages,
+                    b.name,
+                  ),
+                  token: token,
+                ),
             ],
           ),
         ],
@@ -105,47 +126,48 @@ class _ProjectList extends StatelessWidget {
 }
 
 class _BoardTile extends StatelessWidget {
-  const _BoardTile({required this.board});
+  const _BoardTile({
+    required this.board,
+    required this.background,
+    required this.token,
+  });
   final PlankaBoard board;
+  final BoardBackground background;
+  final String? token;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => context.push('/boards/${board.id}'),
-      child: Ink(
-        decoration: BoxDecoration(
-          gradient: boardGradient(board.name),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Scrim keeps the white title legible over any tile color.
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.22),
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Align(
-                alignment: Alignment.bottomLeft,
-                child: Text(
-                  board.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          BoardBackgroundView(background: background, token: token),
+          // Scrim keeps the white title legible over any tile color or photo.
+          ColoredBox(color: Colors.black.withValues(alpha: 0.28)),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: Text(
+                board.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+          Positioned.fill(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(onTap: () => context.push('/boards/${board.id}')),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -177,9 +199,11 @@ class _AccountSwitcher extends ConsumerWidget {
             value: a.id,
             child: ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(a.id == current?.id
-                  ? Icons.radio_button_checked
-                  : Icons.radio_button_off),
+              leading: Icon(
+                a.id == current?.id
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_off,
+              ),
               title: Text(a.displayName),
               subtitle: Text(a.serverUrl),
             ),

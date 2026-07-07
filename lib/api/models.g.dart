@@ -24,10 +24,38 @@ Map<String, dynamic> _$PlankaUserToJson(_PlankaUser instance) =>
     };
 
 _PlankaProject _$PlankaProjectFromJson(Map<String, dynamic> json) =>
-    _PlankaProject(id: json['id'] as String, name: json['name'] as String);
+    _PlankaProject(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      backgroundType: json['backgroundType'] as String?,
+      backgroundGradient: json['backgroundGradient'] as String?,
+      backgroundImageId: json['backgroundImageId'] as String?,
+    );
 
 Map<String, dynamic> _$PlankaProjectToJson(_PlankaProject instance) =>
-    <String, dynamic>{'id': instance.id, 'name': instance.name};
+    <String, dynamic>{
+      'id': instance.id,
+      'name': instance.name,
+      'backgroundType': instance.backgroundType,
+      'backgroundGradient': instance.backgroundGradient,
+      'backgroundImageId': instance.backgroundImageId,
+    };
+
+_PlankaBackgroundImage _$PlankaBackgroundImageFromJson(
+  Map<String, dynamic> json,
+) => _PlankaBackgroundImage(
+  id: json['id'] as String,
+  url: json['url'] as String?,
+  thumbnailUrls: json['thumbnailUrls'] as Map<String, dynamic>?,
+);
+
+Map<String, dynamic> _$PlankaBackgroundImageToJson(
+  _PlankaBackgroundImage instance,
+) => <String, dynamic>{
+  'id': instance.id,
+  'url': instance.url,
+  'thumbnailUrls': instance.thumbnailUrls,
+};
 
 _PlankaBoard _$PlankaBoardFromJson(Map<String, dynamic> json) => _PlankaBoard(
   id: json['id'] as String,

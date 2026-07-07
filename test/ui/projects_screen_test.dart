@@ -18,6 +18,7 @@ void main() {
     final view = ProjectsView(
       projects: env.items.map(PlankaProject.fromJson).toList(),
       boards: env.included.boards,
+      backgroundImages: env.included.backgroundImages,
     );
     String? navigatedTo;
     final router = GoRouter(initialLocation: '/projects', routes: [

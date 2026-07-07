@@ -51,9 +51,26 @@ abstract class PlankaProject with _$PlankaProject {
   const factory PlankaProject({
     required String id,
     required String name,
+    // Planka background: type is null | 'gradient' | 'image'. For 'gradient' the
+    // name resolves to a gradient; for 'image', backgroundImageId points at a
+    // PlankaBackgroundImage in the response's `included.backgroundImages`.
+    String? backgroundType,
+    String? backgroundGradient,
+    String? backgroundImageId,
   }) = _PlankaProject;
   factory PlankaProject.fromJson(Map<String, dynamic> json) =>
       _$PlankaProjectFromJson(json);
+}
+
+@freezed
+abstract class PlankaBackgroundImage with _$PlankaBackgroundImage {
+  const factory PlankaBackgroundImage({
+    required String id,
+    String? url,
+    Map<String, dynamic>? thumbnailUrls,
+  }) = _PlankaBackgroundImage;
+  factory PlankaBackgroundImage.fromJson(Map<String, dynamic> json) =>
+      _$PlankaBackgroundImageFromJson(json);
 }
 
 @freezed

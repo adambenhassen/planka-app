@@ -14,6 +14,8 @@ class Included {
   late final List<PlankaProject> projects =
       _list('projects', PlankaProject.fromJson);
   late final List<PlankaBoard> boards = _list('boards', PlankaBoard.fromJson);
+  late final List<PlankaBackgroundImage> backgroundImages =
+      _list('backgroundImages', PlankaBackgroundImage.fromJson);
   late final List<PlankaList> lists = _list('lists', PlankaList.fromJson);
   late final List<PlankaCard> cards = _list('cards', PlankaCard.fromJson);
   late final List<PlankaLabel> labels = _list('labels', PlankaLabel.fromJson);

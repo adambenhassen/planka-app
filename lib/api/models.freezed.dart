@@ -298,7 +298,7 @@ as Map<String, dynamic>?,
 /// @nodoc
 mixin _$PlankaProject {
 
- String get id; String get name;
+ String get id; String get name; String? get backgroundType; String? get backgroundGradient; String? get backgroundImageId;
 /// Create a copy of PlankaProject
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -311,16 +311,16 @@ $PlankaProjectCopyWith<PlankaProject> get copyWith => _$PlankaProjectCopyWithImp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaProject&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaProject&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.backgroundType, backgroundType) || other.backgroundType == backgroundType)&&(identical(other.backgroundGradient, backgroundGradient) || other.backgroundGradient == backgroundGradient)&&(identical(other.backgroundImageId, backgroundImageId) || other.backgroundImageId == backgroundImageId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name);
+int get hashCode => Object.hash(runtimeType,id,name,backgroundType,backgroundGradient,backgroundImageId);
 
 @override
 String toString() {
-  return 'PlankaProject(id: $id, name: $name)';
+  return 'PlankaProject(id: $id, name: $name, backgroundType: $backgroundType, backgroundGradient: $backgroundGradient, backgroundImageId: $backgroundImageId)';
 }
 
 
@@ -331,7 +331,7 @@ abstract mixin class $PlankaProjectCopyWith<$Res>  {
   factory $PlankaProjectCopyWith(PlankaProject value, $Res Function(PlankaProject) _then) = _$PlankaProjectCopyWithImpl;
 @useResult
 $Res call({
- String id, String name
+ String id, String name, String? backgroundType, String? backgroundGradient, String? backgroundImageId
 });
 
 
@@ -348,11 +348,14 @@ class _$PlankaProjectCopyWithImpl<$Res>
 
 /// Create a copy of PlankaProject
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? backgroundType = freezed,Object? backgroundGradient = freezed,Object? backgroundImageId = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
-as String,
+as String,backgroundType: freezed == backgroundType ? _self.backgroundType : backgroundType // ignore: cast_nullable_to_non_nullable
+as String?,backgroundGradient: freezed == backgroundGradient ? _self.backgroundGradient : backgroundGradient // ignore: cast_nullable_to_non_nullable
+as String?,backgroundImageId: freezed == backgroundImageId ? _self.backgroundImageId : backgroundImageId // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
@@ -437,10 +440,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String? backgroundType,  String? backgroundGradient,  String? backgroundImageId)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlankaProject() when $default != null:
-return $default(_that.id,_that.name);case _:
+return $default(_that.id,_that.name,_that.backgroundType,_that.backgroundGradient,_that.backgroundImageId);case _:
   return orElse();
 
 }
@@ -458,10 +461,10 @@ return $default(_that.id,_that.name);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String? backgroundType,  String? backgroundGradient,  String? backgroundImageId)  $default,) {final _that = this;
 switch (_that) {
 case _PlankaProject():
-return $default(_that.id,_that.name);case _:
+return $default(_that.id,_that.name,_that.backgroundType,_that.backgroundGradient,_that.backgroundImageId);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -478,10 +481,10 @@ return $default(_that.id,_that.name);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String? backgroundType,  String? backgroundGradient,  String? backgroundImageId)?  $default,) {final _that = this;
 switch (_that) {
 case _PlankaProject() when $default != null:
-return $default(_that.id,_that.name);case _:
+return $default(_that.id,_that.name,_that.backgroundType,_that.backgroundGradient,_that.backgroundImageId);case _:
   return null;
 
 }
@@ -493,11 +496,14 @@ return $default(_that.id,_that.name);case _:
 @JsonSerializable()
 
 class _PlankaProject implements PlankaProject {
-  const _PlankaProject({required this.id, required this.name});
+  const _PlankaProject({required this.id, required this.name, this.backgroundType, this.backgroundGradient, this.backgroundImageId});
   factory _PlankaProject.fromJson(Map<String, dynamic> json) => _$PlankaProjectFromJson(json);
 
 @override final  String id;
 @override final  String name;
+@override final  String? backgroundType;
+@override final  String? backgroundGradient;
+@override final  String? backgroundImageId;
 
 /// Create a copy of PlankaProject
 /// with the given fields replaced by the non-null parameter values.
@@ -512,16 +518,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaProject&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaProject&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.backgroundType, backgroundType) || other.backgroundType == backgroundType)&&(identical(other.backgroundGradient, backgroundGradient) || other.backgroundGradient == backgroundGradient)&&(identical(other.backgroundImageId, backgroundImageId) || other.backgroundImageId == backgroundImageId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name);
+int get hashCode => Object.hash(runtimeType,id,name,backgroundType,backgroundGradient,backgroundImageId);
 
 @override
 String toString() {
-  return 'PlankaProject(id: $id, name: $name)';
+  return 'PlankaProject(id: $id, name: $name, backgroundType: $backgroundType, backgroundGradient: $backgroundGradient, backgroundImageId: $backgroundImageId)';
 }
 
 
@@ -532,7 +538,7 @@ abstract mixin class _$PlankaProjectCopyWith<$Res> implements $PlankaProjectCopy
   factory _$PlankaProjectCopyWith(_PlankaProject value, $Res Function(_PlankaProject) _then) = __$PlankaProjectCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name
+ String id, String name, String? backgroundType, String? backgroundGradient, String? backgroundImageId
 });
 
 
@@ -549,11 +555,291 @@ class __$PlankaProjectCopyWithImpl<$Res>
 
 /// Create a copy of PlankaProject
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? backgroundType = freezed,Object? backgroundGradient = freezed,Object? backgroundImageId = freezed,}) {
   return _then(_PlankaProject(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
-as String,
+as String,backgroundType: freezed == backgroundType ? _self.backgroundType : backgroundType // ignore: cast_nullable_to_non_nullable
+as String?,backgroundGradient: freezed == backgroundGradient ? _self.backgroundGradient : backgroundGradient // ignore: cast_nullable_to_non_nullable
+as String?,backgroundImageId: freezed == backgroundImageId ? _self.backgroundImageId : backgroundImageId // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
+mixin _$PlankaBackgroundImage {
+
+ String get id; String? get url; Map<String, dynamic>? get thumbnailUrls;
+/// Create a copy of PlankaBackgroundImage
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$PlankaBackgroundImageCopyWith<PlankaBackgroundImage> get copyWith => _$PlankaBackgroundImageCopyWithImpl<PlankaBackgroundImage>(this as PlankaBackgroundImage, _$identity);
+
+  /// Serializes this PlankaBackgroundImage to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaBackgroundImage&&(identical(other.id, id) || other.id == id)&&(identical(other.url, url) || other.url == url)&&const DeepCollectionEquality().equals(other.thumbnailUrls, thumbnailUrls));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,url,const DeepCollectionEquality().hash(thumbnailUrls));
+
+@override
+String toString() {
+  return 'PlankaBackgroundImage(id: $id, url: $url, thumbnailUrls: $thumbnailUrls)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $PlankaBackgroundImageCopyWith<$Res>  {
+  factory $PlankaBackgroundImageCopyWith(PlankaBackgroundImage value, $Res Function(PlankaBackgroundImage) _then) = _$PlankaBackgroundImageCopyWithImpl;
+@useResult
+$Res call({
+ String id, String? url, Map<String, dynamic>? thumbnailUrls
+});
+
+
+
+
+}
+/// @nodoc
+class _$PlankaBackgroundImageCopyWithImpl<$Res>
+    implements $PlankaBackgroundImageCopyWith<$Res> {
+  _$PlankaBackgroundImageCopyWithImpl(this._self, this._then);
+
+  final PlankaBackgroundImage _self;
+  final $Res Function(PlankaBackgroundImage) _then;
+
+/// Create a copy of PlankaBackgroundImage
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? url = freezed,Object? thumbnailUrls = freezed,}) {
+  return _then(_self.copyWith(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,url: freezed == url ? _self.url : url // ignore: cast_nullable_to_non_nullable
+as String?,thumbnailUrls: freezed == thumbnailUrls ? _self.thumbnailUrls : thumbnailUrls // ignore: cast_nullable_to_non_nullable
+as Map<String, dynamic>?,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [PlankaBackgroundImage].
+extension PlankaBackgroundImagePatterns on PlankaBackgroundImage {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _PlankaBackgroundImage value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _PlankaBackgroundImage() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _PlankaBackgroundImage value)  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaBackgroundImage():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _PlankaBackgroundImage value)?  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaBackgroundImage() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String? url,  Map<String, dynamic>? thumbnailUrls)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _PlankaBackgroundImage() when $default != null:
+return $default(_that.id,_that.url,_that.thumbnailUrls);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String? url,  Map<String, dynamic>? thumbnailUrls)  $default,) {final _that = this;
+switch (_that) {
+case _PlankaBackgroundImage():
+return $default(_that.id,_that.url,_that.thumbnailUrls);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String? url,  Map<String, dynamic>? thumbnailUrls)?  $default,) {final _that = this;
+switch (_that) {
+case _PlankaBackgroundImage() when $default != null:
+return $default(_that.id,_that.url,_that.thumbnailUrls);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _PlankaBackgroundImage implements PlankaBackgroundImage {
+  const _PlankaBackgroundImage({required this.id, this.url, final  Map<String, dynamic>? thumbnailUrls}): _thumbnailUrls = thumbnailUrls;
+  factory _PlankaBackgroundImage.fromJson(Map<String, dynamic> json) => _$PlankaBackgroundImageFromJson(json);
+
+@override final  String id;
+@override final  String? url;
+ final  Map<String, dynamic>? _thumbnailUrls;
+@override Map<String, dynamic>? get thumbnailUrls {
+  final value = _thumbnailUrls;
+  if (value == null) return null;
+  if (_thumbnailUrls is EqualUnmodifiableMapView) return _thumbnailUrls;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableMapView(value);
+}
+
+
+/// Create a copy of PlankaBackgroundImage
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$PlankaBackgroundImageCopyWith<_PlankaBackgroundImage> get copyWith => __$PlankaBackgroundImageCopyWithImpl<_PlankaBackgroundImage>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$PlankaBackgroundImageToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaBackgroundImage&&(identical(other.id, id) || other.id == id)&&(identical(other.url, url) || other.url == url)&&const DeepCollectionEquality().equals(other._thumbnailUrls, _thumbnailUrls));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,url,const DeepCollectionEquality().hash(_thumbnailUrls));
+
+@override
+String toString() {
+  return 'PlankaBackgroundImage(id: $id, url: $url, thumbnailUrls: $thumbnailUrls)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$PlankaBackgroundImageCopyWith<$Res> implements $PlankaBackgroundImageCopyWith<$Res> {
+  factory _$PlankaBackgroundImageCopyWith(_PlankaBackgroundImage value, $Res Function(_PlankaBackgroundImage) _then) = __$PlankaBackgroundImageCopyWithImpl;
+@override @useResult
+$Res call({
+ String id, String? url, Map<String, dynamic>? thumbnailUrls
+});
+
+
+
+
+}
+/// @nodoc
+class __$PlankaBackgroundImageCopyWithImpl<$Res>
+    implements _$PlankaBackgroundImageCopyWith<$Res> {
+  __$PlankaBackgroundImageCopyWithImpl(this._self, this._then);
+
+  final _PlankaBackgroundImage _self;
+  final $Res Function(_PlankaBackgroundImage) _then;
+
+/// Create a copy of PlankaBackgroundImage
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? url = freezed,Object? thumbnailUrls = freezed,}) {
+  return _then(_PlankaBackgroundImage(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,url: freezed == url ? _self.url : url // ignore: cast_nullable_to_non_nullable
+as String?,thumbnailUrls: freezed == thumbnailUrls ? _self._thumbnailUrls : thumbnailUrls // ignore: cast_nullable_to_non_nullable
+as Map<String, dynamic>?,
   ));
 }
 
