@@ -7,24 +7,109 @@ on:
 permissions:
   contents: write
 
+env:
+  FLUTTER_VERSION: 3.44.4
+
 jobs:
+  # Create the GitHub Release once; platform jobs upload their artifacts to it.
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" --generate-notes
+
+  # Debug-signed APK — fine for sideloading; swap in a real keystore
+  # (android/app/build.gradle.kts) before any store distribution.
   android:
+    needs: create-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2.23.0
         with:
-          flutter-version: 3.44.4
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
       - run: flutter pub get
-      # Release build is debug-signed (see android/app/build.gradle.kts) — fine
-      # for sideloading; swap in a real keystore before any store distribution.
       - run: flutter build apk --release
-      - name: Publish APK to GitHub Release
+      - name: Upload APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            build/app/outputs/flutter-apk/app-release.apk \
-            --title "$GITHUB_REF_NAME" --generate-notes
+          mv build/app/outputs/flutter-apk/app-release.apk planka-android.apk
+          gh release upload "$GITHUB_REF_NAME" planka-android.apk --clobber
+
+  # Universal (arm64 + x86_64) macOS app. Unsigned — Gatekeeper will warn;
+  # right-click > Open, or remove the quarantine attribute to run.
+  macos:
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter config --enable-macos-desktop
+      - run: flutter pub get
+      - run: flutter build macos --release
+      - name: Package and upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APP=$(ls -d build/macos/Build/Products/Release/*.app | head -1)
+          ditto -c -k --keepParent "$APP" planka-macos-universal.zip
+          gh release upload "$GITHUB_REF_NAME" planka-macos-universal.zip --clobber
+
+  # Unsigned .ipa (no code signing). Install via a sideload tool
+  # (AltStore / Sideloadly) that re-signs on device.
+  ios:
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+      - name: Package and upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -qr planka-ios-unsigned.ipa Payload
+          gh release upload "$GITHUB_REF_NAME" planka-ios-unsigned.ipa --clobber
+
+  # The repo has no windows/ platform, so scaffold it in CI before building.
+  windows:
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter config --enable-windows-desktop
+      - run: flutter create --platforms=windows .
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - name: Package and upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath planka-windows-x64.zip
+          gh release upload "$GITHUB_REF_NAME" planka-windows-x64.zip --clobber
