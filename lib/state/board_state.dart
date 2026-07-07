@@ -627,6 +627,17 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
+  Future<void> editComment(String commentId, String text) async {
+    final s = state.value;
+    final comment = s?.comments.where((c) => c.id == commentId).firstOrNull;
+    if (s == null || comment == null) return;
+    final updated = PlankaComment.fromJson({...comment.toJson(), 'text': text});
+    await _optimistic(
+      s.copyWith(comments: _upsert(s.comments, updated, (c) => c.id)),
+      () => _repo.updateComment(commentId, text: text),
+    );
+  }
+
   Future<void> uploadAttachment(String cardId,
       {required String filePath, required String name}) async {
     if (state.value == null) return;

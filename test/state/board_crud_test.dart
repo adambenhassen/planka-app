@@ -199,4 +199,28 @@ void main() {
             .any((t) => t.id == id),
         isFalse);
   });
+
+  test('editComment patches the comment text', () async {
+    final (container, notifier, boardId) = await boot(
+      seed: (s) {
+        final card = s.cards.values.first;
+        return s.copyWith(comments: [
+          PlankaComment.fromJson({
+            'id': 'c-seed',
+            'cardId': card.id,
+            'userId': 'u1',
+            'text': 'original',
+          }),
+        ]);
+      },
+    );
+    addTearDown(container.dispose);
+
+    await notifier.editComment('c-seed', 'edited');
+
+    expect(
+        container.read(boardProvider(boardId)).value!.comments
+            .firstWhere((c) => c.id == 'c-seed').text,
+        'edited');
+  });
 }

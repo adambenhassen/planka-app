@@ -211,6 +211,8 @@ class CardSheet extends ConsumerWidget {
             users: state.users,
             currentUserId: account?.userId ?? '',
             onSend: (text) => guardMutation(context, notifier.createComment(cardId, text)),
+            onEdit: (id, text) =>
+                guardMutation(context, notifier.editComment(id, text)),
             onDelete: (id) => guardMutation(context, notifier.deleteComment(id)),
           ),
         ),
