@@ -114,6 +114,8 @@ flutter_launcher_icons:
   remove_alpha_ios: true
   adaptive_icon_background: "assets/icon/background.png"
   adaptive_icon_foreground: "assets/icon/foreground.png"
+  # macOS icons aren't system-masked, so use a pre-rounded (Big Sur squircle)
+  # source instead of the full-bleed square used for iOS/Android.
   macos:
     generate: true
-    image_path: "assets/icon/icon.png"
+    image_path: "assets/icon/icon_macos.png"

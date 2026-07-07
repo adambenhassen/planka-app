@@ -49,7 +49,9 @@ class CardTile extends ConsumerWidget {
 
     return Card(
       color: context.tokens.cardSurface,
-      margin: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+      // Horizontal inset only; the 8px inter-card gap comes from the drop
+      // target between cards, matching Planka's 8px card margin-bottom.
+      margin: const EdgeInsets.symmetric(horizontal: 8),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
