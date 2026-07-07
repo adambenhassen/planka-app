@@ -135,6 +135,9 @@ class _TaskList extends StatelessWidget {
                   if (!context.mounted || name == null) return;
                   onRenameTask(t.id, name);
                 } else if (action == 'delete') {
+                  final ok = await confirmDialog(context,
+                      title: 'Delete task?', confirmLabel: 'Delete');
+                  if (!context.mounted || !ok) return;
                   onDeleteTask(t.id);
                 }
               },

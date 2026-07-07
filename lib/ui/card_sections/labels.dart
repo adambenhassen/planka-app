@@ -20,7 +20,7 @@ class CardLabelsSection extends StatelessWidget {
   final Set<String> activeLabelIds;
   final ValueChanged<String> onToggle;
   final void Function(String name, String color) onCreate;
-  final void Function(String labelId, String name, String color) onEditLabel;
+  final void Function(String labelId, String name) onEditLabel;
   final ValueChanged<String> onDeleteLabel;
 
   Widget _swatch(String color) => Container(
@@ -63,7 +63,7 @@ class CardLabelsSection extends StatelessWidget {
                           final name = await promptText(context,
                               title: 'Rename label', initialValue: l.name ?? '');
                           if (name == null) return;
-                          onEditLabel(l.id, name, l.color);
+                          onEditLabel(l.id, name);
                           setState(() {
                             final i = labels.indexWhere((x) => x.id == l.id);
                             if (i >= 0) {

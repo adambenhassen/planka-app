@@ -136,10 +136,16 @@ class BoardState {
 PlankaCard _mergeCard(PlankaCard existing, Map<String, dynamic> patch) =>
     PlankaCard.fromJson({...existing.toJson(), ...patch});
 
-List<T> _upsert<T>(List<T> list, T item, String Function(T) idOf) => [
-      ...list.where((e) => idOf(e) != idOf(item)),
-      item,
-    ];
+/// Replaces the item with a matching id in place (preserving list order), or
+/// appends it when absent. In-place replacement matters for collections that
+/// aren't re-sorted on render (labels, tasks) — an update must not reorder them.
+List<T> _upsert<T>(List<T> list, T item, String Function(T) idOf) {
+  final i = list.indexWhere((e) => idOf(e) == idOf(item));
+  if (i < 0) return [...list, item];
+  final next = [...list];
+  next[i] = item;
+  return next;
+}
 
 /// Fold one socket event into board state. Pure; exported for tests.
 BoardState applyEvent(BoardState s, SocketEvent event) {

@@ -111,6 +111,28 @@ void main() {
         reason: 'cascade drops the deleted list\'s cards');
   });
 
+  test('deleteList heals list AND cards back on failure, then rethrows',
+      () async {
+    final (container, notifier, boardId) = await boot(fail: true);
+    addTearDown(container.dispose);
+    final s0 = container.read(boardProvider(boardId)).value!;
+    final listId = s0.cards.values.first.listId;
+    final cardCount = s0.cardsOf(listId).length;
+    final api = container.read(apiProvider) as _FakeApi;
+    final getsBefore = api.getCalls;
+
+    await expectLater(
+        notifier.deleteList(listId), throwsA(isA<ApiException>()));
+
+    final s1 = container.read(boardProvider(boardId)).value!;
+    expect(s1.lists.any((l) => l.id == listId), isTrue,
+        reason: 'failed delete heals the list back from server truth');
+    expect(s1.cardsOf(listId).length, cardCount,
+        reason: 'cascade-removed cards are restored by the refetch too');
+    expect(api.getCalls, greaterThan(getsBefore),
+        reason: 'failure triggers a refetch');
+  });
+
   test('editLabel patches name and color optimistically', () async {
     final (container, notifier, boardId) = await boot();
     addTearDown(container.dispose);

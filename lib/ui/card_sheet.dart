@@ -157,8 +157,8 @@ class CardSheet extends ConsumerWidget {
             onCreate: (name, color) => guardMutation(
                 context,
                 notifier.createLabel(color, name: name.isEmpty ? null : name)),
-            onEditLabel: (id, name, color) => guardMutation(
-                context, notifier.editLabel(id, name: name, color: color)),
+            onEditLabel: (id, name) =>
+                guardMutation(context, notifier.editLabel(id, name: name)),
             onDeleteLabel: (id) =>
                 guardMutation(context, notifier.deleteLabel(id)),
           ),
