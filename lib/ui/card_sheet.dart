@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
 import 'error_handling.dart';
 import '../state/board_state.dart';
@@ -44,6 +45,42 @@ class CardSheet extends ConsumerWidget {
   final String cardId;
   final ScrollController? scrollController;
 
+  /// Confirms, then optimistically deletes the card and closes the sheet.
+  /// The messenger is captured before popping so a failed delete still surfaces
+  /// after this sheet's context is gone.
+  Future<void> _confirmDelete(
+      BuildContext context, BoardNotifier notifier) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete card?'),
+        content: const Text('This card will be permanently deleted.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+                foregroundColor: Theme.of(ctx).colorScheme.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    Navigator.pop(context);
+    notifier.deleteCard(cardId).catchError((Object e) {
+      final message = e is ApiException ? e.message : '$e';
+      messenger.showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: errorColor),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(boardProvider(boardId)).value;
@@ -73,16 +110,27 @@ class CardSheet extends ConsumerWidget {
       controller: scrollController,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
-        Center(
-          child: Container(
-            width: 32,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.outlineVariant,
-              borderRadius: BorderRadius.circular(2),
+        Row(
+          children: [
+            const SizedBox(width: 48),
+            Expanded(
+              child: Center(
+                child: Container(
+                  width: 32,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
             ),
-          ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Delete card',
+              onPressed: () => _confirmDelete(context, notifier),
+            ),
+          ],
         ),
         CardHeaderSection(
           card: card,

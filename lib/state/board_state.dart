@@ -355,6 +355,15 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   Future<void> renameCard(String cardId, String name) =>
       _patchCard(cardId, {'name': name});
 
+  Future<void> deleteCard(String cardId) async {
+    final s = state.value;
+    if (s == null) return;
+    await _optimistic(
+      s.copyWith(cards: {...s.cards}..remove(cardId)),
+      () => _repo.deleteCard(cardId),
+    );
+  }
+
   Future<void> createList(String name) async {
     final s = state.value;
     if (s == null) return;
