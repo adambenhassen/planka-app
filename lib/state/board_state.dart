@@ -502,6 +502,34 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
+  Future<void> editLabel(String labelId, {String? name, String? color}) async {
+    final s = state.value;
+    final label = s?.labels.where((l) => l.id == labelId).firstOrNull;
+    if (s == null || label == null) return;
+    final patch = <String, dynamic>{
+      'name': ?name,
+      'color': ?color,
+    };
+    if (patch.isEmpty) return;
+    final updated = PlankaLabel.fromJson({...label.toJson(), ...patch});
+    await _optimistic(
+      s.copyWith(labels: _upsert(s.labels, updated, (l) => l.id)),
+      () => _repo.updateLabel(labelId, patch),
+    );
+  }
+
+  Future<void> deleteLabel(String labelId) async {
+    final s = state.value;
+    if (s == null) return;
+    await _optimistic(
+      s.copyWith(
+        labels: s.labels.where((l) => l.id != labelId).toList(),
+        cardLabels: s.cardLabels.where((cl) => cl.labelId != labelId).toList(),
+      ),
+      () => _repo.deleteLabel(labelId),
+    );
+  }
+
   Future<void> createTaskList(String cardId, String name) async {
     final s = state.value;
     if (s == null) return;

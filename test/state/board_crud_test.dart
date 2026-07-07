@@ -110,4 +110,34 @@ void main() {
     expect(s1.cards.values.any((c) => c.listId == listId), isFalse,
         reason: 'cascade drops the deleted list\'s cards');
   });
+
+  test('editLabel patches name and color optimistically', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final labelId =
+        container.read(boardProvider(boardId)).value!.labels.first.id;
+
+    await notifier.editLabel(labelId, name: 'Urgent', color: 'berry-red');
+
+    final label = container
+        .read(boardProvider(boardId))
+        .value!
+        .labels
+        .firstWhere((l) => l.id == labelId);
+    expect(label.name, 'Urgent');
+    expect(label.color, 'berry-red');
+  });
+
+  test('deleteLabel removes the label and its card-label links', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final labelId =
+        container.read(boardProvider(boardId)).value!.labels.first.id;
+
+    await notifier.deleteLabel(labelId);
+
+    final s = container.read(boardProvider(boardId)).value!;
+    expect(s.labels.any((l) => l.id == labelId), isFalse);
+    expect(s.cardLabels.any((cl) => cl.labelId == labelId), isFalse);
+  });
 }
