@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/models.dart';
 import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
 import 'dialogs.dart';
@@ -110,6 +111,21 @@ class CardSheet extends ConsumerWidget {
                 ),
               ),
             ),
+            if (state.lists.any((l) => l.type == PlankaListType.archive))
+              IconButton(
+                icon: const Icon(Icons.archive_outlined),
+                tooltip: 'Archive card',
+                onPressed: () {
+                  final messenger = ScaffoldMessenger.of(context);
+                  final errorColor = Theme.of(context).colorScheme.error;
+                  Navigator.pop(context);
+                  notifier.archiveCard(cardId).catchError((Object e) {
+                    final message = e is ApiException ? e.message : '$e';
+                    messenger.showSnackBar(SnackBar(
+                        content: Text(message), backgroundColor: errorColor));
+                  });
+                },
+              ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
               tooltip: 'Delete card',

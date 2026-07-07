@@ -1,0 +1,85 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:planka_app/api/envelope.dart';
+import 'package:planka_app/api/models.dart';
+import 'package:planka_app/api/planka_api.dart';
+import 'package:planka_app/auth/auth_providers.dart';
+import 'package:planka_app/state/board_state.dart';
+
+Map<String, dynamic> _fixture() =>
+    jsonDecode(File('test/fixtures/board_show.json').readAsStringSync())
+        as Map<String, dynamic>;
+
+/// Serves the untouched board on GET; echoes PATCH/POST bodies; returns an
+/// empty item on DELETE. Set [fail] to drive the heal-on-failure path.
+class _FakeApi extends PlankaApi {
+  _FakeApi({this.fail = false}) : super('http://x', 'tok');
+  final bool fail;
+  int getCalls = 0;
+
+  @override
+  Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
+    getCalls++;
+    return Envelope.parse(_fixture());
+  }
+
+  @override
+  Future<Envelope> patch(String path, Object? body) async {
+    if (fail) throw ApiException(500, 'rejected');
+    return Envelope.parse({'item': (body as Map).cast<String, dynamic>()});
+  }
+
+  @override
+  Future<Envelope> delete(String path) async {
+    if (fail) throw ApiException(500, 'rejected');
+    return Envelope.parse({'item': <String, dynamic>{}});
+  }
+
+  @override
+  Future<Envelope> post(String path, Object? body) async =>
+      Envelope.parse({'item': <String, dynamic>{}});
+}
+
+/// Real BoardNotifier logic seeded from the fixture, no live socket. [seed]
+/// lets a test inject extra rows (e.g. a comment the fixture lacks).
+class _SocketlessNotifier extends BoardNotifier {
+  _SocketlessNotifier(super.boardId, {this.seed});
+  final BoardState Function(BoardState)? seed;
+  @override
+  Future<BoardState> build() async {
+    final base = BoardState.fromEnvelope(Envelope.parse(_fixture()));
+    return seed?.call(base) ?? base;
+  }
+}
+
+Future<(ProviderContainer, BoardNotifier, String)> boot({
+  bool fail = false,
+  BoardState Function(BoardState)? seed,
+}) async {
+  final container = ProviderContainer(overrides: [
+    apiProvider.overrideWithValue(_FakeApi(fail: fail)),
+    boardProvider.overrideWith2((arg) => _SocketlessNotifier(arg, seed: seed)),
+  ]);
+  final boardId = _fixture()['item']['id'] as String;
+  await container.read(boardProvider(boardId).future);
+  return (container, container.read(boardProvider(boardId).notifier), boardId);
+}
+
+void main() {
+  test('archiveCard moves the card into the archive-type list', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final s0 = container.read(boardProvider(boardId)).value!;
+    final cardId = s0.cards.values.first.id;
+    final archiveId =
+        s0.lists.firstWhere((l) => l.type == PlankaListType.archive).id;
+
+    await notifier.archiveCard(cardId);
+
+    final s1 = container.read(boardProvider(boardId)).value!;
+    expect(s1.cards[cardId]!.listId, archiveId);
+  });
+}

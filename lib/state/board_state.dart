@@ -364,6 +364,20 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
+  Future<void> archiveCard(String cardId) async {
+    final s = state.value;
+    final card = s?.cards[cardId];
+    if (s == null || card == null) return;
+    final archive =
+        s.lists.where((l) => l.type == PlankaListType.archive).firstOrNull;
+    if (archive == null) return;
+    await _optimistic(
+      s.copyWith(
+          cards: {...s.cards, cardId: _mergeCard(card, {'listId': archive.id})}),
+      () => _repo.updateCard(cardId, {'listId': archive.id}),
+    );
+  }
+
   Future<void> createList(String name) async {
     final s = state.value;
     if (s == null) return;
