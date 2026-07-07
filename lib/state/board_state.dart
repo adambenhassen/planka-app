@@ -303,9 +303,12 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     state = AsyncData(next);
     try {
       await call();
-    } on ApiException {
-      // Don't restore a snapshot — concurrent socket events/actions may have
-      // landed since. The server is the source of truth: refetch.
+    } catch (_) {
+      // Any failure — a rejected request (ApiException) or a parse/decode error
+      // on an unexpected response — leaves the optimistic state unconfirmed.
+      // Don't restore a snapshot (concurrent socket events/actions may have
+      // landed since); the server is the source of truth, so refetch. Rethrow
+      // so the caller's guardMutation still surfaces the error.
       await _refetch();
       rethrow;
     }
