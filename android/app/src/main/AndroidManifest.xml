@@ -3,7 +3,7 @@
          this to the debug/profile manifests automatically. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="planka_app"
+        android:label="Planka"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
