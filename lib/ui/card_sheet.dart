@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
+import 'dialogs.dart';
 import 'error_handling.dart';
 import '../state/board_state.dart';
 import 'card_sections/attachments.dart';
@@ -50,26 +51,10 @@ class CardSheet extends ConsumerWidget {
   /// after this sheet's context is gone.
   Future<void> _confirmDelete(
       BuildContext context, BoardNotifier notifier) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete card?'),
-        content: const Text('This card will be permanently deleted.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(
-                foregroundColor: Theme.of(ctx).colorScheme.error),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
+    final confirmed = await confirmDestructive(context,
+        title: 'Delete card?',
+        message: 'This card will be permanently deleted.');
+    if (!confirmed || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
     Navigator.pop(context);
