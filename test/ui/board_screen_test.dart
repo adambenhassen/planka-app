@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/ui/board_screen.dart';
+import 'package:planka_app/ui/theme/app_theme.dart';
 
 class FakeBoardNotifier extends BoardNotifier {
   FakeBoardNotifier(super.boardId);
@@ -44,7 +45,7 @@ void main() {
           return notifier;
         }),
       ],
-      child: MaterialApp(home: BoardScreen(boardId: boardId)),
+      child: MaterialApp(theme: AppTheme.light, home: BoardScreen(boardId: boardId)),
     ));
     await tester.pumpAndSettle();
 

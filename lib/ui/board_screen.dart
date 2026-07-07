@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../state/board_state.dart';
 import 'error_handling.dart';
+import 'theme/app_theme.dart';
 import 'card_sheet.dart';
 import 'widgets/async_retry.dart';
 import 'widgets/card_tile.dart';
@@ -18,8 +19,13 @@ class BoardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final board = ref.watch(boardProvider(boardId));
+    final name = board.value?.board.name;
     return Scaffold(
-      appBar: AppBar(title: Text(board.value?.board.name ?? 'Board')),
+      appBar: AppBar(
+        title: Text(name ?? 'Board'),
+        backgroundColor: name != null ? boardColor(name) : null,
+        foregroundColor: name != null ? Colors.white : null,
+      ),
       body: asyncRetry(
         board,
         () => ref.invalidate(boardProvider(boardId)),
@@ -43,28 +49,39 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
   Widget build(BuildContext context) {
     final notifier = ref.read(boardProvider(widget.boardId).notifier);
     final columns = widget.state.columns;
-    return Column(
+    return Stack(
       children: [
-        _ConnectionBanner(boardId: widget.boardId),
-        Expanded(
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.all(8),
-            itemCount: columns.length + 1,
-            itemBuilder: (context, i) => i == columns.length
-                ? InlineAddField(
-                    label: 'Add list',
-                    hintText: 'List name',
-                    columnWidth: _columnWidth,
-                    onSubmit: (name) =>
-                        guardMutation(context, notifier.createList(name)),
-                  )
-                : _ListColumn(
-                    list: columns[i],
-                    state: widget.state,
-                    notifier: notifier,
-                  ),
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration:
+                BoxDecoration(gradient: boardGradient(widget.state.board.name)),
           ),
+        ),
+        Positioned.fill(child: ColoredBox(color: context.tokens.boardScrim)),
+        Column(
+          children: [
+            _ConnectionBanner(boardId: widget.boardId),
+            Expanded(
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.all(8),
+                itemCount: columns.length + 1,
+                itemBuilder: (context, i) => i == columns.length
+                    ? InlineAddField(
+                        label: 'Add list',
+                        hintText: 'List name',
+                        columnWidth: _columnWidth,
+                        onSubmit: (name) =>
+                            guardMutation(context, notifier.createList(name)),
+                      )
+                    : _ListColumn(
+                        list: columns[i],
+                        state: widget.state,
+                        notifier: notifier,
+                      ),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -106,13 +123,17 @@ class _ListColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = context.tokens;
     final cards = state.cardsOf(list.id);
     return Container(
       width: _columnWidth,
       margin: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
+        color: tokens.listSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,7 +145,8 @@ class _ListColumn extends StatelessWidget {
                 Expanded(
                   child: Text(
                     list.name ?? '',
-                    style: theme.textTheme.titleSmall,
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -188,7 +210,14 @@ class _DraggableCard extends StatelessWidget {
       data: card,
       feedback: Material(
         color: Colors.transparent,
-        child: SizedBox(width: _columnWidth - 16, child: tile),
+        child: Container(
+          width: _columnWidth - 16,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: context.tokens.dragShadow,
+          ),
+          child: tile,
+        ),
       ),
       childWhenDragging: Opacity(opacity: 0.4, child: tile),
       child: tile,

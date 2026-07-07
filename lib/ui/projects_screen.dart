@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../api/models.dart';
 import '../auth/auth_providers.dart';
 import '../state/notifications_state.dart';
 import '../state/projects_state.dart';
 import '../update/update_service.dart';
+import 'theme/app_theme.dart';
 import 'widgets/async_retry.dart';
 
 class ProjectsScreen extends ConsumerWidget {
@@ -71,21 +73,80 @@ class _ProjectList extends StatelessWidget {
       ]);
     }
     return ListView(
+      padding: const EdgeInsets.all(12),
       children: [
         for (final p in projects) ...[
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
             child: Text(p.name,
-                style: Theme.of(context).textTheme.titleMedium),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700)),
           ),
-          for (final b in boards.where((b) => b.projectId == p.id))
-            ListTile(
-              leading: const Icon(Icons.view_kanban_outlined),
-              title: Text(b.name),
-              onTap: () => context.push('/boards/${b.id}'),
-            ),
+          GridView.extent(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            // Max tile width drives responsive columns: ~2 on a phone, more on
+            // a wide desktop window.
+            maxCrossAxisExtent: 260,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 16 / 9,
+            children: [
+              for (final b in boards.where((b) => b.projectId == p.id))
+                _BoardTile(board: b),
+            ],
+          ),
         ],
       ],
+    );
+  }
+}
+
+class _BoardTile extends StatelessWidget {
+  const _BoardTile({required this.board});
+  final PlankaBoard board;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => context.push('/boards/${board.id}'),
+      child: Ink(
+        decoration: BoxDecoration(
+          gradient: boardGradient(board.name),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Scrim keeps the white title legible over any tile color.
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.22),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: Text(
+                  board.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

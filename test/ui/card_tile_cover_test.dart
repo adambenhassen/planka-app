@@ -7,6 +7,7 @@ import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/ui/widgets/card_tile.dart';
+import 'package:planka_app/ui/theme/app_theme.dart';
 
 class _AccNotifier extends CurrentAccountNotifier {
   _AccNotifier(this.account);
@@ -37,7 +38,9 @@ void main() {
               userId: 'u1',
               displayName: 'U'))),
         ],
-        child: MaterialApp(home: Scaffold(body: CardTile(card: c, state: s))),
+        child: MaterialApp(
+            theme: AppTheme.light,
+            home: Scaffold(body: CardTile(card: c, state: s))),
       );
 
   testWidgets('renders cover thumbnail with cookie auth', (tester) async {

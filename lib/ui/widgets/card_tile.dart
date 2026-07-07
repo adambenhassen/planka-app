@@ -7,6 +7,7 @@ import '../../api/models.dart';
 import '../../api/planka_api.dart';
 import '../../auth/auth_providers.dart';
 import '../../state/board_state.dart';
+import '../theme/app_theme.dart';
 import 'label_colors.dart';
 
 /// Cover thumbnail URL for a card, or null when it has no image cover.
@@ -47,10 +48,11 @@ class CardTile extends ConsumerWidget {
     final token = ref.watch(currentAccountProvider)?.token;
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      color: context.tokens.cardSurface,
+      margin: const EdgeInsets.fromLTRB(8, 0, 8, 6),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -95,7 +97,9 @@ class CardTile extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                   ],
-                  Text(card.name, style: theme.textTheme.bodyLarge),
+                  Text(card.name,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w500)),
                   if (due != null ||
                       tasks.isNotEmpty ||
                       attachmentCount > 0 ||
