@@ -99,7 +99,7 @@ void main() {
     final (container, notifier, boardId) = await boot();
     addTearDown(container.dispose);
     final s0 = container.read(boardProvider(boardId)).value!;
-    final listId = s0.cards.values.first.listId!;
+    final listId = s0.cards.values.first.listId;
     expect(s0.cardsOf(listId), isNotEmpty,
         reason: 'precondition: list has cards');
 
