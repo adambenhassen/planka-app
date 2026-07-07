@@ -8,6 +8,7 @@ import '../state/projects_state.dart';
 import 'error_handling.dart';
 import 'theme/app_theme.dart';
 import 'card_sheet.dart';
+import 'dialogs.dart';
 import 'widgets/async_retry.dart';
 import 'widgets/board_background.dart';
 import 'card_tile.dart';
@@ -194,6 +195,33 @@ class _ListColumn extends StatelessWidget {
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
+                    ),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, size: 18),
+                      onSelected: (action) async {
+                        if (action == 'rename') {
+                          final name = await promptText(context,
+                              title: 'Rename list', initialValue: list.name);
+                          if (!context.mounted) return;
+                          if (name != null && name != list.name) {
+                            guardMutation(
+                                context, notifier.renameList(list.id, name));
+                          }
+                        } else if (action == 'delete') {
+                          final ok = await confirmDestructive(context,
+                              title: 'Delete list?',
+                              message:
+                                  'The list and all its cards will be deleted.');
+                          if (!context.mounted) return;
+                          if (ok) {
+                            guardMutation(context, notifier.deleteList(list.id));
+                          }
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'rename', child: Text('Rename')),
+                        PopupMenuItem(value: 'delete', child: Text('Delete')),
+                      ],
                     ),
                   ],
                 ),

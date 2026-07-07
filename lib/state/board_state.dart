@@ -577,6 +577,32 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
+  Future<void> renameList(String listId, String name) async {
+    final s = state.value;
+    final list = s?.lists.where((l) => l.id == listId).firstOrNull;
+    if (s == null || list == null) return;
+    final renamed = PlankaList.fromJson({...list.toJson(), 'name': name});
+    await _optimistic(
+      s.copyWith(lists: _upsert(s.lists, renamed, (l) => l.id)),
+      () => _repo.updateList(listId, {'name': name}),
+    );
+  }
+
+  Future<void> deleteList(String listId) async {
+    final s = state.value;
+    if (s == null) return;
+    await _optimistic(
+      s.copyWith(
+        lists: s.lists.where((l) => l.id != listId).toList(),
+        cards: {
+          for (final c in s.cards.values)
+            if (c.listId != listId) c.id: c
+        },
+      ),
+      () => _repo.deleteList(listId),
+    );
+  }
+
   Future<void> moveList(String listId,
       {String? beforeListId, String? afterListId}) async {
     final s = state.value;

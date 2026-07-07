@@ -82,4 +82,32 @@ void main() {
     final s1 = container.read(boardProvider(boardId)).value!;
     expect(s1.cards[cardId]!.listId, archiveId);
   });
+
+  test('renameList patches the list name optimistically', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final listId =
+        container.read(boardProvider(boardId)).value!.columns.first.id;
+
+    await notifier.renameList(listId, 'Renamed');
+
+    final s = container.read(boardProvider(boardId)).value!;
+    expect(s.lists.firstWhere((l) => l.id == listId).name, 'Renamed');
+  });
+
+  test('deleteList removes the list and its cards', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final s0 = container.read(boardProvider(boardId)).value!;
+    final listId = s0.cards.values.first.listId!;
+    expect(s0.cardsOf(listId), isNotEmpty,
+        reason: 'precondition: list has cards');
+
+    await notifier.deleteList(listId);
+
+    final s1 = container.read(boardProvider(boardId)).value!;
+    expect(s1.lists.any((l) => l.id == listId), isFalse);
+    expect(s1.cards.values.any((c) => c.listId == listId), isFalse,
+        reason: 'cascade drops the deleted list\'s cards');
+  });
 }
