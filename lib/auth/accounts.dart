@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Minimal secure-storage surface so tests can inject an in-memory fake.
@@ -20,6 +22,49 @@ class FlutterSecureKeyValueStore implements SecureKeyValueStore {
       _storage.write(key: key, value: value);
   @override
   Future<void> delete(String key) => _storage.delete(key: key);
+}
+
+/// Desktop store that keeps each value in an owner-only file under [_dir],
+/// avoiding the OS keychain — which on a local desktop build needs code-signing
+/// entitlements the build doesn't have. Filesystem permissions are the
+/// protection (real at-rest encryption would need a key with nowhere safe to
+/// live without a keychain).
+class FileKeyValueStore implements SecureKeyValueStore {
+  final Directory _dir;
+  FileKeyValueStore(this._dir);
+
+  File _fileFor(String key) => File('${_dir.path}/$key');
+
+  @override
+  Future<String?> read(String key) async {
+    final f = _fileFor(key);
+    return f.existsSync() ? f.readAsString() : null;
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    await _dir.create(recursive: true);
+    _restrict(_dir.path, '700');
+    final f = _fileFor(key);
+    await f.writeAsString(value);
+    _restrict(f.path, '600');
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    final f = _fileFor(key);
+    if (f.existsSync()) await f.delete();
+  }
+
+  // ponytail: Dart's stdlib has no chmod, so shell out. Best-effort — a failure
+  // just leaves default perms, it must not crash session restore. No-op on
+  // Windows (different permission model).
+  void _restrict(String path, String mode) {
+    if (Platform.isWindows) return;
+    try {
+      Process.runSync('chmod', [mode, path]);
+    } catch (_) {}
+  }
 }
 
 class Account {
@@ -71,10 +116,13 @@ class AccountStore {
       return (jsonDecode(raw) as List)
           .map((e) => Account.fromJson((e as Map).cast<String, dynamic>()))
           .toList();
-    } catch (_) {
+    } catch (e) {
       // Corrupt or schema-evolved storage must not crash app start (this runs
       // during boot via session restore): treat it as no saved accounts and
-      // let the user re-authenticate.
+      // let the user re-authenticate. Log it — a decrypt failure here is a
+      // silent forced-relogin, indistinguishable from "no saved accounts"
+      // without this line.
+      debugPrint('AccountStore.load failed, treating as no accounts: $e');
       return [];
     }
   }

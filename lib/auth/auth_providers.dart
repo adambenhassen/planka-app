@@ -1,10 +1,24 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/planka_api.dart';
 import 'accounts.dart';
 
-final accountStoreProvider = Provider<AccountStore>(
-    (ref) => AccountStore(const FlutterSecureKeyValueStore()));
+final accountStoreProvider = Provider<AccountStore>((ref) {
+  // Mobile has a hardware-backed keystore/keychain — use it. Desktop builds are
+  // unsigned locally, so the keychain is unavailable there (errSecMissingEntitlement);
+  // fall back to an owner-only file under the app's home dir instead.
+  final SecureKeyValueStore store = (Platform.isAndroid || Platform.isIOS)
+      ? const FlutterSecureKeyValueStore()
+      : FileKeyValueStore(Directory('${_desktopHome()}/.planka_app'));
+  return AccountStore(store);
+});
+
+String _desktopHome() =>
+    Platform.environment['HOME'] ??
+    Platform.environment['USERPROFILE'] ??
+    Directory.systemTemp.path;
 
 final accountsProvider =
     AsyncNotifierProvider<AccountsNotifier, List<Account>>(

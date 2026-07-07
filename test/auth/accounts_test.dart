@@ -44,6 +44,17 @@ void main() {
     expect(await AccountStore(FakeStorage()).load(), isEmpty);
   });
 
+  test('FileKeyValueStore read/write/delete round-trip', () async {
+    final dir = await Directory.systemTemp.createTemp('planka_fkv');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final store = FileKeyValueStore(Directory('${dir.path}/store'));
+    expect(await store.read('accounts'), isNull);
+    await store.write('accounts', '[{"x":1}]');
+    expect(await store.read('accounts'), '[{"x":1}]');
+    await store.delete('accounts');
+    expect(await store.read('accounts'), isNull);
+  });
+
   test('login returns jwt and sets header', () async {
     final server = await HttpServer.bind('127.0.0.1', 0);
     server.listen((req) {

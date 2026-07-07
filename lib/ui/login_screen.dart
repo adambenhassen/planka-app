@@ -87,7 +87,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await ref.read(accountsProvider.notifier).upsert(account);
       await ref.read(currentAccountProvider.notifier).select(account);
       if (mounted) context.go('/projects');
-    } on ApiException catch (e) {
+    } catch (e) {
+      // Surface any login failure — not just ApiException. A token-save failure
+      // (macOS keychain entitlement, Android keystore) throws PlatformException
+      // here; without this the login button would silently no-op.
       if (mounted) showApiError(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
