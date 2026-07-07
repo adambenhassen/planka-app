@@ -8,11 +8,12 @@ import '../state/projects_state.dart';
 import 'error_handling.dart';
 import 'theme/app_theme.dart';
 import 'card_sheet.dart';
-import 'dialogs.dart';
 import 'widgets/async_retry.dart';
 import 'widgets/board_background.dart';
 import 'card_tile.dart';
+import 'widgets/confirm_dialog.dart';
 import 'widgets/inline_add_field.dart';
+import 'widgets/prompt_dialog.dart';
 
 const _columnWidth = 300.0;
 
@@ -208,10 +209,11 @@ class _ListColumn extends StatelessWidget {
                                 context, notifier.renameList(list.id, name));
                           }
                         } else if (action == 'delete') {
-                          final ok = await confirmDestructive(context,
+                          final ok = await confirmDialog(context,
                               title: 'Delete list?',
                               message:
-                                  'The list and all its cards will be deleted.');
+                                  'The list and all its cards will be deleted.',
+                              confirmLabel: 'Delete');
                           if (!context.mounted) return;
                           if (ok) {
                             guardMutation(context, notifier.deleteList(list.id));

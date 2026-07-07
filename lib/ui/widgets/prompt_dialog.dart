@@ -1,34 +1,5 @@
 import 'package:flutter/material.dart';
 
-/// Confirms a destructive action. Resolves true only if the user taps confirm.
-Future<bool> confirmDestructive(
-  BuildContext context, {
-  required String title,
-  required String message,
-  String confirmLabel = 'Delete',
-}) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(title),
-      content: Text(message),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, true),
-          style: TextButton.styleFrom(
-              foregroundColor: Theme.of(ctx).colorScheme.error),
-          child: Text(confirmLabel),
-        ),
-      ],
-    ),
-  );
-  return confirmed ?? false;
-}
-
 /// Prompts for a single line of text. Returns the trimmed value, or null on
 /// cancel or empty input.
 Future<String?> promptText(
@@ -54,7 +25,7 @@ Future<String?> promptText(
           onPressed: () => Navigator.pop(ctx),
           child: const Text('Cancel'),
         ),
-        TextButton(
+        FilledButton(
           onPressed: () => Navigator.pop(ctx, controller.text),
           child: Text(confirmLabel),
         ),

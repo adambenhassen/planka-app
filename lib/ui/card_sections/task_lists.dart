@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../api/models.dart';
-import '../dialogs.dart';
+import '../widgets/confirm_dialog.dart';
 import '../widgets/inline_add_field.dart';
+import '../widgets/prompt_dialog.dart';
 
 class CardTaskListsSection extends StatelessWidget {
   const CardTaskListsSection({
@@ -94,9 +95,10 @@ class _TaskList extends StatelessWidget {
                   if (!context.mounted || name == null) return;
                   onRenameTaskList(taskList.id, name);
                 } else if (action == 'delete') {
-                  final ok = await confirmDestructive(context,
+                  final ok = await confirmDialog(context,
                       title: 'Delete checklist?',
-                      message: 'The checklist and its tasks will be deleted.');
+                      message: 'The checklist and its tasks will be deleted.',
+                      confirmLabel: 'Delete');
                   if (!context.mounted || !ok) return;
                   onDeleteTaskList(taskList.id);
                 }

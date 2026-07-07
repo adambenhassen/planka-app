@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../api/models.dart';
-import '../dialogs.dart';
+import '../widgets/confirm_dialog.dart';
 import '../widgets/label_colors.dart';
+import '../widgets/prompt_dialog.dart';
 
 class CardLabelsSection extends StatelessWidget {
   const CardLabelsSection({
@@ -71,10 +72,11 @@ class CardLabelsSection extends StatelessWidget {
                             }
                           });
                         } else if (action == 'delete') {
-                          final ok = await confirmDestructive(context,
+                          final ok = await confirmDialog(context,
                               title: 'Delete label?',
                               message:
-                                  'The label is removed from the board and all cards.');
+                                  'The label is removed from the board and all cards.',
+                              confirmLabel: 'Delete');
                           if (!ok) return;
                           onDeleteLabel(l.id);
                           setState(
