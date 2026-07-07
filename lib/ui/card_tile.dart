@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../api/models.dart';
-import '../../api/planka_api.dart';
-import '../../auth/auth_providers.dart';
-import '../../state/board_state.dart';
-import '../theme/app_theme.dart';
-import 'label_colors.dart';
+import '../api/models.dart';
+import '../api/planka_api.dart';
+import '../auth/auth_providers.dart';
+import '../state/board_state.dart';
+import 'theme/app_theme.dart';
+import 'widgets/label_colors.dart';
 
 /// Cover thumbnail URL for a card, or null when it has no image cover.
 /// Planka serves attachment images under data.thumbnailUrls (absolute URLs).
@@ -16,9 +16,7 @@ String? cardCoverUrl(PlankaCard card, BoardState state) {
   final id = card.coverAttachmentId;
   if (id == null) return null;
   final cover = state.attachments.where((a) => a.id == id).firstOrNull;
-  final thumbs = cover?.data?['thumbnailUrls'];
-  if (thumbs is! Map) return null;
-  return (thumbs['outside720'] ?? thumbs['outside360']) as String?;
+  return cover?.coverThumbnailUrl;
 }
 
 class CardTile extends ConsumerWidget {

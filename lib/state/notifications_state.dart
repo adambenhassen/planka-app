@@ -25,6 +25,10 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     if (account == null) return [];
     final socket = PlankaSocket(account.serverUrl, account.token);
     ref.onDispose(socket.dispose);
+    // Realtime notifications are a live-update convenience over the REST list
+    // fetched below; a socket error degrades only that, so we log rather than
+    // surface it. ponytail: no degraded-state indicator — add one if stale
+    // notification counts become a visible problem.
     socket.events.listen(applyEvent,
         onError: (Object e) => debugPrint('notifications socket error: $e'));
     await socket.connect();

@@ -19,12 +19,12 @@ class Included {
   late final List<PlankaList> lists = _list('lists', PlankaList.fromJson);
   late final List<PlankaCard> cards = _list('cards', PlankaCard.fromJson);
   late final List<PlankaLabel> labels = _list('labels', PlankaLabel.fromJson);
-  late final List<CardLabel> cardLabels =
-      _list('cardLabels', CardLabel.fromJson);
-  late final List<CardMembership> cardMemberships =
-      _list('cardMemberships', CardMembership.fromJson);
-  late final List<BoardMembership> boardMemberships =
-      _list('boardMemberships', BoardMembership.fromJson);
+  late final List<PlankaCardLabel> cardLabels =
+      _list('cardLabels', PlankaCardLabel.fromJson);
+  late final List<PlankaCardMembership> cardMemberships =
+      _list('cardMemberships', PlankaCardMembership.fromJson);
+  late final List<PlankaBoardMembership> boardMemberships =
+      _list('boardMemberships', PlankaBoardMembership.fromJson);
   late final List<PlankaTaskList> taskLists =
       _list('taskLists', PlankaTaskList.fromJson);
   late final List<PlankaTask> tasks = _list('tasks', PlankaTask.fromJson);

@@ -19,12 +19,6 @@ class CardAttachmentsSection extends StatelessWidget {
   final void Function(String filePath, String name) onUpload;
   final ValueChanged<String> onDelete;
 
-  String? _thumbUrl(PlankaAttachment a) {
-    final thumbs = a.data?['thumbnailUrls'];
-    if (thumbs is! Map) return null;
-    return (thumbs['outside360'] ?? thumbs['outside720']) as String?;
-  }
-
   Future<void> _pick() async {
     final file = await openFile();
     if (file != null) onUpload(file.path, file.name);
@@ -35,14 +29,15 @@ class CardAttachmentsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final a in attachments)
-          ListTile(
+        ...attachments.map((a) {
+          final thumb = a.listThumbnailUrl;
+          return ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: _thumbUrl(a) != null && token != null
+            leading: thumb != null && token != null
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(6),
                     child: CachedNetworkImage(
-                      imageUrl: _thumbUrl(a)!,
+                      imageUrl: thumb,
                       httpHeaders: imageAuthHeaders(token!),
                       width: 48,
                       height: 48,
@@ -58,7 +53,8 @@ class CardAttachmentsSection extends StatelessWidget {
               tooltip: 'Delete attachment',
               onPressed: () => onDelete(a.id),
             ),
-          ),
+          );
+        }),
         TextButton.icon(
           icon: const Icon(Icons.attach_file, size: 18),
           label: const Text('Add attachment'),

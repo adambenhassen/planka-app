@@ -46,8 +46,9 @@ class _CardCommentsSectionState extends State<CardCommentsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final c in widget.comments)
-          GestureDetector(
+        ...widget.comments.map((c) {
+          final name = _userName(c.userId);
+          return GestureDetector(
             onLongPress: c.userId == widget.currentUserId
                 ? () async {
                     if (await confirmDialog(context,
@@ -63,9 +64,7 @@ class _CardCommentsSectionState extends State<CardCommentsSection> {
                 children: [
                   CircleAvatar(
                     radius: 14,
-                    child: Text(_userName(c.userId).isEmpty
-                        ? '?'
-                        : _userName(c.userId)[0].toUpperCase()),
+                    child: Text(name.isEmpty ? '?' : name[0].toUpperCase()),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -74,8 +73,7 @@ class _CardCommentsSectionState extends State<CardCommentsSection> {
                       children: [
                         Row(
                           children: [
-                            Text(_userName(c.userId),
-                                style: theme.textTheme.labelLarge),
+                            Text(name, style: theme.textTheme.labelLarge),
                             const SizedBox(width: 8),
                             if (c.createdAt != null)
                               Text(
@@ -94,7 +92,8 @@ class _CardCommentsSectionState extends State<CardCommentsSection> {
                 ],
               ),
             ),
-          ),
+          );
+        }),
         Row(
           children: [
             Expanded(

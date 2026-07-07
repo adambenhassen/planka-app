@@ -6,7 +6,7 @@ import 'package:planka_app/api/models.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
-import 'package:planka_app/ui/widgets/card_tile.dart';
+import 'package:planka_app/ui/card_tile.dart';
 import 'package:planka_app/ui/theme/app_theme.dart';
 
 class _AccNotifier extends CurrentAccountNotifier {

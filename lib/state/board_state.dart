@@ -14,9 +14,9 @@ class BoardState {
   final List<PlankaList> lists; // sorted by position
   final Map<String, PlankaCard> cards;
   final List<PlankaLabel> labels;
-  final List<CardLabel> cardLabels;
-  final List<CardMembership> cardMemberships;
-  final List<BoardMembership> boardMemberships;
+  final List<PlankaCardLabel> cardLabels;
+  final List<PlankaCardMembership> cardMemberships;
+  final List<PlankaBoardMembership> boardMemberships;
   final List<PlankaUser> users;
   final List<PlankaTaskList> taskLists;
   final List<PlankaTask> tasks;
@@ -107,9 +107,9 @@ class BoardState {
     List<PlankaList>? lists,
     Map<String, PlankaCard>? cards,
     List<PlankaLabel>? labels,
-    List<CardLabel>? cardLabels,
-    List<CardMembership>? cardMemberships,
-    List<BoardMembership>? boardMemberships,
+    List<PlankaCardLabel>? cardLabels,
+    List<PlankaCardMembership>? cardMemberships,
+    List<PlankaBoardMembership>? boardMemberships,
     List<PlankaUser>? users,
     List<PlankaTaskList>? taskLists,
     List<PlankaTask>? tasks,
@@ -192,7 +192,7 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
     case 'cardMembershipCreate':
       return s.copyWith(
           cardMemberships: _upsert(
-              s.cardMemberships, CardMembership.fromJson(item), (m) => m.id));
+              s.cardMemberships, PlankaCardMembership.fromJson(item), (m) => m.id));
     case 'cardMembershipDelete':
       return s.copyWith(
           cardMemberships:
@@ -200,7 +200,7 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
     case 'cardLabelCreate':
       return s.copyWith(
           cardLabels:
-              _upsert(s.cardLabels, CardLabel.fromJson(item), (c) => c.id));
+              _upsert(s.cardLabels, PlankaCardLabel.fromJson(item), (c) => c.id));
     case 'cardLabelDelete':
       return s.copyWith(
           cardLabels: s.cardLabels.where((c) => c.id != id).toList());
@@ -235,7 +235,7 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
     case 'boardMembershipCreate' || 'boardMembershipUpdate':
       return s.copyWith(
           boardMemberships: _upsert(s.boardMemberships,
-              BoardMembership.fromJson(item), (m) => m.id));
+              PlankaBoardMembership.fromJson(item), (m) => m.id));
     case 'boardMembershipDelete':
       return s.copyWith(
           boardMemberships:
@@ -267,6 +267,13 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     final socket = PlankaSocket(account.serverUrl, account.token);
     _socket = socket;
     ref.onDispose(socket.dispose);
+    // A stream/subscribe error only degrades realtime — the REST-loaded board
+    // is still valid, hard disconnects surface via _ConnectionBanner, and a
+    // reconnect re-subscribes (onConnect) then refetches. So we log rather than
+    // alarm the user.
+    // ponytail: a subscribe-ack failure without a disconnect leaves realtime
+    // silently stale until the board is reopened; add a "live updates
+    // unavailable" banner state if that proves user-visible.
     socket.events.listen(_onEvent,
         onError: (Object e) => debugPrint('board socket error: $e'));
     socket.connected.listen((c) {
@@ -426,15 +433,15 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     final existing = state.value?.cardLabels
         .where((cl) => cl.cardId == cardId && cl.labelId == labelId)
         .firstOrNull;
-    await _toggleJunction<CardLabel>(
+    await _toggleJunction<PlankaCardLabel>(
       existing: existing,
       list: (b) => b.cardLabels,
       withList: (b, l) => b.copyWith(cardLabels: l),
       id: (cl) => cl.id,
-      temp: CardLabel(
+      temp: PlankaCardLabel(
           id: 'tmp-$cardId-$labelId', cardId: cardId, labelId: labelId),
       add: () => _repo.addCardLabel(cardId, labelId),
-      fromJson: CardLabel.fromJson,
+      fromJson: PlankaCardLabel.fromJson,
       sameKey: (real, cl) =>
           cl.cardId == real.cardId && cl.labelId == real.labelId,
       remove: () => _repo.removeCardLabel(cardId, labelId),
@@ -445,15 +452,15 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     final existing = state.value?.cardMemberships
         .where((m) => m.cardId == cardId && m.userId == userId)
         .firstOrNull;
-    await _toggleJunction<CardMembership>(
+    await _toggleJunction<PlankaCardMembership>(
       existing: existing,
       list: (b) => b.cardMemberships,
       withList: (b, l) => b.copyWith(cardMemberships: l),
       id: (m) => m.id,
-      temp: CardMembership(
+      temp: PlankaCardMembership(
           id: 'tmp-$cardId-$userId', cardId: cardId, userId: userId),
       add: () => _repo.addCardMember(cardId, userId),
-      fromJson: CardMembership.fromJson,
+      fromJson: PlankaCardMembership.fromJson,
       sameKey: (real, m) => m.cardId == real.cardId && m.userId == real.userId,
       remove: () => _repo.removeCardMember(cardId, userId),
     );
@@ -509,6 +516,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   }
 
   Future<void> createComment(String cardId, String text) async {
+    if (state.value == null) return;
     await _createInto(
       _repo.createComment(cardId, text: text),
       PlankaComment.fromJson,
@@ -526,12 +534,14 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   }
 
   Future<void> uploadAttachment(String cardId,
-          {required String filePath, required String name}) =>
-      _createInto(
-        _repo.uploadAttachment(cardId, filePath: filePath, name: name),
-        PlankaAttachment.fromJson,
-        (b, a) => b.copyWith(attachments: _upsert(b.attachments, a, (x) => x.id)),
-      );
+      {required String filePath, required String name}) async {
+    if (state.value == null) return;
+    await _createInto(
+      _repo.uploadAttachment(cardId, filePath: filePath, name: name),
+      PlankaAttachment.fromJson,
+      (b, a) => b.copyWith(attachments: _upsert(b.attachments, a, (x) => x.id)),
+    );
+  }
 
   Future<void> deleteAttachment(String attachmentId) async {
     final s = state.value;

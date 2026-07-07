@@ -132,37 +132,37 @@ abstract class PlankaLabel with _$PlankaLabel {
 }
 
 @freezed
-abstract class CardLabel with _$CardLabel {
-  const factory CardLabel({
+abstract class PlankaCardLabel with _$PlankaCardLabel {
+  const factory PlankaCardLabel({
     required String id,
     required String cardId,
     required String labelId,
-  }) = _CardLabel;
-  factory CardLabel.fromJson(Map<String, dynamic> json) =>
-      _$CardLabelFromJson(json);
+  }) = _PlankaCardLabel;
+  factory PlankaCardLabel.fromJson(Map<String, dynamic> json) =>
+      _$PlankaCardLabelFromJson(json);
 }
 
 @freezed
-abstract class CardMembership with _$CardMembership {
-  const factory CardMembership({
+abstract class PlankaCardMembership with _$PlankaCardMembership {
+  const factory PlankaCardMembership({
     required String id,
     required String cardId,
     required String userId,
-  }) = _CardMembership;
-  factory CardMembership.fromJson(Map<String, dynamic> json) =>
-      _$CardMembershipFromJson(json);
+  }) = _PlankaCardMembership;
+  factory PlankaCardMembership.fromJson(Map<String, dynamic> json) =>
+      _$PlankaCardMembershipFromJson(json);
 }
 
 @freezed
-abstract class BoardMembership with _$BoardMembership {
-  const factory BoardMembership({
+abstract class PlankaBoardMembership with _$PlankaBoardMembership {
+  const factory PlankaBoardMembership({
     required String id,
     required String boardId,
     required String userId,
     required String role,
-  }) = _BoardMembership;
-  factory BoardMembership.fromJson(Map<String, dynamic> json) =>
-      _$BoardMembershipFromJson(json);
+  }) = _PlankaBoardMembership;
+  factory PlankaBoardMembership.fromJson(Map<String, dynamic> json) =>
+      _$PlankaBoardMembershipFromJson(json);
 }
 
 @freezed
@@ -215,6 +215,23 @@ abstract class PlankaAttachment with _$PlankaAttachment {
   }) = _PlankaAttachment;
   factory PlankaAttachment.fromJson(Map<String, dynamic> json) =>
       _$PlankaAttachmentFromJson(json);
+}
+
+/// Typed access to Planka's `data.thumbnailUrls` map, the one seam for reading
+/// image-attachment thumbnails so the untyped dig lives in a single place.
+extension PlankaAttachmentThumbnails on PlankaAttachment {
+  Map? get _thumbs {
+    final t = data?['thumbnailUrls'];
+    return t is Map ? t : null;
+  }
+
+  /// Larger-first URL for card covers, where the image fills the tile width.
+  String? get coverThumbnailUrl =>
+      (_thumbs?['outside720'] ?? _thumbs?['outside360']) as String?;
+
+  /// Smaller-first URL for the 48px attachment-list leading thumbnail.
+  String? get listThumbnailUrl =>
+      (_thumbs?['outside360'] ?? _thumbs?['outside720']) as String?;
 }
 
 @freezed

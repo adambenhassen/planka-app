@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../api/models.dart';
 import '../api/planka_api.dart';
-import '../api/repositories.dart';
-import '../auth/accounts.dart';
 import '../auth/auth_providers.dart';
 import 'error_handling.dart';
 import 'widgets/confirm_dialog.dart';
@@ -77,15 +74,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final api = ref.read(apiFactoryProvider)(serverUrl);
       if (!await _authenticate(api)) return; // user declined the terms
-      final me = PlankaUser.fromJson((await PlankaRepo(api).me()).item);
-      final account = Account(
-        serverUrl: serverUrl,
-        token: api.token!,
-        userId: me.id,
-        displayName: me.name.isNotEmpty ? me.name : (me.username ?? ''),
-      );
-      await ref.read(accountsProvider.notifier).upsert(account);
-      await ref.read(currentAccountProvider.notifier).select(account);
+      await ref.read(currentAccountProvider.notifier).signIn(api, serverUrl);
       if (mounted) context.go('/projects');
     } catch (e) {
       // Surface any login failure — not just ApiException. A token-save failure

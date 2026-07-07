@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/models.dart';
 import '../api/planka_api.dart';
+import '../api/repositories.dart';
 import 'accounts.dart';
 
 final accountStoreProvider = Provider<AccountStore>((ref) {
@@ -69,6 +71,21 @@ class CurrentAccountNotifier extends Notifier<Account?> {
     state = account;
     final store = ref.read(accountStoreProvider);
     await store.writeCurrentId(account?.id);
+  }
+
+  /// Completes login for an already-authenticated [api]: fetches the profile,
+  /// assembles and stores the account, then selects it. Keeps the repository
+  /// and model layers out of the login UI.
+  Future<void> signIn(PlankaApi api, String serverUrl) async {
+    final me = PlankaUser.fromJson((await PlankaRepo(api).me()).item);
+    final account = Account(
+      serverUrl: serverUrl,
+      token: api.token!,
+      userId: me.id,
+      displayName: me.name.isNotEmpty ? me.name : (me.username ?? ''),
+    );
+    await ref.read(accountsProvider.notifier).upsert(account);
+    await select(account);
   }
 }
 

@@ -10,7 +10,7 @@ import 'theme/app_theme.dart';
 import 'card_sheet.dart';
 import 'widgets/async_retry.dart';
 import 'widgets/board_background.dart';
-import 'widgets/card_tile.dart';
+import 'card_tile.dart';
 import 'widgets/inline_add_field.dart';
 
 const _columnWidth = 300.0;

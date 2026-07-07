@@ -1963,22 +1963,22 @@ as double?,
 
 
 /// @nodoc
-mixin _$CardLabel {
+mixin _$PlankaCardLabel {
 
  String get id; String get cardId; String get labelId;
-/// Create a copy of CardLabel
+/// Create a copy of PlankaCardLabel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-$CardLabelCopyWith<CardLabel> get copyWith => _$CardLabelCopyWithImpl<CardLabel>(this as CardLabel, _$identity);
+$PlankaCardLabelCopyWith<PlankaCardLabel> get copyWith => _$PlankaCardLabelCopyWithImpl<PlankaCardLabel>(this as PlankaCardLabel, _$identity);
 
-  /// Serializes this CardLabel to a JSON map.
+  /// Serializes this PlankaCardLabel to a JSON map.
   Map<String, dynamic> toJson();
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is CardLabel&&(identical(other.id, id) || other.id == id)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.labelId, labelId) || other.labelId == labelId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaCardLabel&&(identical(other.id, id) || other.id == id)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.labelId, labelId) || other.labelId == labelId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1987,15 +1987,15 @@ int get hashCode => Object.hash(runtimeType,id,cardId,labelId);
 
 @override
 String toString() {
-  return 'CardLabel(id: $id, cardId: $cardId, labelId: $labelId)';
+  return 'PlankaCardLabel(id: $id, cardId: $cardId, labelId: $labelId)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $CardLabelCopyWith<$Res>  {
-  factory $CardLabelCopyWith(CardLabel value, $Res Function(CardLabel) _then) = _$CardLabelCopyWithImpl;
+abstract mixin class $PlankaCardLabelCopyWith<$Res>  {
+  factory $PlankaCardLabelCopyWith(PlankaCardLabel value, $Res Function(PlankaCardLabel) _then) = _$PlankaCardLabelCopyWithImpl;
 @useResult
 $Res call({
  String id, String cardId, String labelId
@@ -2006,14 +2006,14 @@ $Res call({
 
 }
 /// @nodoc
-class _$CardLabelCopyWithImpl<$Res>
-    implements $CardLabelCopyWith<$Res> {
-  _$CardLabelCopyWithImpl(this._self, this._then);
+class _$PlankaCardLabelCopyWithImpl<$Res>
+    implements $PlankaCardLabelCopyWith<$Res> {
+  _$PlankaCardLabelCopyWithImpl(this._self, this._then);
 
-  final CardLabel _self;
-  final $Res Function(CardLabel) _then;
+  final PlankaCardLabel _self;
+  final $Res Function(PlankaCardLabel) _then;
 
-/// Create a copy of CardLabel
+/// Create a copy of PlankaCardLabel
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? cardId = null,Object? labelId = null,}) {
   return _then(_self.copyWith(
@@ -2027,8 +2027,8 @@ as String,
 }
 
 
-/// Adds pattern-matching-related methods to [CardLabel].
-extension CardLabelPatterns on CardLabel {
+/// Adds pattern-matching-related methods to [PlankaCardLabel].
+extension PlankaCardLabelPatterns on PlankaCardLabel {
 /// A variant of `map` that fallback to returning `orElse`.
 ///
 /// It is equivalent to doing:
@@ -2041,10 +2041,10 @@ extension CardLabelPatterns on CardLabel {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _CardLabel value)?  $default,{required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _PlankaCardLabel value)?  $default,{required TResult orElse(),}){
 final _that = this;
 switch (_that) {
-case _CardLabel() when $default != null:
+case _PlankaCardLabel() when $default != null:
 return $default(_that);case _:
   return orElse();
 
@@ -2063,10 +2063,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _CardLabel value)  $default,){
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _PlankaCardLabel value)  $default,){
 final _that = this;
 switch (_that) {
-case _CardLabel():
+case _PlankaCardLabel():
 return $default(_that);case _:
   throw StateError('Unexpected subclass');
 
@@ -2084,10 +2084,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _CardLabel value)?  $default,){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _PlankaCardLabel value)?  $default,){
 final _that = this;
 switch (_that) {
-case _CardLabel() when $default != null:
+case _PlankaCardLabel() when $default != null:
 return $default(_that);case _:
   return null;
 
@@ -2107,7 +2107,7 @@ return $default(_that);case _:
 
 @optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String cardId,  String labelId)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
-case _CardLabel() when $default != null:
+case _PlankaCardLabel() when $default != null:
 return $default(_that.id,_that.cardId,_that.labelId);case _:
   return orElse();
 
@@ -2128,7 +2128,7 @@ return $default(_that.id,_that.cardId,_that.labelId);case _:
 
 @optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String cardId,  String labelId)  $default,) {final _that = this;
 switch (_that) {
-case _CardLabel():
+case _PlankaCardLabel():
 return $default(_that.id,_that.cardId,_that.labelId);case _:
   throw StateError('Unexpected subclass');
 
@@ -2148,7 +2148,7 @@ return $default(_that.id,_that.cardId,_that.labelId);case _:
 
 @optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String cardId,  String labelId)?  $default,) {final _that = this;
 switch (_that) {
-case _CardLabel() when $default != null:
+case _PlankaCardLabel() when $default != null:
 return $default(_that.id,_that.cardId,_that.labelId);case _:
   return null;
 
@@ -2160,28 +2160,28 @@ return $default(_that.id,_that.cardId,_that.labelId);case _:
 /// @nodoc
 @JsonSerializable()
 
-class _CardLabel implements CardLabel {
-  const _CardLabel({required this.id, required this.cardId, required this.labelId});
-  factory _CardLabel.fromJson(Map<String, dynamic> json) => _$CardLabelFromJson(json);
+class _PlankaCardLabel implements PlankaCardLabel {
+  const _PlankaCardLabel({required this.id, required this.cardId, required this.labelId});
+  factory _PlankaCardLabel.fromJson(Map<String, dynamic> json) => _$PlankaCardLabelFromJson(json);
 
 @override final  String id;
 @override final  String cardId;
 @override final  String labelId;
 
-/// Create a copy of CardLabel
+/// Create a copy of PlankaCardLabel
 /// with the given fields replaced by the non-null parameter values.
 @override @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-_$CardLabelCopyWith<_CardLabel> get copyWith => __$CardLabelCopyWithImpl<_CardLabel>(this, _$identity);
+_$PlankaCardLabelCopyWith<_PlankaCardLabel> get copyWith => __$PlankaCardLabelCopyWithImpl<_PlankaCardLabel>(this, _$identity);
 
 @override
 Map<String, dynamic> toJson() {
-  return _$CardLabelToJson(this, );
+  return _$PlankaCardLabelToJson(this, );
 }
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _CardLabel&&(identical(other.id, id) || other.id == id)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.labelId, labelId) || other.labelId == labelId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaCardLabel&&(identical(other.id, id) || other.id == id)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.labelId, labelId) || other.labelId == labelId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2190,15 +2190,15 @@ int get hashCode => Object.hash(runtimeType,id,cardId,labelId);
 
 @override
 String toString() {
-  return 'CardLabel(id: $id, cardId: $cardId, labelId: $labelId)';
+  return 'PlankaCardLabel(id: $id, cardId: $cardId, labelId: $labelId)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class _$CardLabelCopyWith<$Res> implements $CardLabelCopyWith<$Res> {
-  factory _$CardLabelCopyWith(_CardLabel value, $Res Function(_CardLabel) _then) = __$CardLabelCopyWithImpl;
+abstract mixin class _$PlankaCardLabelCopyWith<$Res> implements $PlankaCardLabelCopyWith<$Res> {
+  factory _$PlankaCardLabelCopyWith(_PlankaCardLabel value, $Res Function(_PlankaCardLabel) _then) = __$PlankaCardLabelCopyWithImpl;
 @override @useResult
 $Res call({
  String id, String cardId, String labelId
@@ -2209,17 +2209,17 @@ $Res call({
 
 }
 /// @nodoc
-class __$CardLabelCopyWithImpl<$Res>
-    implements _$CardLabelCopyWith<$Res> {
-  __$CardLabelCopyWithImpl(this._self, this._then);
+class __$PlankaCardLabelCopyWithImpl<$Res>
+    implements _$PlankaCardLabelCopyWith<$Res> {
+  __$PlankaCardLabelCopyWithImpl(this._self, this._then);
 
-  final _CardLabel _self;
-  final $Res Function(_CardLabel) _then;
+  final _PlankaCardLabel _self;
+  final $Res Function(_PlankaCardLabel) _then;
 
-/// Create a copy of CardLabel
+/// Create a copy of PlankaCardLabel
 /// with the given fields replaced by the non-null parameter values.
 @override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? cardId = null,Object? labelId = null,}) {
-  return _then(_CardLabel(
+  return _then(_PlankaCardLabel(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,cardId: null == cardId ? _self.cardId : cardId // ignore: cast_nullable_to_non_nullable
 as String,labelId: null == labelId ? _self.labelId : labelId // ignore: cast_nullable_to_non_nullable
@@ -2232,22 +2232,22 @@ as String,
 
 
 /// @nodoc
-mixin _$CardMembership {
+mixin _$PlankaCardMembership {
 
  String get id; String get cardId; String get userId;
-/// Create a copy of CardMembership
+/// Create a copy of PlankaCardMembership
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-$CardMembershipCopyWith<CardMembership> get copyWith => _$CardMembershipCopyWithImpl<CardMembership>(this as CardMembership, _$identity);
+$PlankaCardMembershipCopyWith<PlankaCardMembership> get copyWith => _$PlankaCardMembershipCopyWithImpl<PlankaCardMembership>(this as PlankaCardMembership, _$identity);
 
-  /// Serializes this CardMembership to a JSON map.
+  /// Serializes this PlankaCardMembership to a JSON map.
   Map<String, dynamic> toJson();
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is CardMembership&&(identical(other.id, id) || other.id == id)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.userId, userId) || other.userId == userId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaCardMembership&&(identical(other.id, id) || other.id == id)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.userId, userId) || other.userId == userId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2256,15 +2256,15 @@ int get hashCode => Object.hash(runtimeType,id,cardId,userId);
 
 @override
 String toString() {
-  return 'CardMembership(id: $id, cardId: $cardId, userId: $userId)';
+  return 'PlankaCardMembership(id: $id, cardId: $cardId, userId: $userId)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $CardMembershipCopyWith<$Res>  {
-  factory $CardMembershipCopyWith(CardMembership value, $Res Function(CardMembership) _then) = _$CardMembershipCopyWithImpl;
+abstract mixin class $PlankaCardMembershipCopyWith<$Res>  {
+  factory $PlankaCardMembershipCopyWith(PlankaCardMembership value, $Res Function(PlankaCardMembership) _then) = _$PlankaCardMembershipCopyWithImpl;
 @useResult
 $Res call({
  String id, String cardId, String userId
@@ -2275,14 +2275,14 @@ $Res call({
 
 }
 /// @nodoc
-class _$CardMembershipCopyWithImpl<$Res>
-    implements $CardMembershipCopyWith<$Res> {
-  _$CardMembershipCopyWithImpl(this._self, this._then);
+class _$PlankaCardMembershipCopyWithImpl<$Res>
+    implements $PlankaCardMembershipCopyWith<$Res> {
+  _$PlankaCardMembershipCopyWithImpl(this._self, this._then);
 
-  final CardMembership _self;
-  final $Res Function(CardMembership) _then;
+  final PlankaCardMembership _self;
+  final $Res Function(PlankaCardMembership) _then;
 
-/// Create a copy of CardMembership
+/// Create a copy of PlankaCardMembership
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? cardId = null,Object? userId = null,}) {
   return _then(_self.copyWith(
@@ -2296,8 +2296,8 @@ as String,
 }
 
 
-/// Adds pattern-matching-related methods to [CardMembership].
-extension CardMembershipPatterns on CardMembership {
+/// Adds pattern-matching-related methods to [PlankaCardMembership].
+extension PlankaCardMembershipPatterns on PlankaCardMembership {
 /// A variant of `map` that fallback to returning `orElse`.
 ///
 /// It is equivalent to doing:
@@ -2310,10 +2310,10 @@ extension CardMembershipPatterns on CardMembership {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _CardMembership value)?  $default,{required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _PlankaCardMembership value)?  $default,{required TResult orElse(),}){
 final _that = this;
 switch (_that) {
-case _CardMembership() when $default != null:
+case _PlankaCardMembership() when $default != null:
 return $default(_that);case _:
   return orElse();
 
@@ -2332,10 +2332,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _CardMembership value)  $default,){
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _PlankaCardMembership value)  $default,){
 final _that = this;
 switch (_that) {
-case _CardMembership():
+case _PlankaCardMembership():
 return $default(_that);case _:
   throw StateError('Unexpected subclass');
 
@@ -2353,10 +2353,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _CardMembership value)?  $default,){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _PlankaCardMembership value)?  $default,){
 final _that = this;
 switch (_that) {
-case _CardMembership() when $default != null:
+case _PlankaCardMembership() when $default != null:
 return $default(_that);case _:
   return null;
 
@@ -2376,7 +2376,7 @@ return $default(_that);case _:
 
 @optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String cardId,  String userId)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
-case _CardMembership() when $default != null:
+case _PlankaCardMembership() when $default != null:
 return $default(_that.id,_that.cardId,_that.userId);case _:
   return orElse();
 
@@ -2397,7 +2397,7 @@ return $default(_that.id,_that.cardId,_that.userId);case _:
 
 @optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String cardId,  String userId)  $default,) {final _that = this;
 switch (_that) {
-case _CardMembership():
+case _PlankaCardMembership():
 return $default(_that.id,_that.cardId,_that.userId);case _:
   throw StateError('Unexpected subclass');
 
@@ -2417,7 +2417,7 @@ return $default(_that.id,_that.cardId,_that.userId);case _:
 
 @optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String cardId,  String userId)?  $default,) {final _that = this;
 switch (_that) {
-case _CardMembership() when $default != null:
+case _PlankaCardMembership() when $default != null:
 return $default(_that.id,_that.cardId,_that.userId);case _:
   return null;
 
@@ -2429,28 +2429,28 @@ return $default(_that.id,_that.cardId,_that.userId);case _:
 /// @nodoc
 @JsonSerializable()
 
-class _CardMembership implements CardMembership {
-  const _CardMembership({required this.id, required this.cardId, required this.userId});
-  factory _CardMembership.fromJson(Map<String, dynamic> json) => _$CardMembershipFromJson(json);
+class _PlankaCardMembership implements PlankaCardMembership {
+  const _PlankaCardMembership({required this.id, required this.cardId, required this.userId});
+  factory _PlankaCardMembership.fromJson(Map<String, dynamic> json) => _$PlankaCardMembershipFromJson(json);
 
 @override final  String id;
 @override final  String cardId;
 @override final  String userId;
 
-/// Create a copy of CardMembership
+/// Create a copy of PlankaCardMembership
 /// with the given fields replaced by the non-null parameter values.
 @override @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-_$CardMembershipCopyWith<_CardMembership> get copyWith => __$CardMembershipCopyWithImpl<_CardMembership>(this, _$identity);
+_$PlankaCardMembershipCopyWith<_PlankaCardMembership> get copyWith => __$PlankaCardMembershipCopyWithImpl<_PlankaCardMembership>(this, _$identity);
 
 @override
 Map<String, dynamic> toJson() {
-  return _$CardMembershipToJson(this, );
+  return _$PlankaCardMembershipToJson(this, );
 }
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _CardMembership&&(identical(other.id, id) || other.id == id)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.userId, userId) || other.userId == userId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaCardMembership&&(identical(other.id, id) || other.id == id)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.userId, userId) || other.userId == userId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2459,15 +2459,15 @@ int get hashCode => Object.hash(runtimeType,id,cardId,userId);
 
 @override
 String toString() {
-  return 'CardMembership(id: $id, cardId: $cardId, userId: $userId)';
+  return 'PlankaCardMembership(id: $id, cardId: $cardId, userId: $userId)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class _$CardMembershipCopyWith<$Res> implements $CardMembershipCopyWith<$Res> {
-  factory _$CardMembershipCopyWith(_CardMembership value, $Res Function(_CardMembership) _then) = __$CardMembershipCopyWithImpl;
+abstract mixin class _$PlankaCardMembershipCopyWith<$Res> implements $PlankaCardMembershipCopyWith<$Res> {
+  factory _$PlankaCardMembershipCopyWith(_PlankaCardMembership value, $Res Function(_PlankaCardMembership) _then) = __$PlankaCardMembershipCopyWithImpl;
 @override @useResult
 $Res call({
  String id, String cardId, String userId
@@ -2478,17 +2478,17 @@ $Res call({
 
 }
 /// @nodoc
-class __$CardMembershipCopyWithImpl<$Res>
-    implements _$CardMembershipCopyWith<$Res> {
-  __$CardMembershipCopyWithImpl(this._self, this._then);
+class __$PlankaCardMembershipCopyWithImpl<$Res>
+    implements _$PlankaCardMembershipCopyWith<$Res> {
+  __$PlankaCardMembershipCopyWithImpl(this._self, this._then);
 
-  final _CardMembership _self;
-  final $Res Function(_CardMembership) _then;
+  final _PlankaCardMembership _self;
+  final $Res Function(_PlankaCardMembership) _then;
 
-/// Create a copy of CardMembership
+/// Create a copy of PlankaCardMembership
 /// with the given fields replaced by the non-null parameter values.
 @override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? cardId = null,Object? userId = null,}) {
-  return _then(_CardMembership(
+  return _then(_PlankaCardMembership(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,cardId: null == cardId ? _self.cardId : cardId // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
@@ -2501,22 +2501,22 @@ as String,
 
 
 /// @nodoc
-mixin _$BoardMembership {
+mixin _$PlankaBoardMembership {
 
  String get id; String get boardId; String get userId; String get role;
-/// Create a copy of BoardMembership
+/// Create a copy of PlankaBoardMembership
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-$BoardMembershipCopyWith<BoardMembership> get copyWith => _$BoardMembershipCopyWithImpl<BoardMembership>(this as BoardMembership, _$identity);
+$PlankaBoardMembershipCopyWith<PlankaBoardMembership> get copyWith => _$PlankaBoardMembershipCopyWithImpl<PlankaBoardMembership>(this as PlankaBoardMembership, _$identity);
 
-  /// Serializes this BoardMembership to a JSON map.
+  /// Serializes this PlankaBoardMembership to a JSON map.
   Map<String, dynamic> toJson();
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BoardMembership&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.role, role) || other.role == role));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaBoardMembership&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.role, role) || other.role == role));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2525,15 +2525,15 @@ int get hashCode => Object.hash(runtimeType,id,boardId,userId,role);
 
 @override
 String toString() {
-  return 'BoardMembership(id: $id, boardId: $boardId, userId: $userId, role: $role)';
+  return 'PlankaBoardMembership(id: $id, boardId: $boardId, userId: $userId, role: $role)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $BoardMembershipCopyWith<$Res>  {
-  factory $BoardMembershipCopyWith(BoardMembership value, $Res Function(BoardMembership) _then) = _$BoardMembershipCopyWithImpl;
+abstract mixin class $PlankaBoardMembershipCopyWith<$Res>  {
+  factory $PlankaBoardMembershipCopyWith(PlankaBoardMembership value, $Res Function(PlankaBoardMembership) _then) = _$PlankaBoardMembershipCopyWithImpl;
 @useResult
 $Res call({
  String id, String boardId, String userId, String role
@@ -2544,14 +2544,14 @@ $Res call({
 
 }
 /// @nodoc
-class _$BoardMembershipCopyWithImpl<$Res>
-    implements $BoardMembershipCopyWith<$Res> {
-  _$BoardMembershipCopyWithImpl(this._self, this._then);
+class _$PlankaBoardMembershipCopyWithImpl<$Res>
+    implements $PlankaBoardMembershipCopyWith<$Res> {
+  _$PlankaBoardMembershipCopyWithImpl(this._self, this._then);
 
-  final BoardMembership _self;
-  final $Res Function(BoardMembership) _then;
+  final PlankaBoardMembership _self;
+  final $Res Function(PlankaBoardMembership) _then;
 
-/// Create a copy of BoardMembership
+/// Create a copy of PlankaBoardMembership
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? boardId = null,Object? userId = null,Object? role = null,}) {
   return _then(_self.copyWith(
@@ -2566,8 +2566,8 @@ as String,
 }
 
 
-/// Adds pattern-matching-related methods to [BoardMembership].
-extension BoardMembershipPatterns on BoardMembership {
+/// Adds pattern-matching-related methods to [PlankaBoardMembership].
+extension PlankaBoardMembershipPatterns on PlankaBoardMembership {
 /// A variant of `map` that fallback to returning `orElse`.
 ///
 /// It is equivalent to doing:
@@ -2580,10 +2580,10 @@ extension BoardMembershipPatterns on BoardMembership {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _BoardMembership value)?  $default,{required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _PlankaBoardMembership value)?  $default,{required TResult orElse(),}){
 final _that = this;
 switch (_that) {
-case _BoardMembership() when $default != null:
+case _PlankaBoardMembership() when $default != null:
 return $default(_that);case _:
   return orElse();
 
@@ -2602,10 +2602,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _BoardMembership value)  $default,){
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _PlankaBoardMembership value)  $default,){
 final _that = this;
 switch (_that) {
-case _BoardMembership():
+case _PlankaBoardMembership():
 return $default(_that);case _:
   throw StateError('Unexpected subclass');
 
@@ -2623,10 +2623,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _BoardMembership value)?  $default,){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _PlankaBoardMembership value)?  $default,){
 final _that = this;
 switch (_that) {
-case _BoardMembership() when $default != null:
+case _PlankaBoardMembership() when $default != null:
 return $default(_that);case _:
   return null;
 
@@ -2646,7 +2646,7 @@ return $default(_that);case _:
 
 @optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String boardId,  String userId,  String role)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
-case _BoardMembership() when $default != null:
+case _PlankaBoardMembership() when $default != null:
 return $default(_that.id,_that.boardId,_that.userId,_that.role);case _:
   return orElse();
 
@@ -2667,7 +2667,7 @@ return $default(_that.id,_that.boardId,_that.userId,_that.role);case _:
 
 @optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String boardId,  String userId,  String role)  $default,) {final _that = this;
 switch (_that) {
-case _BoardMembership():
+case _PlankaBoardMembership():
 return $default(_that.id,_that.boardId,_that.userId,_that.role);case _:
   throw StateError('Unexpected subclass');
 
@@ -2687,7 +2687,7 @@ return $default(_that.id,_that.boardId,_that.userId,_that.role);case _:
 
 @optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String boardId,  String userId,  String role)?  $default,) {final _that = this;
 switch (_that) {
-case _BoardMembership() when $default != null:
+case _PlankaBoardMembership() when $default != null:
 return $default(_that.id,_that.boardId,_that.userId,_that.role);case _:
   return null;
 
@@ -2699,29 +2699,29 @@ return $default(_that.id,_that.boardId,_that.userId,_that.role);case _:
 /// @nodoc
 @JsonSerializable()
 
-class _BoardMembership implements BoardMembership {
-  const _BoardMembership({required this.id, required this.boardId, required this.userId, required this.role});
-  factory _BoardMembership.fromJson(Map<String, dynamic> json) => _$BoardMembershipFromJson(json);
+class _PlankaBoardMembership implements PlankaBoardMembership {
+  const _PlankaBoardMembership({required this.id, required this.boardId, required this.userId, required this.role});
+  factory _PlankaBoardMembership.fromJson(Map<String, dynamic> json) => _$PlankaBoardMembershipFromJson(json);
 
 @override final  String id;
 @override final  String boardId;
 @override final  String userId;
 @override final  String role;
 
-/// Create a copy of BoardMembership
+/// Create a copy of PlankaBoardMembership
 /// with the given fields replaced by the non-null parameter values.
 @override @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-_$BoardMembershipCopyWith<_BoardMembership> get copyWith => __$BoardMembershipCopyWithImpl<_BoardMembership>(this, _$identity);
+_$PlankaBoardMembershipCopyWith<_PlankaBoardMembership> get copyWith => __$PlankaBoardMembershipCopyWithImpl<_PlankaBoardMembership>(this, _$identity);
 
 @override
 Map<String, dynamic> toJson() {
-  return _$BoardMembershipToJson(this, );
+  return _$PlankaBoardMembershipToJson(this, );
 }
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BoardMembership&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.role, role) || other.role == role));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaBoardMembership&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.role, role) || other.role == role));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2730,15 +2730,15 @@ int get hashCode => Object.hash(runtimeType,id,boardId,userId,role);
 
 @override
 String toString() {
-  return 'BoardMembership(id: $id, boardId: $boardId, userId: $userId, role: $role)';
+  return 'PlankaBoardMembership(id: $id, boardId: $boardId, userId: $userId, role: $role)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class _$BoardMembershipCopyWith<$Res> implements $BoardMembershipCopyWith<$Res> {
-  factory _$BoardMembershipCopyWith(_BoardMembership value, $Res Function(_BoardMembership) _then) = __$BoardMembershipCopyWithImpl;
+abstract mixin class _$PlankaBoardMembershipCopyWith<$Res> implements $PlankaBoardMembershipCopyWith<$Res> {
+  factory _$PlankaBoardMembershipCopyWith(_PlankaBoardMembership value, $Res Function(_PlankaBoardMembership) _then) = __$PlankaBoardMembershipCopyWithImpl;
 @override @useResult
 $Res call({
  String id, String boardId, String userId, String role
@@ -2749,17 +2749,17 @@ $Res call({
 
 }
 /// @nodoc
-class __$BoardMembershipCopyWithImpl<$Res>
-    implements _$BoardMembershipCopyWith<$Res> {
-  __$BoardMembershipCopyWithImpl(this._self, this._then);
+class __$PlankaBoardMembershipCopyWithImpl<$Res>
+    implements _$PlankaBoardMembershipCopyWith<$Res> {
+  __$PlankaBoardMembershipCopyWithImpl(this._self, this._then);
 
-  final _BoardMembership _self;
-  final $Res Function(_BoardMembership) _then;
+  final _PlankaBoardMembership _self;
+  final $Res Function(_PlankaBoardMembership) _then;
 
-/// Create a copy of BoardMembership
+/// Create a copy of PlankaBoardMembership
 /// with the given fields replaced by the non-null parameter values.
 @override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? boardId = null,Object? userId = null,Object? role = null,}) {
-  return _then(_BoardMembership(
+  return _then(_PlankaBoardMembership(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,boardId: null == boardId ? _self.boardId : boardId // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable

@@ -151,48 +151,53 @@ Map<String, dynamic> _$PlankaLabelToJson(_PlankaLabel instance) =>
       'position': instance.position,
     };
 
-_CardLabel _$CardLabelFromJson(Map<String, dynamic> json) => _CardLabel(
-  id: json['id'] as String,
-  cardId: json['cardId'] as String,
-  labelId: json['labelId'] as String,
-);
+_PlankaCardLabel _$PlankaCardLabelFromJson(Map<String, dynamic> json) =>
+    _PlankaCardLabel(
+      id: json['id'] as String,
+      cardId: json['cardId'] as String,
+      labelId: json['labelId'] as String,
+    );
 
-Map<String, dynamic> _$CardLabelToJson(_CardLabel instance) =>
+Map<String, dynamic> _$PlankaCardLabelToJson(_PlankaCardLabel instance) =>
     <String, dynamic>{
       'id': instance.id,
       'cardId': instance.cardId,
       'labelId': instance.labelId,
     };
 
-_CardMembership _$CardMembershipFromJson(Map<String, dynamic> json) =>
-    _CardMembership(
-      id: json['id'] as String,
-      cardId: json['cardId'] as String,
-      userId: json['userId'] as String,
-    );
+_PlankaCardMembership _$PlankaCardMembershipFromJson(
+  Map<String, dynamic> json,
+) => _PlankaCardMembership(
+  id: json['id'] as String,
+  cardId: json['cardId'] as String,
+  userId: json['userId'] as String,
+);
 
-Map<String, dynamic> _$CardMembershipToJson(_CardMembership instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'cardId': instance.cardId,
-      'userId': instance.userId,
-    };
+Map<String, dynamic> _$PlankaCardMembershipToJson(
+  _PlankaCardMembership instance,
+) => <String, dynamic>{
+  'id': instance.id,
+  'cardId': instance.cardId,
+  'userId': instance.userId,
+};
 
-_BoardMembership _$BoardMembershipFromJson(Map<String, dynamic> json) =>
-    _BoardMembership(
-      id: json['id'] as String,
-      boardId: json['boardId'] as String,
-      userId: json['userId'] as String,
-      role: json['role'] as String,
-    );
+_PlankaBoardMembership _$PlankaBoardMembershipFromJson(
+  Map<String, dynamic> json,
+) => _PlankaBoardMembership(
+  id: json['id'] as String,
+  boardId: json['boardId'] as String,
+  userId: json['userId'] as String,
+  role: json['role'] as String,
+);
 
-Map<String, dynamic> _$BoardMembershipToJson(_BoardMembership instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'boardId': instance.boardId,
-      'userId': instance.userId,
-      'role': instance.role,
-    };
+Map<String, dynamic> _$PlankaBoardMembershipToJson(
+  _PlankaBoardMembership instance,
+) => <String, dynamic>{
+  'id': instance.id,
+  'boardId': instance.boardId,
+  'userId': instance.userId,
+  'role': instance.role,
+};
 
 _PlankaTaskList _$PlankaTaskListFromJson(Map<String, dynamic> json) =>
     _PlankaTaskList(
