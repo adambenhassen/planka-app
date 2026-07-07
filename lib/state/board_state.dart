@@ -566,6 +566,49 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
+  Future<void> renameTaskList(String id, String name) async {
+    final s = state.value;
+    final tl = s?.taskLists.where((t) => t.id == id).firstOrNull;
+    if (s == null || tl == null) return;
+    final renamed = PlankaTaskList.fromJson({...tl.toJson(), 'name': name});
+    await _optimistic(
+      s.copyWith(taskLists: _upsert(s.taskLists, renamed, (t) => t.id)),
+      () => _repo.updateTaskList(id, {'name': name}),
+    );
+  }
+
+  Future<void> deleteTaskList(String id) async {
+    final s = state.value;
+    if (s == null) return;
+    await _optimistic(
+      s.copyWith(
+        taskLists: s.taskLists.where((t) => t.id != id).toList(),
+        tasks: s.tasks.where((t) => t.taskListId != id).toList(),
+      ),
+      () => _repo.deleteTaskList(id),
+    );
+  }
+
+  Future<void> renameTask(String id, String name) async {
+    final s = state.value;
+    final task = s?.tasks.where((t) => t.id == id).firstOrNull;
+    if (s == null || task == null) return;
+    final renamed = PlankaTask.fromJson({...task.toJson(), 'name': name});
+    await _optimistic(
+      s.copyWith(tasks: _upsert(s.tasks, renamed, (t) => t.id)),
+      () => _repo.updateTask(id, {'name': name}),
+    );
+  }
+
+  Future<void> deleteTask(String id) async {
+    final s = state.value;
+    if (s == null) return;
+    await _optimistic(
+      s.copyWith(tasks: s.tasks.where((t) => t.id != id).toList()),
+      () => _repo.deleteTask(id),
+    );
+  }
+
   Future<void> createComment(String cardId, String text) async {
     if (state.value == null) return;
     await _createInto(

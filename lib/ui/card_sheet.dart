@@ -182,6 +182,14 @@ class CardSheet extends ConsumerWidget {
                 guardMutation(context, notifier.createTask(taskListId, name)),
             onAddTaskList: (name) =>
                 guardMutation(context, notifier.createTaskList(cardId, name)),
+            onRenameTaskList: (id, name) =>
+                guardMutation(context, notifier.renameTaskList(id, name)),
+            onDeleteTaskList: (id) =>
+                guardMutation(context, notifier.deleteTaskList(id)),
+            onRenameTask: (id, name) =>
+                guardMutation(context, notifier.renameTask(id, name)),
+            onDeleteTask: (id) =>
+                guardMutation(context, notifier.deleteTask(id)),
           ),
         ),
         section(

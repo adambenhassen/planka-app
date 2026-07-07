@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../api/models.dart';
+import '../dialogs.dart';
 import '../widgets/inline_add_field.dart';
 
 class CardTaskListsSection extends StatelessWidget {
@@ -11,6 +12,10 @@ class CardTaskListsSection extends StatelessWidget {
     required this.onToggleTask,
     required this.onAddTask,
     required this.onAddTaskList,
+    required this.onRenameTaskList,
+    required this.onDeleteTaskList,
+    required this.onRenameTask,
+    required this.onDeleteTask,
   });
 
   final List<PlankaTaskList> taskLists;
@@ -18,6 +23,10 @@ class CardTaskListsSection extends StatelessWidget {
   final void Function(String taskId, bool isCompleted) onToggleTask;
   final void Function(String taskListId, String name) onAddTask;
   final ValueChanged<String> onAddTaskList;
+  final void Function(String taskListId, String name) onRenameTaskList;
+  final ValueChanged<String> onDeleteTaskList;
+  final void Function(String taskId, String name) onRenameTask;
+  final ValueChanged<String> onDeleteTask;
 
   @override
   Widget build(BuildContext context) {
@@ -30,6 +39,10 @@ class CardTaskListsSection extends StatelessWidget {
             tasks: tasks.where((t) => t.taskListId == tl.id).toList(),
             onToggleTask: onToggleTask,
             onAddTask: (name) => onAddTask(tl.id, name),
+            onRenameTaskList: onRenameTaskList,
+            onDeleteTaskList: onDeleteTaskList,
+            onRenameTask: onRenameTask,
+            onDeleteTask: onDeleteTask,
           ),
           const SizedBox(height: 8),
         ],
@@ -45,12 +58,20 @@ class _TaskList extends StatelessWidget {
     required this.tasks,
     required this.onToggleTask,
     required this.onAddTask,
+    required this.onRenameTaskList,
+    required this.onDeleteTaskList,
+    required this.onRenameTask,
+    required this.onDeleteTask,
   });
 
   final PlankaTaskList taskList;
   final List<PlankaTask> tasks;
   final void Function(String taskId, bool isCompleted) onToggleTask;
   final ValueChanged<String> onAddTask;
+  final void Function(String taskListId, String name) onRenameTaskList;
+  final ValueChanged<String> onDeleteTaskList;
+  final void Function(String taskId, String name) onRenameTask;
+  final ValueChanged<String> onDeleteTask;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +79,35 @@ class _TaskList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(taskList.name, style: Theme.of(context).textTheme.titleSmall),
+        Row(
+          children: [
+            Expanded(
+              child: Text(taskList.name,
+                  style: Theme.of(context).textTheme.titleSmall),
+            ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, size: 18),
+              onSelected: (action) async {
+                if (action == 'rename') {
+                  final name = await promptText(context,
+                      title: 'Rename checklist', initialValue: taskList.name);
+                  if (!context.mounted || name == null) return;
+                  onRenameTaskList(taskList.id, name);
+                } else if (action == 'delete') {
+                  final ok = await confirmDestructive(context,
+                      title: 'Delete checklist?',
+                      message: 'The checklist and its tasks will be deleted.');
+                  if (!context.mounted || !ok) return;
+                  onDeleteTaskList(taskList.id);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'rename', child: Text('Rename')),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
+          ],
+        ),
         if (tasks.isNotEmpty) ...[
           const SizedBox(height: 4),
           LinearProgressIndicator(value: done / tasks.length),
@@ -75,6 +124,23 @@ class _TaskList extends StatelessWidget {
                   ? const TextStyle(decoration: TextDecoration.lineThrough)
                   : null,
             ),
+            secondary: PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, size: 18),
+              onSelected: (action) async {
+                if (action == 'rename') {
+                  final name = await promptText(context,
+                      title: 'Rename task', initialValue: t.name);
+                  if (!context.mounted || name == null) return;
+                  onRenameTask(t.id, name);
+                } else if (action == 'delete') {
+                  onDeleteTask(t.id);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'rename', child: Text('Rename')),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
             onChanged: (v) => onToggleTask(t.id, v ?? false),
           ),
         InlineAddField(label: 'Add task', onSubmit: onAddTask),
@@ -82,4 +148,3 @@ class _TaskList extends StatelessWidget {
     );
   }
 }
-

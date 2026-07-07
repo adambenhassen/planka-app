@@ -140,4 +140,63 @@ void main() {
     expect(s.labels.any((l) => l.id == labelId), isFalse);
     expect(s.cardLabels.any((cl) => cl.labelId == labelId), isFalse);
   });
+
+  test('renameTaskList patches the checklist name', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final id = container.read(boardProvider(boardId)).value!.taskLists.first.id;
+
+    await notifier.renameTaskList(id, 'Checklist A');
+
+    expect(
+        container
+            .read(boardProvider(boardId))
+            .value!
+            .taskLists
+            .firstWhere((t) => t.id == id)
+            .name,
+        'Checklist A');
+  });
+
+  test('deleteTaskList removes the checklist and its tasks', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final id = container.read(boardProvider(boardId)).value!.taskLists.first.id;
+
+    await notifier.deleteTaskList(id);
+
+    final s = container.read(boardProvider(boardId)).value!;
+    expect(s.taskLists.any((t) => t.id == id), isFalse);
+    expect(s.tasks.any((t) => t.taskListId == id), isFalse);
+  });
+
+  test('renameTask patches the task name', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final id = container.read(boardProvider(boardId)).value!.tasks.first.id;
+
+    await notifier.renameTask(id, 'Do the thing');
+
+    expect(
+        container
+            .read(boardProvider(boardId))
+            .value!
+            .tasks
+            .firstWhere((t) => t.id == id)
+            .name,
+        'Do the thing');
+  });
+
+  test('deleteTask removes the task', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final id = container.read(boardProvider(boardId)).value!.tasks.first.id;
+
+    await notifier.deleteTask(id);
+
+    expect(
+        container.read(boardProvider(boardId)).value!.tasks
+            .any((t) => t.id == id),
+        isFalse);
+  });
 }
