@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api/models.dart';
 import '../auth/auth_providers.dart';
+import '../state/current_user_state.dart';
 import '../state/notifications_state.dart';
 import '../state/projects_state.dart';
 import '../update/update_service.dart';
@@ -16,6 +17,7 @@ import 'widgets/project_background_dialog.dart';
 import 'widgets/project_managers_dialog.dart';
 import 'widgets/profile_dialog.dart';
 import 'widgets/prompt_dialog.dart';
+import 'widgets/user_management_dialog.dart';
 
 class ProjectsScreen extends ConsumerWidget {
   const ProjectsScreen({super.key});
@@ -258,6 +260,7 @@ class _AccountSwitcher extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final accounts = ref.watch(accountsProvider).value ?? [];
     final current = ref.watch(currentAccountProvider);
+    final isAdmin = ref.watch(currentUserProvider).value?.role == 'admin';
     return PopupMenuButton<String>(
       icon: const Icon(Icons.account_circle_outlined),
       onSelected: (id) async {
@@ -267,6 +270,10 @@ class _AccountSwitcher extends ConsumerWidget {
         }
         if (id == '_profile') {
           showProfileDialog(context);
+          return;
+        }
+        if (id == '_manageUsers') {
+          showUserManagementDialog(context);
           return;
         }
         final account = accounts.where((a) => a.id == id).firstOrNull;
@@ -298,6 +305,15 @@ class _AccountSwitcher extends ConsumerWidget {
             title: Text('Profile'),
           ),
         ),
+        if (isAdmin)
+          const PopupMenuItem(
+            value: '_manageUsers',
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.manage_accounts_outlined),
+              title: Text('Manage users'),
+            ),
+          ),
         const PopupMenuItem(
           value: '_add',
           child: ListTile(

@@ -45,6 +45,7 @@ abstract class PlankaUser with _$PlankaUser {
     String? role,
     String? phone,
     String? organization,
+    bool? isDeactivated,
   }) = _PlankaUser;
   factory PlankaUser.fromJson(Map<String, dynamic> json) =>
       _$PlankaUserFromJson(json);

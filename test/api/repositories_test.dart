@@ -119,6 +119,18 @@ void main() {
         {'email': 'a@b.com', 'password': 'pw', 'name': 'A', 'role': 'boardUser'}
       ),
       (() => repo.deleteUser('u1'), 'DELETE', '/api/users/u1', null),
+      (
+        () => repo.updateUser('u1', {'role': 'admin'}),
+        'PATCH',
+        '/api/users/u1',
+        {'role': 'admin'}
+      ),
+      (
+        () => repo.updateUser('u1', {'isDeactivated': true}),
+        'PATCH',
+        '/api/users/u1',
+        {'isDeactivated': true}
+      ),
     ];
 
     for (final (call, expMethod, expPath, expBody) in cases) {

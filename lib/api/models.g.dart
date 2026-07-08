@@ -15,6 +15,7 @@ _PlankaUser _$PlankaUserFromJson(Map<String, dynamic> json) => _PlankaUser(
   role: json['role'] as String?,
   phone: json['phone'] as String?,
   organization: json['organization'] as String?,
+  isDeactivated: json['isDeactivated'] as bool?,
 );
 
 Map<String, dynamic> _$PlankaUserToJson(_PlankaUser instance) =>
@@ -27,6 +28,7 @@ Map<String, dynamic> _$PlankaUserToJson(_PlankaUser instance) =>
       'role': instance.role,
       'phone': instance.phone,
       'organization': instance.organization,
+      'isDeactivated': instance.isDeactivated,
     };
 
 _PlankaProject _$PlankaProjectFromJson(Map<String, dynamic> json) =>
