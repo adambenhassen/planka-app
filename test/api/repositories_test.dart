@@ -93,6 +93,32 @@ void main() {
       (() => repo.markNotificationRead('n1'), 'PATCH', '/api/notifications/n1', {'isRead': true}),
       (() => repo.markAllNotificationsRead(), 'POST', '/api/notifications/read-all', null),
       (() => repo.me(), 'GET', '/api/users/me', null),
+      (() => repo.updateUser('u1', {'name': 'X'}), 'PATCH', '/api/users/u1', {'name': 'X'}),
+      (
+        () => repo.updateUserEmail('u1', email: 'a@b.com', currentPassword: 'pw'),
+        'PATCH',
+        '/api/users/u1/email',
+        {'email': 'a@b.com', 'currentPassword': 'pw'}
+      ),
+      (
+        () => repo.updateUserPassword('u1', password: 'newpw', currentPassword: 'pw'),
+        'PATCH',
+        '/api/users/u1/password',
+        {'password': 'newpw', 'currentPassword': 'pw'}
+      ),
+      (
+        () => repo.updateUserUsername('u1', username: 'joe', currentPassword: 'pw'),
+        'PATCH',
+        '/api/users/u1/username',
+        {'username': 'joe', 'currentPassword': 'pw'}
+      ),
+      (
+        () => repo.createUser({'email': 'a@b.com', 'password': 'pw', 'name': 'A', 'role': 'boardUser'}),
+        'POST',
+        '/api/users',
+        {'email': 'a@b.com', 'password': 'pw', 'name': 'A', 'role': 'boardUser'}
+      ),
+      (() => repo.deleteUser('u1'), 'DELETE', '/api/users/u1', null),
     ];
 
     for (final (call, expMethod, expPath, expBody) in cases) {
@@ -111,5 +137,19 @@ void main() {
     expect(method, 'POST');
     expect(path, '/api/cards/c1/attachments');
     tmp.deleteSync();
+  });
+
+  test('uploadUserAvatar posts multipart to avatar endpoint', () async {
+    final tmp = File('${Directory.systemTemp.path}/planka_avatar_test.png')
+      ..writeAsStringSync('data');
+    await repo.uploadUserAvatar('u1', filePath: tmp.path, name: 'a.png');
+    expect(method, 'POST');
+    expect(path, '/api/users/u1/avatar');
+    tmp.deleteSync();
+  });
+
+  test('updateUserUsername omits currentPassword when null', () async {
+    await repo.updateUserUsername('u1', username: 'joe');
+    expect(body, {'username': 'joe'});
   });
 }

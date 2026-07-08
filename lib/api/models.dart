@@ -42,6 +42,9 @@ abstract class PlankaUser with _$PlankaUser {
     String? username,
     String? email,
     Map<String, dynamic>? avatar,
+    String? role,
+    String? phone,
+    String? organization,
   }) = _PlankaUser;
   factory PlankaUser.fromJson(Map<String, dynamic> json) =>
       _$PlankaUserFromJson(json);

@@ -14,6 +14,7 @@ import 'widgets/board_background.dart';
 import 'widgets/confirm_dialog.dart';
 import 'widgets/project_background_dialog.dart';
 import 'widgets/project_managers_dialog.dart';
+import 'widgets/profile_dialog.dart';
 import 'widgets/prompt_dialog.dart';
 
 class ProjectsScreen extends ConsumerWidget {
@@ -264,6 +265,10 @@ class _AccountSwitcher extends ConsumerWidget {
           context.push('/login');
           return;
         }
+        if (id == '_profile') {
+          showProfileDialog(context);
+          return;
+        }
         final account = accounts.where((a) => a.id == id).firstOrNull;
         if (account != null) {
           await ref.read(currentAccountProvider.notifier).select(account);
@@ -285,6 +290,14 @@ class _AccountSwitcher extends ConsumerWidget {
               subtitle: Text(a.serverUrl),
             ),
           ),
+        const PopupMenuItem(
+          value: '_profile',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.person_outline),
+            title: Text('Profile'),
+          ),
+        ),
         const PopupMenuItem(
           value: '_add',
           child: ListTile(

@@ -128,4 +128,32 @@ class PlankaRepo {
       api.post('/notifications/read-all', null);
 
   Future<Envelope> me() => api.get('/users/me');
+
+  Future<Envelope> updateUser(String id, Map<String, dynamic> patch) =>
+      api.patch('/users/$id', patch);
+  Future<Envelope> updateUserEmail(String id,
+          {required String email, String? currentPassword}) =>
+      api.patch('/users/$id/email',
+          {'email': email, 'currentPassword': ?currentPassword});
+  Future<Envelope> updateUserPassword(String id,
+          {required String password, String? currentPassword}) =>
+      api.patch('/users/$id/password', {
+        'password': password,
+        'currentPassword': ?currentPassword,
+      });
+  Future<Envelope> updateUserUsername(String id,
+          {String? username, String? currentPassword}) =>
+      api.patch('/users/$id/username', {
+        'username': ?username,
+        'currentPassword': ?currentPassword,
+      });
+  Future<Envelope> uploadUserAvatar(String id,
+          {required String filePath, required String name}) async =>
+      api.post(
+          '/users/$id/avatar',
+          FormData.fromMap(
+              {'file': await MultipartFile.fromFile(filePath, filename: name)}));
+  Future<Envelope> createUser(Map<String, dynamic> body) =>
+      api.post('/users', body);
+  Future<Envelope> deleteUser(String id) => api.delete('/users/$id');
 }

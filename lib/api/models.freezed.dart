@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$PlankaUser {
 
- String get id; String get name; String? get username; String? get email; Map<String, dynamic>? get avatar;
+ String get id; String get name; String? get username; String? get email; Map<String, dynamic>? get avatar; String? get role; String? get phone; String? get organization;
 /// Create a copy of PlankaUser
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $PlankaUserCopyWith<PlankaUser> get copyWith => _$PlankaUserCopyWithImpl<PlankaU
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaUser&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.username, username) || other.username == username)&&(identical(other.email, email) || other.email == email)&&const DeepCollectionEquality().equals(other.avatar, avatar));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaUser&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.username, username) || other.username == username)&&(identical(other.email, email) || other.email == email)&&const DeepCollectionEquality().equals(other.avatar, avatar)&&(identical(other.role, role) || other.role == role)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.organization, organization) || other.organization == organization));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,username,email,const DeepCollectionEquality().hash(avatar));
+int get hashCode => Object.hash(runtimeType,id,name,username,email,const DeepCollectionEquality().hash(avatar),role,phone,organization);
 
 @override
 String toString() {
-  return 'PlankaUser(id: $id, name: $name, username: $username, email: $email, avatar: $avatar)';
+  return 'PlankaUser(id: $id, name: $name, username: $username, email: $email, avatar: $avatar, role: $role, phone: $phone, organization: $organization)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $PlankaUserCopyWith<$Res>  {
   factory $PlankaUserCopyWith(PlankaUser value, $Res Function(PlankaUser) _then) = _$PlankaUserCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String? username, String? email, Map<String, dynamic>? avatar
+ String id, String name, String? username, String? email, Map<String, dynamic>? avatar, String? role, String? phone, String? organization
 });
 
 
@@ -65,14 +65,17 @@ class _$PlankaUserCopyWithImpl<$Res>
 
 /// Create a copy of PlankaUser
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? username = freezed,Object? email = freezed,Object? avatar = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? username = freezed,Object? email = freezed,Object? avatar = freezed,Object? role = freezed,Object? phone = freezed,Object? organization = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,username: freezed == username ? _self.username : username // ignore: cast_nullable_to_non_nullable
 as String?,email: freezed == email ? _self.email : email // ignore: cast_nullable_to_non_nullable
 as String?,avatar: freezed == avatar ? _self.avatar : avatar // ignore: cast_nullable_to_non_nullable
-as Map<String, dynamic>?,
+as Map<String, dynamic>?,role: freezed == role ? _self.role : role // ignore: cast_nullable_to_non_nullable
+as String?,phone: freezed == phone ? _self.phone : phone // ignore: cast_nullable_to_non_nullable
+as String?,organization: freezed == organization ? _self.organization : organization // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
@@ -157,10 +160,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String? username,  String? email,  Map<String, dynamic>? avatar)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String? username,  String? email,  Map<String, dynamic>? avatar,  String? role,  String? phone,  String? organization)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlankaUser() when $default != null:
-return $default(_that.id,_that.name,_that.username,_that.email,_that.avatar);case _:
+return $default(_that.id,_that.name,_that.username,_that.email,_that.avatar,_that.role,_that.phone,_that.organization);case _:
   return orElse();
 
 }
@@ -178,10 +181,10 @@ return $default(_that.id,_that.name,_that.username,_that.email,_that.avatar);cas
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String? username,  String? email,  Map<String, dynamic>? avatar)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String? username,  String? email,  Map<String, dynamic>? avatar,  String? role,  String? phone,  String? organization)  $default,) {final _that = this;
 switch (_that) {
 case _PlankaUser():
-return $default(_that.id,_that.name,_that.username,_that.email,_that.avatar);case _:
+return $default(_that.id,_that.name,_that.username,_that.email,_that.avatar,_that.role,_that.phone,_that.organization);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -198,10 +201,10 @@ return $default(_that.id,_that.name,_that.username,_that.email,_that.avatar);cas
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String? username,  String? email,  Map<String, dynamic>? avatar)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String? username,  String? email,  Map<String, dynamic>? avatar,  String? role,  String? phone,  String? organization)?  $default,) {final _that = this;
 switch (_that) {
 case _PlankaUser() when $default != null:
-return $default(_that.id,_that.name,_that.username,_that.email,_that.avatar);case _:
+return $default(_that.id,_that.name,_that.username,_that.email,_that.avatar,_that.role,_that.phone,_that.organization);case _:
   return null;
 
 }
@@ -213,7 +216,7 @@ return $default(_that.id,_that.name,_that.username,_that.email,_that.avatar);cas
 @JsonSerializable()
 
 class _PlankaUser implements PlankaUser {
-  const _PlankaUser({required this.id, required this.name, this.username, this.email, final  Map<String, dynamic>? avatar}): _avatar = avatar;
+  const _PlankaUser({required this.id, required this.name, this.username, this.email, final  Map<String, dynamic>? avatar, this.role, this.phone, this.organization}): _avatar = avatar;
   factory _PlankaUser.fromJson(Map<String, dynamic> json) => _$PlankaUserFromJson(json);
 
 @override final  String id;
@@ -229,6 +232,9 @@ class _PlankaUser implements PlankaUser {
   return EqualUnmodifiableMapView(value);
 }
 
+@override final  String? role;
+@override final  String? phone;
+@override final  String? organization;
 
 /// Create a copy of PlankaUser
 /// with the given fields replaced by the non-null parameter values.
@@ -243,16 +249,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaUser&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.username, username) || other.username == username)&&(identical(other.email, email) || other.email == email)&&const DeepCollectionEquality().equals(other._avatar, _avatar));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaUser&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.username, username) || other.username == username)&&(identical(other.email, email) || other.email == email)&&const DeepCollectionEquality().equals(other._avatar, _avatar)&&(identical(other.role, role) || other.role == role)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.organization, organization) || other.organization == organization));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,username,email,const DeepCollectionEquality().hash(_avatar));
+int get hashCode => Object.hash(runtimeType,id,name,username,email,const DeepCollectionEquality().hash(_avatar),role,phone,organization);
 
 @override
 String toString() {
-  return 'PlankaUser(id: $id, name: $name, username: $username, email: $email, avatar: $avatar)';
+  return 'PlankaUser(id: $id, name: $name, username: $username, email: $email, avatar: $avatar, role: $role, phone: $phone, organization: $organization)';
 }
 
 
@@ -263,7 +269,7 @@ abstract mixin class _$PlankaUserCopyWith<$Res> implements $PlankaUserCopyWith<$
   factory _$PlankaUserCopyWith(_PlankaUser value, $Res Function(_PlankaUser) _then) = __$PlankaUserCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String? username, String? email, Map<String, dynamic>? avatar
+ String id, String name, String? username, String? email, Map<String, dynamic>? avatar, String? role, String? phone, String? organization
 });
 
 
@@ -280,14 +286,17 @@ class __$PlankaUserCopyWithImpl<$Res>
 
 /// Create a copy of PlankaUser
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? username = freezed,Object? email = freezed,Object? avatar = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? username = freezed,Object? email = freezed,Object? avatar = freezed,Object? role = freezed,Object? phone = freezed,Object? organization = freezed,}) {
   return _then(_PlankaUser(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,username: freezed == username ? _self.username : username // ignore: cast_nullable_to_non_nullable
 as String?,email: freezed == email ? _self.email : email // ignore: cast_nullable_to_non_nullable
 as String?,avatar: freezed == avatar ? _self._avatar : avatar // ignore: cast_nullable_to_non_nullable
-as Map<String, dynamic>?,
+as Map<String, dynamic>?,role: freezed == role ? _self.role : role // ignore: cast_nullable_to_non_nullable
+as String?,phone: freezed == phone ? _self.phone : phone // ignore: cast_nullable_to_non_nullable
+as String?,organization: freezed == organization ? _self.organization : organization // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
