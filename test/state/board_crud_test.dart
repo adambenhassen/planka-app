@@ -20,6 +20,8 @@ class _FakeApi extends PlankaApi {
   final bool fail;
   int getCalls = 0;
   final List<String> getPaths = [];
+  final List<String> patchPaths = [];
+  final List<Map<String, dynamic>> patchBodies = [];
 
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
@@ -45,8 +47,10 @@ class _FakeApi extends PlankaApi {
 
   @override
   Future<Envelope> patch(String path, Object? body) async {
+    patchPaths.add(path);
+    patchBodies.add((body as Map).cast<String, dynamic>());
     if (fail) throw ApiException(500, 'rejected');
-    return Envelope.parse({'item': (body as Map).cast<String, dynamic>()});
+    return Envelope.parse({'item': body.cast<String, dynamic>()});
   }
 
   @override
@@ -343,5 +347,48 @@ void main() {
         container.read(boardProvider(boardId)).value!.comments
             .firstWhere((c) => c.id == 'c-seed').text,
         'edited');
+  });
+
+  test('moveCardToBoard removes the card from state and PATCHes boardId/listId/position '
+      'when moving to a different board', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final cardId = container.read(boardProvider(boardId)).value!.cards.values.first.id;
+    final api = container.read(apiProvider) as _FakeApi;
+
+    await notifier.moveCardToBoard(cardId,
+        boardId: 'other-board', listId: 'other-list', position: 32768);
+
+    final s1 = container.read(boardProvider(boardId)).value!;
+    expect(s1.cards.containsKey(cardId), isFalse);
+    expect(api.patchPaths, contains('/cards/$cardId'));
+    final body = api.patchBodies.last;
+    expect(body['boardId'], 'other-board');
+    expect(body['listId'], 'other-list');
+    expect(body['position'], 32768);
+  });
+
+  test('moveCardToBoard keeps the card and patches listId/position '
+      'when the target board is the current one', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final cardId = container.read(boardProvider(boardId)).value!.cards.values.first.id;
+    final targetListId = container
+        .read(boardProvider(boardId))
+        .value!
+        .columns
+        .last
+        .id;
+    final api = container.read(apiProvider) as _FakeApi;
+
+    await notifier.moveCardToBoard(cardId,
+        boardId: boardId, listId: targetListId, position: 16384);
+
+    final s1 = container.read(boardProvider(boardId)).value!;
+    expect(s1.cards[cardId]!.listId, targetListId);
+    final body = api.patchBodies.last;
+    expect(body['listId'], targetListId);
+    expect(body['position'], 16384);
+    expect(body.containsKey('boardId'), isFalse);
   });
 }

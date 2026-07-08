@@ -8,6 +8,7 @@ import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
 import 'error_handling.dart';
 import 'widgets/confirm_dialog.dart';
+import 'widgets/move_card_dialog.dart';
 import '../state/board_state.dart';
 import 'card_sections/activity.dart';
 import 'card_sections/attachments.dart';
@@ -82,6 +83,13 @@ class CardSheet extends ConsumerWidget {
     }
   }
 
+  /// Opens the move dialog; if the card left this board, closes the sheet too
+  /// since it no longer has anything to show.
+  Future<void> _showMoveDialog(BuildContext context) async {
+    final moved = await showMoveCardDialog(context, boardId, cardId);
+    if (moved && context.mounted) Navigator.pop(context);
+  }
+
   /// Confirms, then optimistically deletes the card and closes the sheet.
   Future<void> _confirmDelete(
       BuildContext context, BoardNotifier notifier) async {
@@ -152,6 +160,11 @@ class CardSheet extends ConsumerWidget {
               tooltip: 'Duplicate card',
               onPressed: () => guardMutation(
                   context, notifier.duplicateCard(cardId)),
+            ),
+            IconButton(
+              icon: const Icon(Icons.drive_file_move_outlined),
+              tooltip: 'Move…',
+              onPressed: () => _showMoveDialog(context),
             ),
             if (state.lists.any((l) => l.type == PlankaListType.archive))
               IconButton(

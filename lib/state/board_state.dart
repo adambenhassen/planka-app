@@ -480,6 +480,33 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
+  /// Moves a card to [listId] on [boardId], possibly a different board or
+  /// project. Same-board moves just patch listId/position in place. A
+  /// cross-board move drops the card (and its label/member junction rows)
+  /// from this board's state optimistically — the server strips labels and
+  /// non-member subscriptions on board change, and the card no longer
+  /// belongs here regardless.
+  Future<void> moveCardToBoard(String cardId,
+      {required String boardId, required String listId, required double position}) async {
+    final s = state.value;
+    final card = s?.cards[cardId];
+    if (s == null || card == null) return;
+    if (boardId == this.boardId) {
+      await _patchCard(cardId, {'listId': listId, 'position': position});
+      return;
+    }
+    await _optimistic(
+      s.copyWith(
+        cards: {...s.cards}..remove(cardId),
+        cardLabels: s.cardLabels.where((cl) => cl.cardId != cardId).toList(),
+        cardMemberships:
+            s.cardMemberships.where((m) => m.cardId != cardId).toList(),
+      ),
+      () => _repo.updateCard(
+          cardId, {'boardId': boardId, 'listId': listId, 'position': position}),
+    );
+  }
+
   Future<void> createList(String name) async {
     final s = state.value;
     if (s == null) return;
