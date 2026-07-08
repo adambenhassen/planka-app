@@ -8,7 +8,40 @@ class PlankaRepo {
   final PlankaApi api;
 
   Future<Envelope> projects() => api.get('/projects');
+  Future<Envelope> createProject(String name) =>
+      api.post('/projects', {'type': 'private', 'name': name});
+  Future<Envelope> updateProject(String id, Map<String, dynamic> patch) =>
+      api.patch('/projects/$id', patch);
+  Future<Envelope> deleteProject(String id) => api.delete('/projects/$id');
+  Future<Envelope> uploadProjectBackgroundImage(String projectId,
+          {required String filePath, required String name}) async =>
+      api.post(
+          '/projects/$projectId/background-images',
+          FormData.fromMap(
+              {'file': await MultipartFile.fromFile(filePath, filename: name)}));
+
   Future<Envelope> board(String id) => api.get('/boards/$id');
+  Future<Envelope> createBoard(String projectId,
+          {required String name, required double position}) =>
+      api.post('/projects/$projectId/boards',
+          {'name': name, 'position': position});
+  Future<Envelope> updateBoard(String id, Map<String, dynamic> patch) =>
+      api.patch('/boards/$id', patch);
+  Future<Envelope> deleteBoard(String id) => api.delete('/boards/$id');
+
+  Future<Envelope> addBoardMember(String boardId,
+          {required String userId, required String role}) =>
+      api.post(
+          '/boards/$boardId/board-memberships', {'userId': userId, 'role': role});
+  Future<Envelope> updateBoardMembership(String id, Map<String, dynamic> patch) =>
+      api.patch('/board-memberships/$id', patch);
+  Future<Envelope> removeBoardMembership(String id) =>
+      api.delete('/board-memberships/$id');
+
+  Future<Envelope> users() => api.get('/users');
+  Future<Envelope> cardActions(String cardId, {String? beforeId}) =>
+      api.get('/cards/$cardId/actions',
+          query: beforeId == null ? null : {'beforeId': beforeId});
 
   Future<Envelope> createList(String boardId,
           {required String name, required double position}) =>

@@ -35,8 +35,10 @@ void main() {
           body: CardAttachmentsSection(
             attachments: attachments,
             token: 'tok',
+            coverAttachmentId: null,
             onUpload: onUpload,
             onDelete: onDelete,
+            onSetCover: (_) {},
           ),
         ),
       );
@@ -75,7 +77,10 @@ void main() {
     ));
 
     expect(find.text('spec.txt'), findsOneWidget);
-    await tester.tap(find.byTooltip('Delete attachment'));
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
     expect(deleted, 'a1');
   });
 }

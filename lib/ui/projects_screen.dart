@@ -8,8 +8,11 @@ import '../auth/auth_providers.dart';
 import '../state/notifications_state.dart';
 import '../state/projects_state.dart';
 import '../update/update_service.dart';
+import 'error_handling.dart';
 import 'widgets/async_retry.dart';
 import 'widgets/board_background.dart';
+import 'widgets/confirm_dialog.dart';
+import 'widgets/prompt_dialog.dart';
 
 class ProjectsScreen extends ConsumerWidget {
   const ProjectsScreen({super.key});
@@ -40,6 +43,19 @@ class ProjectsScreen extends ConsumerWidget {
         title: const Text('Projects'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'New project',
+            onPressed: () async {
+              final name = await promptText(context,
+                  title: 'New project',
+                  hintText: 'Project name',
+                  confirmLabel: 'Create');
+              if (name == null || !context.mounted) return;
+              guardMutation(context,
+                  ref.read(projectsProvider.notifier).createProject(name));
+            },
+          ),
+          IconButton(
             icon: Badge.count(
               count: ref.watch(unreadCountProvider),
               isLabelVisible: ref.watch(unreadCountProvider) > 0,
@@ -65,13 +81,38 @@ class ProjectsScreen extends ConsumerWidget {
   }
 }
 
-class _ProjectList extends StatelessWidget {
+class _ProjectList extends ConsumerWidget {
   const _ProjectList({required this.view, required this.token});
   final ProjectsView view;
   final String? token;
 
+  Future<void> _onProjectMenu(BuildContext context, WidgetRef ref,
+      PlankaProject project, String action) async {
+    final notifier = ref.read(projectsProvider.notifier);
+    switch (action) {
+      case 'addBoard':
+        final name = await promptText(context,
+            title: 'New board', hintText: 'Board name', confirmLabel: 'Create');
+        if (name == null || !context.mounted) return;
+        guardMutation(context, notifier.createBoard(project.id, name));
+      case 'rename':
+        final name = await promptText(context,
+            title: 'Rename project', initialValue: project.name);
+        if (name == null || name == project.name || !context.mounted) return;
+        guardMutation(context, notifier.renameProject(project.id, name));
+      case 'delete':
+        final ok = await confirmDialog(context,
+            title: 'Delete project?',
+            message:
+                'The project and all its boards will be permanently deleted.',
+            confirmLabel: 'Delete');
+        if (!ok || !context.mounted) return;
+        guardMutation(context, notifier.deleteProject(project.id));
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final boards = view.boards;
     final projects = view.projects;
     if (projects.isEmpty) {
@@ -88,11 +129,28 @@ class _ProjectList extends StatelessWidget {
         for (final p in projects) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
-            child: Text(
-              p.name,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    p.name,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, size: 18),
+                  onSelected: (action) =>
+                      _onProjectMenu(context, ref, p, action),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'addBoard', child: Text('Add board')),
+                    PopupMenuItem(value: 'rename', child: Text('Rename')),
+                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  ],
+                ),
+              ],
             ),
           ),
           GridView.extent(

@@ -114,6 +114,10 @@ _PlankaCard _$PlankaCardFromJson(Map<String, dynamic> json) => _PlankaCard(
       : DateTime.parse(json['dueDate'] as String),
   isDueCompleted: json['isDueCompleted'] as bool?,
   coverAttachmentId: json['coverAttachmentId'] as String?,
+  isSubscribed: json['isSubscribed'] as bool?,
+  stopwatch: json['stopwatch'] == null
+      ? null
+      : PlankaStopwatch.fromJson(json['stopwatch'] as Map<String, dynamic>),
   createdAt: json['createdAt'] == null
       ? null
       : DateTime.parse(json['createdAt'] as String),
@@ -131,7 +135,23 @@ Map<String, dynamic> _$PlankaCardToJson(_PlankaCard instance) =>
       'dueDate': instance.dueDate?.toIso8601String(),
       'isDueCompleted': instance.isDueCompleted,
       'coverAttachmentId': instance.coverAttachmentId,
+      'isSubscribed': instance.isSubscribed,
+      'stopwatch': instance.stopwatch,
       'createdAt': instance.createdAt?.toIso8601String(),
+    };
+
+_PlankaStopwatch _$PlankaStopwatchFromJson(Map<String, dynamic> json) =>
+    _PlankaStopwatch(
+      startedAt: json['startedAt'] == null
+          ? null
+          : DateTime.parse(json['startedAt'] as String),
+      total: _toInt(json['total']),
+    );
+
+Map<String, dynamic> _$PlankaStopwatchToJson(_PlankaStopwatch instance) =>
+    <String, dynamic>{
+      'startedAt': instance.startedAt?.toIso8601String(),
+      'total': instance.total,
     };
 
 _PlankaLabel _$PlankaLabelFromJson(Map<String, dynamic> json) => _PlankaLabel(
@@ -273,6 +293,42 @@ Map<String, dynamic> _$PlankaAttachmentToJson(_PlankaAttachment instance) =>
       'data': instance.data,
       'createdAt': instance.createdAt?.toIso8601String(),
     };
+
+_PlankaAction _$PlankaActionFromJson(Map<String, dynamic> json) =>
+    _PlankaAction(
+      id: json['id'] as String,
+      cardId: json['cardId'] as String,
+      type: $enumDecode(
+        _$PlankaActionTypeEnumMap,
+        json['type'],
+        unknownValue: PlankaActionType.unknown,
+      ),
+      userId: json['userId'] as String?,
+      data: json['data'] as Map<String, dynamic>?,
+      createdAt: json['createdAt'] == null
+          ? null
+          : DateTime.parse(json['createdAt'] as String),
+    );
+
+Map<String, dynamic> _$PlankaActionToJson(_PlankaAction instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'cardId': instance.cardId,
+      'type': _$PlankaActionTypeEnumMap[instance.type]!,
+      'userId': instance.userId,
+      'data': instance.data,
+      'createdAt': instance.createdAt?.toIso8601String(),
+    };
+
+const _$PlankaActionTypeEnumMap = {
+  PlankaActionType.createCard: 'createCard',
+  PlankaActionType.moveCard: 'moveCard',
+  PlankaActionType.addMemberToCard: 'addMemberToCard',
+  PlankaActionType.removeMemberFromCard: 'removeMemberFromCard',
+  PlankaActionType.completeTask: 'completeTask',
+  PlankaActionType.uncompleteTask: 'uncompleteTask',
+  PlankaActionType.unknown: 'unknown',
+};
 
 _PlankaNotification _$PlankaNotificationFromJson(Map<String, dynamic> json) =>
     _PlankaNotification(

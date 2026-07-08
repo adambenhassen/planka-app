@@ -7,12 +7,14 @@ import '../auth/auth_providers.dart';
 import 'error_handling.dart';
 import 'widgets/confirm_dialog.dart';
 import '../state/board_state.dart';
+import 'card_sections/activity.dart';
 import 'card_sections/attachments.dart';
 import 'card_sections/comments.dart';
 import 'card_sections/due_date.dart';
 import 'card_sections/header.dart';
 import 'card_sections/labels.dart';
 import 'card_sections/members.dart';
+import 'card_sections/stopwatch.dart';
 import 'card_sections/task_lists.dart';
 
 Future<void> showCardSheet(
@@ -117,6 +119,16 @@ class CardSheet extends ConsumerWidget {
                 ),
               ),
             ),
+            IconButton(
+              icon: Icon(card.isSubscribed == true
+                  ? Icons.notifications_active
+                  : Icons.notifications_none),
+              tooltip: card.isSubscribed == true
+                  ? 'Unwatch card'
+                  : 'Watch card',
+              onPressed: () => guardMutation(context,
+                  notifier.setSubscribed(cardId, card.isSubscribed != true)),
+            ),
             if (state.lists.any((l) => l.type == PlankaListType.archive))
               IconButton(
                 icon: const Icon(Icons.archive_outlined),
@@ -142,6 +154,20 @@ class CardSheet extends ConsumerWidget {
           onChanged: (d) => guardMutation(context, notifier.setDueDate(cardId, d)),
           onCompletedToggle: (v) =>
               guardMutation(context, notifier.setDueCompleted(cardId, v)),
+        ),
+        section(
+          'Stopwatch',
+          CardStopwatchSection(
+            stopwatch: card.stopwatch,
+            onStart: (total) => guardMutation(
+                context,
+                notifier.setStopwatch(cardId,
+                    startedAt: DateTime.now().toUtc(), total: total)),
+            onPause: (total) => guardMutation(
+                context, notifier.setStopwatch(cardId, total: total)),
+            onReset: () =>
+                guardMutation(context, notifier.clearStopwatch(cardId)),
+          ),
         ),
         section(
           'Labels',
@@ -195,6 +221,9 @@ class CardSheet extends ConsumerWidget {
           CardAttachmentsSection(
             attachments: state.attachmentsOf(cardId),
             token: account?.token,
+            coverAttachmentId: card.coverAttachmentId,
+            onSetCover: (id) =>
+                guardMutation(context, notifier.setCover(cardId, id)),
             onUpload: (path, name) =>
                 guardMutation(context,
                     notifier.uploadAttachment(cardId, filePath: path, name: name)),
@@ -212,6 +241,10 @@ class CardSheet extends ConsumerWidget {
                 guardMutation(context, notifier.editComment(id, text)),
             onDelete: (id) => guardMutation(context, notifier.deleteComment(id)),
           ),
+        ),
+        section(
+          'Activity',
+          CardActivitySection(cardId: cardId, users: state.users),
         ),
       ],
     );

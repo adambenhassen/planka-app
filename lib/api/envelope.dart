@@ -34,13 +34,24 @@ class Included {
       _list('attachments', PlankaAttachment.fromJson);
   late final List<PlankaNotification> notifications =
       _list('notifications', PlankaNotification.fromJson);
+  late final List<PlankaAction> actions = _list('actions', PlankaAction.fromJson);
 }
 
 class Envelope {
   final Map<String, dynamic> item;
   final List<Map<String, dynamic>> items;
   final Included included;
-  Envelope({required this.item, required this.items, required this.included});
+
+  /// The unparsed response body, kept so a response can be persisted verbatim
+  /// (offline cache) and rehydrated later via [parse].
+  final Map<String, dynamic> raw;
+
+  Envelope({
+    required this.item,
+    required this.items,
+    required this.included,
+    this.raw = const {},
+  });
 
   static Envelope parse(Map<String, dynamic> json) => Envelope(
         item: (json['item'] as Map?)?.cast<String, dynamic>() ?? const {},
@@ -48,5 +59,6 @@ class Envelope {
             .map((e) => (e as Map).cast<String, dynamic>())
             .toList(),
         included: Included((json['included'] as Map?)?.cast<String, dynamic>()),
+        raw: json,
       );
 }

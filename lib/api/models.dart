@@ -4,6 +4,7 @@ part 'models.freezed.dart';
 part 'models.g.dart';
 
 double? _toDouble(dynamic v) => v == null ? null : (v as num).toDouble();
+int _toInt(dynamic v) => (v as num).toInt();
 
 /// Planka's fixed set of board-list types. [unknown] is a forward-compat
 /// fallback for any value a newer server introduces, so parsing never throws.
@@ -112,10 +113,24 @@ abstract class PlankaCard with _$PlankaCard {
     DateTime? dueDate,
     bool? isDueCompleted,
     String? coverAttachmentId,
+    bool? isSubscribed,
+    PlankaStopwatch? stopwatch,
     DateTime? createdAt,
   }) = _PlankaCard;
   factory PlankaCard.fromJson(Map<String, dynamic> json) =>
       _$PlankaCardFromJson(json);
+}
+
+/// Planka's card stopwatch: running while [startedAt] is set, paused when it is
+/// null; [total] is the accumulated seconds up to the last pause.
+@freezed
+abstract class PlankaStopwatch with _$PlankaStopwatch {
+  const factory PlankaStopwatch({
+    DateTime? startedAt,
+    @JsonKey(fromJson: _toInt) required int total,
+  }) = _PlankaStopwatch;
+  factory PlankaStopwatch.fromJson(Map<String, dynamic> json) =>
+      _$PlankaStopwatchFromJson(json);
 }
 
 @freezed
@@ -232,6 +247,39 @@ extension PlankaAttachmentThumbnails on PlankaAttachment {
   /// Smaller-first URL for the 48px attachment-list leading thumbnail.
   String? get listThumbnailUrl =>
       (_thumbs?['outside360'] ?? _thumbs?['outside720']) as String?;
+}
+
+/// Server-recorded card activity kinds. [unknown] is a forward-compat fallback
+/// so a new server action type parses and shows a generic entry.
+enum PlankaActionType {
+  @JsonValue('createCard')
+  createCard,
+  @JsonValue('moveCard')
+  moveCard,
+  @JsonValue('addMemberToCard')
+  addMemberToCard,
+  @JsonValue('removeMemberFromCard')
+  removeMemberFromCard,
+  @JsonValue('completeTask')
+  completeTask,
+  @JsonValue('uncompleteTask')
+  uncompleteTask,
+  unknown,
+}
+
+@freezed
+abstract class PlankaAction with _$PlankaAction {
+  const factory PlankaAction({
+    required String id,
+    required String cardId,
+    @JsonKey(unknownEnumValue: PlankaActionType.unknown)
+    required PlankaActionType type,
+    String? userId,
+    Map<String, dynamic>? data,
+    DateTime? createdAt,
+  }) = _PlankaAction;
+  factory PlankaAction.fromJson(Map<String, dynamic> json) =>
+      _$PlankaActionFromJson(json);
 }
 
 @freezed

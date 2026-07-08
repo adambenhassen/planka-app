@@ -10,6 +10,13 @@ import 'package:planka_app/api/models.dart';
 import 'package:planka_app/state/projects_state.dart';
 import 'package:planka_app/ui/projects_screen.dart';
 
+class _FakeProjectsNotifier extends ProjectsNotifier {
+  _FakeProjectsNotifier(this.view);
+  final ProjectsView view;
+  @override
+  Future<ProjectsView> build() async => view;
+}
+
 void main() {
   testWidgets('renders projects and boards; tap navigates', (tester) async {
     final env = Envelope.parse(jsonDecode(
@@ -35,7 +42,9 @@ void main() {
     ]);
 
     await tester.pumpWidget(ProviderScope(
-      overrides: [projectsProvider.overrideWith((ref) async => view)],
+      overrides: [
+        projectsProvider.overrideWith(() => _FakeProjectsNotifier(view))
+      ],
       child: MaterialApp.router(routerConfig: router),
     ));
     await tester.pumpAndSettle();

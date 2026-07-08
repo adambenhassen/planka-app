@@ -7,6 +7,7 @@ import '../api/planka_api.dart';
 import '../api/planka_socket.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
+import 'envelope_cache.dart';
 import 'positions.dart';
 
 class BoardState {
@@ -254,6 +255,23 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
   }
 }
 
+/// A card's activity feed, fetched on demand when its section is shown.
+/// ponytail: no actionCreate socket wiring — the feed refetches each time the
+/// card sheet opens (autoDispose); wire the socket event if staleness bites.
+final cardActionsProvider = FutureProvider.autoDispose
+    .family<List<PlankaAction>, String>((ref, cardId) async {
+  final env = await PlankaRepo(ref.watch(apiProvider)).cardActions(cardId);
+  return env.items.map(PlankaAction.fromJson).toList();
+});
+
+/// All server users, for the add-board-member picker. The endpoint is
+/// admin/project-owner only; non-admins get a 403 the UI surfaces as a hint.
+final allUsersProvider = FutureProvider.autoDispose<List<PlankaUser>>(
+    (ref) async {
+  final env = await PlankaRepo(ref.watch(apiProvider)).users();
+  return env.items.map(PlankaUser.fromJson).toList();
+});
+
 final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState,
     String>(BoardNotifier.new);
 
@@ -268,8 +286,12 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   @override
   Future<BoardState> build() async {
-    final env = await _repo.board(boardId);
     final account = ref.read(currentAccountProvider)!;
+    // Serve the last good copy when the network is down (offline read cache);
+    // the socket reconnect refetch below heals it once we're back online.
+    final env = await ref
+        .read(envelopeCacheProvider)
+        .fetchOrCached('${account.id}-board-$boardId', () => _repo.board(boardId));
     final socket = PlankaSocket(account.serverUrl, account.token);
     _socket = socket;
     ref.onDispose(socket.dispose);
@@ -316,7 +338,14 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   Future<void> _refetch() async {
     try {
-      state = AsyncData(BoardState.fromEnvelope(await _repo.board(boardId)));
+      final env = await _repo.board(boardId);
+      final account = ref.read(currentAccountProvider);
+      if (account != null) {
+        await ref
+            .read(envelopeCacheProvider)
+            .put('${account.id}-board-$boardId', env);
+      }
+      state = AsyncData(BoardState.fromEnvelope(env));
     } on ApiException {
       // Keep current state; next socket event or user retry will heal it.
     }
@@ -419,6 +448,79 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   Future<void> setDueCompleted(String cardId, bool isDueCompleted) =>
       _patchCard(cardId, {'isDueCompleted': isDueCompleted});
+
+  Future<void> setSubscribed(String cardId, bool isSubscribed) =>
+      _patchCard(cardId, {'isSubscribed': isSubscribed});
+
+  /// Sets or clears (null) the card's cover attachment.
+  Future<void> setCover(String cardId, String? attachmentId) =>
+      _patchCard(cardId, {'coverAttachmentId': attachmentId});
+
+  /// Replaces the card's stopwatch. Running while [startedAt] is set; [total]
+  /// is accumulated seconds. Pass null [stopwatch] semantics via [clearStopwatch].
+  Future<void> setStopwatch(String cardId,
+          {DateTime? startedAt, required int total}) =>
+      _patchCard(cardId, {
+        'stopwatch': {
+          'startedAt': startedAt?.toUtc().toIso8601String(),
+          'total': total,
+        }
+      });
+
+  Future<void> clearStopwatch(String cardId) =>
+      _patchCard(cardId, {'stopwatch': null});
+
+  Future<void> renameBoard(String name) async {
+    final s = state.value;
+    if (s == null) return;
+    await _optimistic(
+      s.copyWith(board: PlankaBoard.fromJson({...s.board.toJson(), 'name': name})),
+      () => _repo.updateBoard(boardId, {'name': name}),
+    );
+  }
+
+  /// Adds a board member. The server row is folded in on response; the socket
+  /// echo dedupes via _upsert. Any user rows included in the response (the new
+  /// member) are merged so names/avatars resolve immediately.
+  Future<void> addBoardMember(String userId, {String role = 'editor'}) async {
+    final env = await _repo.addBoardMember(boardId, userId: userId, role: role);
+    final cur = state.value;
+    if (cur == null) return;
+    var users = cur.users;
+    for (final u in env.included.users) {
+      users = _upsert(users, u, (x) => x.id);
+    }
+    state = AsyncData(cur.copyWith(
+      boardMemberships: _upsert(cur.boardMemberships,
+          PlankaBoardMembership.fromJson(env.item), (m) => m.id),
+      users: users,
+    ));
+  }
+
+  Future<void> setBoardMemberRole(String membershipId, String role) async {
+    final s = state.value;
+    final m =
+        s?.boardMemberships.where((x) => x.id == membershipId).firstOrNull;
+    if (s == null || m == null) return;
+    final updated =
+        PlankaBoardMembership.fromJson({...m.toJson(), 'role': role});
+    await _optimistic(
+      s.copyWith(
+          boardMemberships: _upsert(s.boardMemberships, updated, (x) => x.id)),
+      () => _repo.updateBoardMembership(membershipId, {'role': role}),
+    );
+  }
+
+  Future<void> removeBoardMember(String membershipId) async {
+    final s = state.value;
+    if (s == null) return;
+    await _optimistic(
+      s.copyWith(
+          boardMemberships:
+              s.boardMemberships.where((m) => m.id != membershipId).toList()),
+      () => _repo.removeBoardMembership(membershipId),
+    );
+  }
 
   /// Toggles a card↔junction row (label, member). When [existing] is present it
   /// is dropped optimistically and deleted server-side; otherwise [temp] is

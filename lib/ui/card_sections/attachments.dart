@@ -10,14 +10,20 @@ class CardAttachmentsSection extends StatelessWidget {
     super.key,
     required this.attachments,
     required this.token,
+    required this.coverAttachmentId,
     required this.onUpload,
     required this.onDelete,
+    required this.onSetCover,
   });
 
   final List<PlankaAttachment> attachments;
   final String? token;
+  final String? coverAttachmentId;
   final void Function(String filePath, String name) onUpload;
   final ValueChanged<String> onDelete;
+
+  /// Called with the attachment id to set as cover, or null to clear the cover.
+  final ValueChanged<String?> onSetCover;
 
   Future<void> _pick() async {
     final file = await openFile();
@@ -48,10 +54,23 @@ class CardAttachmentsSection extends StatelessWidget {
                   )
                 : const Icon(Icons.insert_drive_file_outlined, size: 32),
             title: Text(a.name, overflow: TextOverflow.ellipsis),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete attachment',
-              onPressed: () => onDelete(a.id),
+            subtitle: a.id == coverAttachmentId ? const Text('Cover') : null,
+            trailing: PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (action) => switch (action) {
+                'cover' => onSetCover(a.id),
+                'uncover' => onSetCover(null),
+                _ => onDelete(a.id),
+              },
+              itemBuilder: (_) => [
+                if (a.id == coverAttachmentId)
+                  const PopupMenuItem(
+                      value: 'uncover', child: Text('Remove cover'))
+                else if (thumb != null)
+                  const PopupMenuItem(
+                      value: 'cover', child: Text('Set as cover')),
+                const PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
             ),
           );
         }),

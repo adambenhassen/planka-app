@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
+import 'envelope_cache.dart';
+import 'positions.dart';
 
 /// The projects list plus the boards nested under them, translated out of the
 /// raw API envelope so the UI consumes domain types rather than dynamic maps.
@@ -17,11 +19,62 @@ class ProjectsView {
   });
 }
 
-final projectsProvider = FutureProvider<ProjectsView>((ref) async {
-  final env = await PlankaRepo(ref.watch(apiProvider)).projects();
-  return ProjectsView(
-    projects: env.items.map(PlankaProject.fromJson).toList(),
-    boards: env.included.boards,
-    backgroundImages: env.included.backgroundImages,
-  );
-});
+final projectsProvider =
+    AsyncNotifierProvider<ProjectsNotifier, ProjectsView>(ProjectsNotifier.new);
+
+class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
+  PlankaRepo get _repo => PlankaRepo(ref.read(apiProvider));
+
+  @override
+  Future<ProjectsView> build() {
+    // Re-fetch when the active account (and thus the API client) changes.
+    ref.watch(apiProvider);
+    return _fetch();
+  }
+
+  Future<ProjectsView> _fetch() async {
+    final accountId = ref.read(currentAccountProvider)?.id;
+    // Serve the last good copy when the network is down (offline read cache).
+    final env = accountId == null
+        ? await _repo.projects()
+        : await ref
+            .read(envelopeCacheProvider)
+            .fetchOrCached('$accountId-projects', _repo.projects);
+    return ProjectsView(
+      projects: env.items.map(PlankaProject.fromJson).toList(),
+      boards: env.included.boards,
+      backgroundImages: env.included.backgroundImages,
+    );
+  }
+
+  // ponytail: no optimistic updates here — project/board CRUD is rare, so each
+  // mutation awaits the server then refetches the (small) projects payload.
+  Future<void> _mutate(Future<Object?> Function() call) async {
+    await call();
+    state = AsyncData(await _fetch());
+  }
+
+  Future<void> createProject(String name) =>
+      _mutate(() => _repo.createProject(name));
+
+  Future<void> renameProject(String id, String name) =>
+      _mutate(() => _repo.updateProject(id, {'name': name}));
+
+  Future<void> deleteProject(String id) =>
+      _mutate(() => _repo.deleteProject(id));
+
+  Future<void> createBoard(String projectId, String name) => _mutate(() {
+        final last = (state.value?.boards ?? const [])
+            .where((b) => b.projectId == projectId)
+            .lastOrNull
+            ?.position;
+        return _repo.createBoard(projectId,
+            name: name,
+            position: last == null ? kPositionGap : last + kPositionGap);
+      });
+
+  Future<void> renameBoard(String id, String name) =>
+      _mutate(() => _repo.updateBoard(id, {'name': name}));
+
+  Future<void> deleteBoard(String id) => _mutate(() => _repo.deleteBoard(id));
+}

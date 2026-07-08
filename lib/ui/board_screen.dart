@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../api/models.dart';
 import '../auth/auth_providers.dart';
@@ -10,6 +11,7 @@ import 'theme/app_theme.dart';
 import 'card_sheet.dart';
 import 'widgets/async_retry.dart';
 import 'widgets/board_background.dart';
+import 'widgets/board_members_dialog.dart';
 import 'card_tile.dart';
 import 'widgets/confirm_dialog.dart';
 import 'widgets/inline_add_field.dart';
@@ -40,34 +42,221 @@ BoardBackground boardBackgroundFor(WidgetRef ref, PlankaBoard board) {
   );
 }
 
-class BoardScreen extends ConsumerWidget {
+/// Client-side card filter: text over name/description, plus label and member
+/// selections (all criteria must match).
+class BoardFilter {
+  const BoardFilter({
+    this.query = '',
+    this.labelIds = const {},
+    this.userIds = const {},
+  });
+  final String query;
+  final Set<String> labelIds;
+  final Set<String> userIds;
+
+  bool get isActive =>
+      query.isNotEmpty || labelIds.isNotEmpty || userIds.isNotEmpty;
+
+  bool matches(BoardState s, PlankaCard c) {
+    if (query.isNotEmpty) {
+      final q = query.toLowerCase();
+      if (!c.name.toLowerCase().contains(q) &&
+          !(c.description?.toLowerCase().contains(q) ?? false)) {
+        return false;
+      }
+    }
+    if (labelIds.isNotEmpty &&
+        !s.labelsOf(c.id).any((l) => labelIds.contains(l.id))) {
+      return false;
+    }
+    if (userIds.isNotEmpty &&
+        !s.membersOf(c.id).any((u) => userIds.contains(u.id))) {
+      return false;
+    }
+    return true;
+  }
+}
+
+class BoardScreen extends ConsumerStatefulWidget {
   const BoardScreen({super.key, required this.boardId});
   final String boardId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BoardScreen> createState() => _BoardScreenState();
+}
+
+class _BoardScreenState extends ConsumerState<BoardScreen> {
+  bool _showFilter = false;
+  BoardFilter _filter = const BoardFilter();
+
+  String get boardId => widget.boardId;
+
+  Future<void> _onMenu(String action, BoardState state) async {
+    final notifier = ref.read(boardProvider(boardId).notifier);
+    switch (action) {
+      case 'rename':
+        final name = await promptText(context,
+            title: 'Rename board', initialValue: state.board.name);
+        if (!mounted || name == null || name == state.board.name) return;
+        guardMutation(context, notifier.renameBoard(name));
+      case 'members':
+        await showBoardMembersDialog(context, boardId);
+      case 'delete':
+        final ok = await confirmDialog(context,
+            title: 'Delete board?',
+            message: 'The board and everything on it will be deleted.',
+            confirmLabel: 'Delete');
+        if (!ok || !mounted) return;
+        // Leave the board first — deleting disposes this board's provider.
+        final messenger = ScaffoldMessenger.of(context);
+        final errorColor = Theme.of(context).colorScheme.error;
+        final projects = ref.read(projectsProvider.notifier);
+        context.pop();
+        projects.deleteBoard(boardId).catchError((Object e) {
+          messenger.showSnackBar(SnackBar(
+              content: Text('$e'), backgroundColor: errorColor));
+        });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final board = ref.watch(boardProvider(boardId));
-    final b = board.value?.board;
+    final state = board.value;
+    final b = state?.board;
     final headerColor = b == null ? null : boardBackgroundFor(ref, b).tint;
     return Scaffold(
       appBar: AppBar(
         title: Text(b?.name ?? 'Board'),
         backgroundColor: headerColor,
         foregroundColor: b == null ? null : Colors.white,
+        actions: [
+          IconButton(
+            icon: Icon(_showFilter || _filter.isActive
+                ? Icons.filter_alt
+                : Icons.filter_alt_outlined),
+            tooltip: 'Filter cards',
+            onPressed: () => setState(() {
+              _showFilter = !_showFilter;
+              if (!_showFilter) _filter = const BoardFilter();
+            }),
+          ),
+          if (state != null)
+            PopupMenuButton<String>(
+              onSelected: (action) => _onMenu(action, state),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'rename', child: Text('Rename board')),
+                PopupMenuItem(value: 'members', child: Text('Members')),
+                PopupMenuItem(value: 'delete', child: Text('Delete board')),
+              ],
+            ),
+        ],
       ),
       body: asyncRetry(
         board,
         () => ref.invalidate(boardProvider(boardId)),
-        (state) => _BoardBody(boardId: boardId, state: state),
+        (state) => _BoardBody(
+          boardId: boardId,
+          state: state,
+          filter: _filter,
+          filterBar: !_showFilter
+              ? null
+              : _FilterBar(
+                  state: state,
+                  filter: _filter,
+                  onChanged: (f) => setState(() => _filter = f),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({
+    required this.state,
+    required this.filter,
+    required this.onChanged,
+  });
+  final BoardState state;
+  final BoardFilter filter;
+  final ValueChanged<BoardFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Search cards…',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (q) => onChanged(BoardFilter(
+                  query: q.trim(),
+                  labelIds: filter.labelIds,
+                  userIds: filter.userIds)),
+            ),
+            if (state.labels.isNotEmpty || state.users.isNotEmpty)
+              const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final l in state.labels)
+                  FilterChip(
+                    label: Text(l.name ?? l.color),
+                    selected: filter.labelIds.contains(l.id),
+                    onSelected: (v) {
+                      final ids = {...filter.labelIds};
+                      v ? ids.add(l.id) : ids.remove(l.id);
+                      onChanged(BoardFilter(
+                          query: filter.query,
+                          labelIds: ids,
+                          userIds: filter.userIds));
+                    },
+                  ),
+                for (final u in state.users.where((u) => state.boardMemberships
+                    .any((m) => m.userId == u.id)))
+                  FilterChip(
+                    avatar: const Icon(Icons.person_outline, size: 16),
+                    label: Text(u.name),
+                    selected: filter.userIds.contains(u.id),
+                    onSelected: (v) {
+                      final ids = {...filter.userIds};
+                      v ? ids.add(u.id) : ids.remove(u.id);
+                      onChanged(BoardFilter(
+                          query: filter.query,
+                          labelIds: filter.labelIds,
+                          userIds: ids));
+                    },
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _BoardBody extends ConsumerStatefulWidget {
-  const _BoardBody({required this.boardId, required this.state});
+  const _BoardBody({
+    required this.boardId,
+    required this.state,
+    required this.filter,
+    required this.filterBar,
+  });
   final String boardId;
   final BoardState state;
+  final BoardFilter filter;
+  final Widget? filterBar;
 
   @override
   ConsumerState<_BoardBody> createState() => _BoardBodyState();
@@ -93,6 +282,7 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
         Column(
           children: [
             _ConnectionBanner(boardId: widget.boardId),
+            if (widget.filterBar != null) widget.filterBar!,
             Expanded(
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
@@ -110,6 +300,7 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
                         list: columns[i],
                         state: widget.state,
                         notifier: notifier,
+                        filter: widget.filter,
                       ),
               ),
             ),
@@ -146,17 +337,21 @@ class _ListColumn extends StatelessWidget {
     required this.list,
     required this.state,
     required this.notifier,
+    required this.filter,
   });
 
   final PlankaList list;
   final BoardState state;
   final BoardNotifier notifier;
+  final BoardFilter filter;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tokens = context.tokens;
-    final cards = state.cardsOf(list.id);
+    final cards = filter.isActive
+        ? state.cardsOf(list.id).where((c) => filter.matches(state, c)).toList()
+        : state.cardsOf(list.id);
     // Top-align inside the full-height list slot so a short list wraps its
     // content and the board background shows below it (Trello behavior),
     // instead of the list surface stretching to the bottom.
