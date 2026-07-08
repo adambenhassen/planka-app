@@ -47,9 +47,22 @@ class CardSheet extends ConsumerWidget {
   final String cardId;
   final ScrollController? scrollController;
 
+  /// Closes the sheet, then runs [run] detached, surfacing any failure via a
+  /// snackbar on the messenger captured before the pop (this sheet's context is
+  /// gone by the time the mutation resolves).
+  void _popAndRun(BuildContext context, Future<void> Function() run) {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    Navigator.pop(context);
+    run().catchError((Object e) {
+      final message = e is ApiException ? e.message : '$e';
+      messenger.showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: errorColor),
+      );
+    });
+  }
+
   /// Confirms, then optimistically deletes the card and closes the sheet.
-  /// The messenger is captured before popping so a failed delete still surfaces
-  /// after this sheet's context is gone.
   Future<void> _confirmDelete(
       BuildContext context, BoardNotifier notifier) async {
     final confirmed = await confirmDialog(context,
@@ -57,15 +70,7 @@ class CardSheet extends ConsumerWidget {
         message: 'This card will be permanently deleted.',
         confirmLabel: 'Delete');
     if (!confirmed || !context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
-    Navigator.pop(context);
-    notifier.deleteCard(cardId).catchError((Object e) {
-      final message = e is ApiException ? e.message : '$e';
-      messenger.showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: errorColor),
-      );
-    });
+    _popAndRun(context, () => notifier.deleteCard(cardId));
   }
 
   @override
@@ -116,16 +121,8 @@ class CardSheet extends ConsumerWidget {
               IconButton(
                 icon: const Icon(Icons.archive_outlined),
                 tooltip: 'Archive card',
-                onPressed: () {
-                  final messenger = ScaffoldMessenger.of(context);
-                  final errorColor = Theme.of(context).colorScheme.error;
-                  Navigator.pop(context);
-                  notifier.archiveCard(cardId).catchError((Object e) {
-                    final message = e is ApiException ? e.message : '$e';
-                    messenger.showSnackBar(SnackBar(
-                        content: Text(message), backgroundColor: errorColor));
-                  });
-                },
+                onPressed: () =>
+                    _popAndRun(context, () => notifier.archiveCard(cardId)),
               ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
