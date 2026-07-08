@@ -19,10 +19,27 @@ class _FakeApi extends PlankaApi {
   _FakeApi({this.fail = false}) : super('http://x', 'tok');
   final bool fail;
   int getCalls = 0;
+  final List<String> getPaths = [];
 
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     getCalls++;
+    getPaths.add(path);
+    final listCards = RegExp(r'^/lists/(.+)/cards$').firstMatch(path);
+    if (listCards != null) {
+      return Envelope.parse({
+        'items': [
+          {
+            'id': 'endless-1',
+            'boardId': 'b1',
+            'listId': listCards[1],
+            'type': 'project',
+            'name': 'Trashed card',
+            'prevListId': 'prev-1',
+          },
+        ],
+      });
+    }
     return Envelope.parse(_fixture());
   }
 
@@ -249,9 +266,11 @@ void main() {
 
     final cards = await notifier.fetchEndlessListCards(trashId);
 
-    // The fake API's get() always serves the board fixture's item/included, so
-    // the parsed items come from its top-level `items` (none in this fixture).
-    expect(cards, isA<List<PlankaCard>>());
+    final api = container.read(apiProvider) as _FakeApi;
+    expect(api.getPaths, contains('/lists/$trashId/cards'));
+    expect(cards.map((c) => c.id), ['endless-1']);
+    expect(cards.single.prevListId, 'prev-1');
+    expect(cards.single.listId, trashId);
   });
 
   test('restoreCard targets prevListId when it is still an active list',

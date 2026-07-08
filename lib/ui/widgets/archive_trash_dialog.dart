@@ -109,10 +109,22 @@ class _ArchiveTrashDialogState extends ConsumerState<_ArchiveTrashDialog>
     );
   }
 
-  Future<void> _restore(PlankaCard card, PlankaListType from) async {
-    guardMutation(context, _notifier.restoreCard(card));
-    _refetch(from);
+  /// Awaits [mutation] and refetches [from] only on success — a fetch fired
+  /// before the PATCH/DELETE lands would still show the card. Errors surface
+  /// like guardMutation's.
+  Future<void> _mutateThenRefetch(
+      Future<void> mutation, PlankaListType from) async {
+    try {
+      await mutation;
+    } catch (e) {
+      if (mounted) showApiError(context, e);
+      return;
+    }
+    if (mounted) _refetch(from);
   }
+
+  Future<void> _restore(PlankaCard card, PlankaListType from) =>
+      _mutateThenRefetch(_notifier.restoreCard(card), from);
 
   Future<void> _delete(PlankaCard card) async {
     final confirmed = await confirmDialog(context,
@@ -120,8 +132,8 @@ class _ArchiveTrashDialogState extends ConsumerState<_ArchiveTrashDialog>
         message: 'This card will be permanently deleted.',
         confirmLabel: 'Delete');
     if (!confirmed || !mounted) return;
-    guardMutation(context, _notifier.deleteCard(card.id));
-    _refetch(PlankaListType.trash);
+    await _mutateThenRefetch(
+        _notifier.deleteCard(card.id), PlankaListType.trash);
   }
 }
 
