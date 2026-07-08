@@ -149,20 +149,16 @@ class _ProfileDialog extends ConsumerWidget {
                       final env = await repo.updateUserPassword(user.id,
                           password: value, currentPassword: currentPassword);
                       // A password change on the caller's own account invalidates the
-                      // old token; the server returns a fresh one as a sibling
-                      // `accessToken` field on the response when that happens. If it's
-                      // absent (e.g. server changed shape), the next request 401s and
-                      // the existing onUnauthorized flow forces re-login — no separate
-                      // handling needed here.
-                      final newToken = env.raw['accessToken'];
-                      if (newToken is String) {
-                        final account = ref.read(currentAccountProvider);
-                        if (account != null) {
-                          await ref
-                              .read(currentAccountProvider.notifier)
-                              .select(account.copyWith(token: newToken));
-                          ref.read(apiProvider).token = newToken;
-                        }
+                      // old token; the server returns a fresh one in the response's
+                      // `included.accessToken`. If it's absent (e.g. server changed
+                      // shape), the next request 401s and the existing onUnauthorized
+                      // flow forces re-login — no separate handling needed here.
+                      final newToken = env.accessToken;
+                      final account = ref.read(currentAccountProvider);
+                      if (newToken != null && account != null) {
+                        await ref
+                            .read(currentAccountProvider.notifier)
+                            .select(account.copyWith(token: newToken));
                       }
                       ref.invalidate(currentUserProvider);
                     } catch (e) {

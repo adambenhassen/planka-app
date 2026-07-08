@@ -28,4 +28,13 @@ void main() {
     final json = fixture('login');
     expect(json['item'], isA<String>());
   });
+
+  test('accessToken reads included.accessToken, null when absent', () {
+    final env = Envelope.parse({
+      'item': {'id': 'u1'},
+      'included': {'accessToken': 'jwt'},
+    });
+    expect(env.accessToken, 'jwt');
+    expect(Envelope.parse({'item': {'id': 'u1'}}).accessToken, null);
+  });
 }

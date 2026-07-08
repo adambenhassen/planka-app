@@ -55,6 +55,13 @@ class Envelope {
     this.raw = const {},
   });
 
+  /// Self password-change responses carry the replacement token as a scalar
+  /// inside `included` ({item, included: {accessToken}}). Null when absent.
+  String? get accessToken {
+    final t = (raw['included'] as Map?)?['accessToken'];
+    return t is String ? t : null;
+  }
+
   static Envelope parse(Map<String, dynamic> json) => Envelope(
         item: (json['item'] as Map?)?.cast<String, dynamic>() ?? const {},
         items: ((json['items'] as List?) ?? const [])
