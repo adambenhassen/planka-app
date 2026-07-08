@@ -201,6 +201,22 @@ Map<String, dynamic> _$PlankaCardMembershipToJson(
   'userId': instance.userId,
 };
 
+_PlankaProjectManager _$PlankaProjectManagerFromJson(
+  Map<String, dynamic> json,
+) => _PlankaProjectManager(
+  id: json['id'] as String,
+  projectId: json['projectId'] as String,
+  userId: json['userId'] as String,
+);
+
+Map<String, dynamic> _$PlankaProjectManagerToJson(
+  _PlankaProjectManager instance,
+) => <String, dynamic>{
+  'id': instance.id,
+  'projectId': instance.projectId,
+  'userId': instance.userId,
+};
+
 _PlankaBoardMembership _$PlankaBoardMembershipFromJson(
   Map<String, dynamic> json,
 ) => _PlankaBoardMembership(

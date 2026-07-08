@@ -72,6 +72,8 @@ void main() {
     await notifier.setProjectBackgroundImage('p1',
         filePath: 'test/fixtures/projects_index.json', name: 'bg.png');
     await notifier.clearProjectBackground('p1');
+    await notifier.addProjectManager('p1', 'u1');
+    await notifier.removeProjectManager('pm1');
     await notifier.deleteProject('p1');
     await notifier.createBoard('p1', 'Board');
     await notifier.renameBoard('b1', 'Renamed');
@@ -83,6 +85,8 @@ void main() {
       'POST /projects/p1/background-images',
       'PATCH /projects/p1',
       'PATCH /projects/p1',
+      'POST /projects/p1/project-managers',
+      'DELETE /project-managers/pm1',
       'DELETE /projects/p1',
       'POST /projects/p1/boards',
       'PATCH /boards/b1',

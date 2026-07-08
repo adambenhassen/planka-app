@@ -13,6 +13,7 @@ import 'widgets/async_retry.dart';
 import 'widgets/board_background.dart';
 import 'widgets/confirm_dialog.dart';
 import 'widgets/project_background_dialog.dart';
+import 'widgets/project_managers_dialog.dart';
 import 'widgets/prompt_dialog.dart';
 
 class ProjectsScreen extends ConsumerWidget {
@@ -96,6 +97,8 @@ class _ProjectList extends ConsumerWidget {
             title: 'New board', hintText: 'Board name', confirmLabel: 'Create');
         if (name == null || !context.mounted) return;
         guardMutation(context, notifier.createBoard(project.id, name));
+      case 'managers':
+        await showProjectManagersDialog(context, project.id);
       case 'background':
         await showProjectBackgroundDialog(
           context,
@@ -159,6 +162,7 @@ class _ProjectList extends ConsumerWidget {
                       _onProjectMenu(context, ref, p, action),
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'addBoard', child: Text('Add board')),
+                    PopupMenuItem(value: 'managers', child: Text('Managers')),
                     PopupMenuItem(
                         value: 'background', child: Text('Background')),
                     PopupMenuItem(value: 'rename', child: Text('Rename')),

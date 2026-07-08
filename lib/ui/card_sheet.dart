@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../api/models.dart';
 import '../api/planka_api.dart';
@@ -62,6 +64,22 @@ class CardSheet extends ConsumerWidget {
         SnackBar(content: Text(message), backgroundColor: errorColor),
       );
     });
+  }
+
+  /// Downloads an attachment to the temp dir (cookie-authenticated, root-level
+  /// download route) and opens it with the platform default app.
+  Future<void> _openAttachment(PlankaApi api, PlankaAttachment a) async {
+    final dir = await getTemporaryDirectory();
+    // Attachment names are user-supplied; strip path separators so they can't
+    // escape the temp directory.
+    final safeName = a.name.replaceAll(RegExp(r'[/\\]'), '_');
+    final path = '${dir.path}/planka-${a.id}-$safeName';
+    await api.download(
+        '/attachments/${a.id}/download/${Uri.encodeComponent(a.name)}', path);
+    final result = await OpenFilex.open(path);
+    if (result.type != ResultType.done) {
+      throw ApiException(null, 'Could not open ${a.name}: ${result.message}');
+    }
   }
 
   /// Confirms, then optimistically deletes the card and closes the sheet.
@@ -230,6 +248,8 @@ class CardSheet extends ConsumerWidget {
             coverAttachmentId: card.coverAttachmentId,
             onSetCover: (id) =>
                 guardMutation(context, notifier.setCover(cardId, id)),
+            onOpen: (a) => guardMutation(
+                context, _openAttachment(ref.read(apiProvider), a)),
             onUpload: (path, name) =>
                 guardMutation(context,
                     notifier.uploadAttachment(cardId, filePath: path, name: name)),

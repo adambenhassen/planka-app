@@ -35,6 +35,8 @@ class Included {
   late final List<PlankaNotification> notifications =
       _list('notifications', PlankaNotification.fromJson);
   late final List<PlankaAction> actions = _list('actions', PlankaAction.fromJson);
+  late final List<PlankaProjectManager> projectManagers =
+      _list('projectManagers', PlankaProjectManager.fromJson);
 }
 
 class Envelope {

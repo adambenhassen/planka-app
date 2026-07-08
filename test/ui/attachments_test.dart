@@ -39,6 +39,7 @@ void main() {
             onUpload: onUpload,
             onDelete: onDelete,
             onSetCover: (_) {},
+            onOpen: (_) {},
           ),
         ),
       );

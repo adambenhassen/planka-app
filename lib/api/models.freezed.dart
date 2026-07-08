@@ -2797,6 +2797,275 @@ as String,
 
 
 /// @nodoc
+mixin _$PlankaProjectManager {
+
+ String get id; String get projectId; String get userId;
+/// Create a copy of PlankaProjectManager
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$PlankaProjectManagerCopyWith<PlankaProjectManager> get copyWith => _$PlankaProjectManagerCopyWithImpl<PlankaProjectManager>(this as PlankaProjectManager, _$identity);
+
+  /// Serializes this PlankaProjectManager to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaProjectManager&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.userId, userId) || other.userId == userId));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,projectId,userId);
+
+@override
+String toString() {
+  return 'PlankaProjectManager(id: $id, projectId: $projectId, userId: $userId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $PlankaProjectManagerCopyWith<$Res>  {
+  factory $PlankaProjectManagerCopyWith(PlankaProjectManager value, $Res Function(PlankaProjectManager) _then) = _$PlankaProjectManagerCopyWithImpl;
+@useResult
+$Res call({
+ String id, String projectId, String userId
+});
+
+
+
+
+}
+/// @nodoc
+class _$PlankaProjectManagerCopyWithImpl<$Res>
+    implements $PlankaProjectManagerCopyWith<$Res> {
+  _$PlankaProjectManagerCopyWithImpl(this._self, this._then);
+
+  final PlankaProjectManager _self;
+  final $Res Function(PlankaProjectManager) _then;
+
+/// Create a copy of PlankaProjectManager
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? projectId = null,Object? userId = null,}) {
+  return _then(_self.copyWith(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
+as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [PlankaProjectManager].
+extension PlankaProjectManagerPatterns on PlankaProjectManager {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _PlankaProjectManager value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _PlankaProjectManager() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _PlankaProjectManager value)  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaProjectManager():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _PlankaProjectManager value)?  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaProjectManager() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String userId)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _PlankaProjectManager() when $default != null:
+return $default(_that.id,_that.projectId,_that.userId);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String userId)  $default,) {final _that = this;
+switch (_that) {
+case _PlankaProjectManager():
+return $default(_that.id,_that.projectId,_that.userId);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String userId)?  $default,) {final _that = this;
+switch (_that) {
+case _PlankaProjectManager() when $default != null:
+return $default(_that.id,_that.projectId,_that.userId);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _PlankaProjectManager implements PlankaProjectManager {
+  const _PlankaProjectManager({required this.id, required this.projectId, required this.userId});
+  factory _PlankaProjectManager.fromJson(Map<String, dynamic> json) => _$PlankaProjectManagerFromJson(json);
+
+@override final  String id;
+@override final  String projectId;
+@override final  String userId;
+
+/// Create a copy of PlankaProjectManager
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$PlankaProjectManagerCopyWith<_PlankaProjectManager> get copyWith => __$PlankaProjectManagerCopyWithImpl<_PlankaProjectManager>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$PlankaProjectManagerToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaProjectManager&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.userId, userId) || other.userId == userId));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,projectId,userId);
+
+@override
+String toString() {
+  return 'PlankaProjectManager(id: $id, projectId: $projectId, userId: $userId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$PlankaProjectManagerCopyWith<$Res> implements $PlankaProjectManagerCopyWith<$Res> {
+  factory _$PlankaProjectManagerCopyWith(_PlankaProjectManager value, $Res Function(_PlankaProjectManager) _then) = __$PlankaProjectManagerCopyWithImpl;
+@override @useResult
+$Res call({
+ String id, String projectId, String userId
+});
+
+
+
+
+}
+/// @nodoc
+class __$PlankaProjectManagerCopyWithImpl<$Res>
+    implements _$PlankaProjectManagerCopyWith<$Res> {
+  __$PlankaProjectManagerCopyWithImpl(this._self, this._then);
+
+  final _PlankaProjectManager _self;
+  final $Res Function(_PlankaProjectManager) _then;
+
+/// Create a copy of PlankaProjectManager
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? projectId = null,Object? userId = null,}) {
+  return _then(_PlankaProjectManager(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
+as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
 mixin _$PlankaBoardMembership {
 
  String get id; String get boardId; String get userId; String get role;

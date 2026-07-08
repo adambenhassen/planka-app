@@ -13,6 +13,10 @@ class PlankaRepo {
   Future<Envelope> updateProject(String id, Map<String, dynamic> patch) =>
       api.patch('/projects/$id', patch);
   Future<Envelope> deleteProject(String id) => api.delete('/projects/$id');
+  Future<Envelope> addProjectManager(String projectId, String userId) =>
+      api.post('/projects/$projectId/project-managers', {'userId': userId});
+  Future<Envelope> removeProjectManager(String id) =>
+      api.delete('/project-managers/$id');
   Future<Envelope> uploadProjectBackgroundImage(String projectId,
           {required String filePath, required String name}) async =>
       api.post(

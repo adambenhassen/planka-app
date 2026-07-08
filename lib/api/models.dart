@@ -169,6 +169,17 @@ abstract class PlankaCardMembership with _$PlankaCardMembership {
 }
 
 @freezed
+abstract class PlankaProjectManager with _$PlankaProjectManager {
+  const factory PlankaProjectManager({
+    required String id,
+    required String projectId,
+    required String userId,
+  }) = _PlankaProjectManager;
+  factory PlankaProjectManager.fromJson(Map<String, dynamic> json) =>
+      _$PlankaProjectManagerFromJson(json);
+}
+
+@freezed
 abstract class PlankaBoardMembership with _$PlankaBoardMembership {
   const factory PlankaBoardMembership({
     required String id,

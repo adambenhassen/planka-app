@@ -105,6 +105,22 @@ class PlankaApi {
   Future<Envelope> delete(String path) async => Envelope.parse(
       await _request(() => dio.delete<Map<String, dynamic>>(path)));
 
+  /// Downloads a server file (attachment download endpoint — root-level, not
+  /// under /api, and cookie-authenticated like images) to [savePath].
+  Future<void> download(String urlPath, String savePath) async {
+    final t = token;
+    if (t == null) throw ApiException(401, 'Not signed in');
+    try {
+      await dio.download('$serverUrl$urlPath', savePath,
+          options: Options(headers: imageAuthHeaders(t)));
+    } on DioException catch (e) {
+      // Same session-expiry handling as _request: 401 with a token means the
+      // session died, so kick off the re-login flow.
+      if (e.response?.statusCode == 401) onUnauthorized?.call();
+      throw ApiException(e.response?.statusCode, e.message ?? 'Download failed');
+    }
+  }
+
   Future<Map<String, dynamic>> _request(
       Future<Response<Map<String, dynamic>>> Function() send) async {
     try {

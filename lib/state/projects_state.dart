@@ -12,11 +12,18 @@ class ProjectsView {
   final List<PlankaProject> projects;
   final List<PlankaBoard> boards;
   final List<PlankaBackgroundImage> backgroundImages;
+  final List<PlankaProjectManager> managers;
+  final List<PlankaUser> users;
   const ProjectsView({
     required this.projects,
     required this.boards,
     required this.backgroundImages,
+    this.managers = const [],
+    this.users = const [],
   });
+
+  List<PlankaProjectManager> managersOf(String projectId) =>
+      managers.where((m) => m.projectId == projectId).toList();
 }
 
 final projectsProvider =
@@ -44,6 +51,8 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
       projects: env.items.map(PlankaProject.fromJson).toList(),
       boards: env.included.boards,
       backgroundImages: env.included.backgroundImages,
+      managers: env.included.projectManagers,
+      users: env.included.users,
     );
   }
 
@@ -72,6 +81,12 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
             name: name,
             position: last == null ? kPositionGap : last + kPositionGap);
       });
+
+  Future<void> addProjectManager(String projectId, String userId) =>
+      _mutate(() => _repo.addProjectManager(projectId, userId));
+
+  Future<void> removeProjectManager(String id) =>
+      _mutate(() => _repo.removeProjectManager(id));
 
   Future<void> setProjectGradient(String id, String gradient) =>
       _mutate(() => _repo.updateProject(

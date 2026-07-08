@@ -14,6 +14,7 @@ class CardAttachmentsSection extends StatelessWidget {
     required this.onUpload,
     required this.onDelete,
     required this.onSetCover,
+    required this.onOpen,
   });
 
   final List<PlankaAttachment> attachments;
@@ -24,6 +25,9 @@ class CardAttachmentsSection extends StatelessWidget {
 
   /// Called with the attachment id to set as cover, or null to clear the cover.
   final ValueChanged<String?> onSetCover;
+
+  /// Called when the user taps an attachment to download and open it.
+  final ValueChanged<PlankaAttachment> onOpen;
 
   Future<void> _pick() async {
     final file = await openFile();
@@ -55,6 +59,7 @@ class CardAttachmentsSection extends StatelessWidget {
                 : const Icon(Icons.insert_drive_file_outlined, size: 32),
             title: Text(a.name, overflow: TextOverflow.ellipsis),
             subtitle: a.id == coverAttachmentId ? const Text('Cover') : null,
+            onTap: () => onOpen(a),
             trailing: PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
               onSelected: (action) => switch (action) {
