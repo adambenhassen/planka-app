@@ -59,9 +59,21 @@ class _FakeApi extends PlankaApi {
     return Envelope.parse({'item': <String, dynamic>{}});
   }
 
+  final List<String> postPaths = [];
+  final List<Map<String, dynamic>> postBodies = [];
+
+  /// Response to return from the next matching sort call, keyed by list id.
+  Map<String, dynamic>? sortResponse;
+
   @override
-  Future<Envelope> post(String path, Object? body) async =>
-      Envelope.parse({'item': <String, dynamic>{}});
+  Future<Envelope> post(String path, Object? body) async {
+    postPaths.add(path);
+    postBodies.add((body as Map).cast<String, dynamic>());
+    if (path.endsWith('/sort') && sortResponse != null) {
+      return Envelope.parse(sortResponse!);
+    }
+    return Envelope.parse({'item': <String, dynamic>{}});
+  }
 }
 
 /// Real BoardNotifier logic seeded from the fixture, no live socket. [seed]
@@ -390,5 +402,84 @@ void main() {
     expect(body['listId'], targetListId);
     expect(body['position'], 16384);
     expect(body.containsKey('boardId'), isFalse);
+  });
+
+  test('sortList applies server-returned card positions and reorders cardsOf',
+      () async {
+    final existingCardId = '1812851462108087322';
+    final listId = '1812851461772543001';
+    final extraCard = PlankaCard.fromJson({
+      'id': 'extra-1',
+      'boardId': 'b1',
+      'listId': listId,
+      'type': 'project',
+      'name': 'Extra',
+      'position': 32768,
+    });
+    final (container, notifier, boardId) = await boot(
+      seed: (s) => s.copyWith(cards: {...s.cards, extraCard.id: extraCard}),
+    );
+    addTearDown(container.dispose);
+    expect(
+        container.read(boardProvider(boardId)).value!.cardsOf(listId).map((c) => c.id),
+        [existingCardId, extraCard.id],
+        reason: 'precondition: existing card sorts before the extra one');
+
+    final api = container.read(apiProvider) as _FakeApi;
+    api.sortResponse = {
+      'item': {'id': listId},
+      'included': {
+        'cards': [
+          {
+            'id': existingCardId,
+            'boardId': 'b1',
+            'listId': listId,
+            'type': 'project',
+            'name': 'Card',
+            'position': 65536,
+          },
+          {
+            'id': extraCard.id,
+            'boardId': 'b1',
+            'listId': listId,
+            'type': 'project',
+            'name': 'Extra',
+            'position': 16384,
+          },
+        ],
+      },
+    };
+
+    await notifier.sortList(listId, fieldName: 'name', order: 'desc');
+
+    final s1 = container.read(boardProvider(boardId)).value!;
+    expect(s1.cardsOf(listId).map((c) => c.id), [extraCard.id, existingCardId],
+        reason: 'positions from the response flip the order');
+    expect(api.postPaths.last, '/lists/$listId/sort');
+    expect(api.postBodies.last, {'fieldName': 'name', 'order': 'desc'});
+  });
+
+  test('sortList omits order when not provided', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final listId = container.read(boardProvider(boardId)).value!.cards.values.first.listId;
+    final api = container.read(apiProvider) as _FakeApi;
+
+    await notifier.sortList(listId, fieldName: 'createdAt');
+
+    expect(api.postBodies.last, {'fieldName': 'createdAt'});
+  });
+
+  test('sortList falls back to a refetch when included cards are empty',
+      () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final listId = container.read(boardProvider(boardId)).value!.cards.values.first.listId;
+    final api = container.read(apiProvider) as _FakeApi;
+    final getsBefore = api.getCalls;
+
+    await notifier.sortList(listId, fieldName: 'dueDate');
+
+    expect(api.getCalls, greaterThan(getsBefore));
   });
 }

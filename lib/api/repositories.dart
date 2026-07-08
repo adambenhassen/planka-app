@@ -54,6 +54,10 @@ class PlankaRepo {
   Future<Envelope> updateList(String id, Map<String, dynamic> patch) =>
       api.patch('/lists/$id', patch);
   Future<Envelope> deleteList(String id) => api.delete('/lists/$id');
+  Future<Envelope> sortList(String id,
+          {required String fieldName, String? order}) =>
+      api.post('/lists/$id/sort',
+          {'fieldName': fieldName, 'order': ?order});
 
   Future<Envelope> createCard(String listId,
           {required String name, required double position}) =>

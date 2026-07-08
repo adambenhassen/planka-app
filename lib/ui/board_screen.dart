@@ -408,6 +408,13 @@ class _ListColumn extends StatelessWidget {
                             guardMutation(
                                 context, notifier.renameList(list.id, name));
                           }
+                        } else if (action == 'sort') {
+                          final choice = await _pickSort(context);
+                          if (!context.mounted || choice == null) return;
+                          guardMutation(
+                              context,
+                              notifier.sortList(list.id,
+                                  fieldName: choice.$1, order: choice.$2));
                         } else if (action == 'delete') {
                           final ok = await confirmDialog(context,
                               title: 'Delete list?',
@@ -422,6 +429,7 @@ class _ListColumn extends StatelessWidget {
                       },
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 'rename', child: Text('Rename')),
+                        PopupMenuItem(value: 'sort', child: Text('Sort by…')),
                         PopupMenuItem(value: 'delete', child: Text('Delete')),
                       ],
                     ),
@@ -468,6 +476,28 @@ class _ListColumn extends StatelessWidget {
     );
   }
 }
+
+/// Shows a field/order picker for list sorting. Returns null if dismissed.
+Future<(String, String?)?> _pickSort(BuildContext context) =>
+    showDialog<(String, String?)>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Sort by'),
+        children: [
+          for (final field in const [
+            ('name', 'Name'),
+            ('dueDate', 'Due date'),
+            ('createdAt', 'Created date'),
+          ])
+            for (final order in const [('asc', 'ascending'), ('desc', 'descending')])
+              SimpleDialogOption(
+                onPressed: () =>
+                    Navigator.pop(ctx, (field.$1, order.$1)),
+                child: Text('${field.$2} (${order.$2})'),
+              ),
+        ],
+      ),
+    );
 
 class _DraggableCard extends StatelessWidget {
   const _DraggableCard({

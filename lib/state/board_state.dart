@@ -887,6 +887,24 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
+  Future<void> sortList(String listId,
+      {required String fieldName, String? order}) async {
+    final env =
+        await _repo.sortList(listId, fieldName: fieldName, order: order);
+    final cur = state.value;
+    if (cur == null) return;
+    final sorted = env.included.cards;
+    if (sorted.isEmpty) {
+      await _refetch();
+      return;
+    }
+    var cards = cur.cards;
+    for (final c in sorted) {
+      cards = {...cards, c.id: c};
+    }
+    state = AsyncData(cur.copyWith(cards: cards));
+  }
+
   Future<void> moveList(String listId,
       {String? beforeListId, String? afterListId}) async {
     final s = state.value;
