@@ -121,6 +121,7 @@ _PlankaCard _$PlankaCardFromJson(Map<String, dynamic> json) => _PlankaCard(
   createdAt: json['createdAt'] == null
       ? null
       : DateTime.parse(json['createdAt'] as String),
+  prevListId: json['prevListId'] as String?,
 );
 
 Map<String, dynamic> _$PlankaCardToJson(_PlankaCard instance) =>
@@ -138,6 +139,7 @@ Map<String, dynamic> _$PlankaCardToJson(_PlankaCard instance) =>
       'isSubscribed': instance.isSubscribed,
       'stopwatch': instance.stopwatch,
       'createdAt': instance.createdAt?.toIso8601String(),
+      'prevListId': instance.prevListId,
     };
 
 _PlankaStopwatch _$PlankaStopwatchFromJson(Map<String, dynamic> json) =>

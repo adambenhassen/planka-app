@@ -160,6 +160,13 @@ class CardSheet extends ConsumerWidget {
                 onPressed: () =>
                     _popAndRun(context, () => notifier.archiveCard(cardId)),
               ),
+            if (state.lists.any((l) => l.type == PlankaListType.trash))
+              IconButton(
+                icon: const Icon(Icons.delete_sweep_outlined),
+                tooltip: 'Move to trash',
+                onPressed: () => _popAndRun(
+                    context, () => notifier.moveCardToTrash(cardId)),
+              ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
               tooltip: 'Delete card',

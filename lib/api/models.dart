@@ -116,6 +116,7 @@ abstract class PlankaCard with _$PlankaCard {
     bool? isSubscribed,
     PlankaStopwatch? stopwatch,
     DateTime? createdAt,
+    String? prevListId,
   }) = _PlankaCard;
   factory PlankaCard.fromJson(Map<String, dynamic> json) =>
       _$PlankaCardFromJson(json);

@@ -435,6 +435,51 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
+  Future<void> moveCardToTrash(String cardId) async {
+    final s = state.value;
+    final card = s?.cards[cardId];
+    if (s == null || card == null) return;
+    final trash =
+        s.lists.where((l) => l.type == PlankaListType.trash).firstOrNull;
+    if (trash == null) return;
+    await _optimistic(
+      s.copyWith(
+          cards: {...s.cards, cardId: _mergeCard(card, {'listId': trash.id})}),
+      () => _repo.updateCard(cardId, {'listId': trash.id}),
+    );
+  }
+
+  /// Fetches the cards of an archive/trash list directly (they aren't part of
+  /// the board's socket-synced state), for the archive/trash browsing dialog.
+  Future<List<PlankaCard>> fetchEndlessListCards(String listId) async {
+    final env = await _repo.cardsOfList(listId);
+    return env.items.map(PlankaCard.fromJson).toList();
+  }
+
+  /// Restores an archived/trashed card onto the board: back to [card.prevListId]
+  /// if that list is still an active/closed list here, else the first active
+  /// list. Appended to the end of the target list.
+  Future<void> restoreCard(PlankaCard card) async {
+    final s = state.value;
+    if (s == null) return;
+    final columns = s.columns;
+    final prev = card.prevListId == null
+        ? null
+        : columns.where((l) => l.id == card.prevListId).firstOrNull;
+    final target = prev ??
+        s.lists.where((l) => l.type == PlankaListType.active).firstOrNull;
+    if (target == null) return;
+    final last = s.cardsOf(target.id).lastOrNull?.position;
+    final position = last == null ? kPositionGap : last + kPositionGap;
+    await _optimistic(
+      s.copyWith(cards: {
+        ...s.cards,
+        card.id: _mergeCard(card, {'listId': target.id, 'position': position}),
+      }),
+      () => _repo.updateCard(card.id, {'listId': target.id, 'position': position}),
+    );
+  }
+
   Future<void> createList(String name) async {
     final s = state.value;
     if (s == null) return;

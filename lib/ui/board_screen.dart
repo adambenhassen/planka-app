@@ -11,6 +11,7 @@ import 'theme/app_theme.dart';
 import 'card_sheet.dart';
 import 'widgets/async_retry.dart';
 import 'widgets/board_background.dart';
+import 'widgets/archive_trash_dialog.dart';
 import 'widgets/board_members_dialog.dart';
 import 'card_tile.dart';
 import 'widgets/confirm_dialog.dart';
@@ -101,6 +102,8 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
         guardMutation(context, notifier.renameBoard(name));
       case 'members':
         await showBoardMembersDialog(context, boardId);
+      case 'archive':
+        await showArchiveTrashDialog(context, boardId);
       case 'delete':
         final ok = await confirmDialog(context,
             title: 'Delete board?',
@@ -147,6 +150,8 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'rename', child: Text('Rename board')),
                 PopupMenuItem(value: 'members', child: Text('Members')),
+                PopupMenuItem(
+                    value: 'archive', child: Text('Archive & trash')),
                 PopupMenuItem(value: 'delete', child: Text('Delete board')),
               ],
             ),

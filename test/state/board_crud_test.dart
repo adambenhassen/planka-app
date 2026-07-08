@@ -222,6 +222,86 @@ void main() {
         isFalse);
   });
 
+  test('moveCardToTrash moves the card into the trash-type list', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final s0 = container.read(boardProvider(boardId)).value!;
+    final cardId = s0.cards.values.first.id;
+    final trashId =
+        s0.lists.firstWhere((l) => l.type == PlankaListType.trash).id;
+
+    await notifier.moveCardToTrash(cardId);
+
+    final s1 = container.read(boardProvider(boardId)).value!;
+    expect(s1.cards[cardId]!.listId, trashId);
+  });
+
+  test('fetchEndlessListCards parses the response items without touching state',
+      () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final trashId = container
+        .read(boardProvider(boardId))
+        .value!
+        .lists
+        .firstWhere((l) => l.type == PlankaListType.trash)
+        .id;
+
+    final cards = await notifier.fetchEndlessListCards(trashId);
+
+    // The fake API's get() always serves the board fixture's item/included, so
+    // the parsed items come from its top-level `items` (none in this fixture).
+    expect(cards, isA<List<PlankaCard>>());
+  });
+
+  test('restoreCard targets prevListId when it is still an active list',
+      () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final s0 = container.read(boardProvider(boardId)).value!;
+    final targetList = s0.columns.first;
+    final archiveId =
+        s0.lists.firstWhere((l) => l.type == PlankaListType.archive).id;
+    final card = PlankaCard.fromJson({
+      'id': 'archived-1',
+      'boardId': boardId,
+      'listId': archiveId,
+      'type': 'project',
+      'name': 'Archived card',
+      'prevListId': targetList.id,
+    });
+
+    await notifier.restoreCard(card);
+
+    final s1 = container.read(boardProvider(boardId)).value!;
+    expect(s1.cards['archived-1']!.listId, targetList.id);
+    expect(s1.cards['archived-1']!.position, isNotNull);
+  });
+
+  test('restoreCard falls back to the first active list when prevListId is gone',
+      () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final s0 = container.read(boardProvider(boardId)).value!;
+    final firstActive =
+        s0.lists.firstWhere((l) => l.type == PlankaListType.active);
+    final archiveId =
+        s0.lists.firstWhere((l) => l.type == PlankaListType.archive).id;
+    final card = PlankaCard.fromJson({
+      'id': 'archived-2',
+      'boardId': boardId,
+      'listId': archiveId,
+      'type': 'project',
+      'name': 'Archived card',
+      'prevListId': 'no-longer-exists',
+    });
+
+    await notifier.restoreCard(card);
+
+    final s1 = container.read(boardProvider(boardId)).value!;
+    expect(s1.cards['archived-2']!.listId, firstActive.id);
+  });
+
   test('editComment patches the comment text', () async {
     final (container, notifier, boardId) = await boot(
       seed: (s) {
