@@ -19,6 +19,7 @@ const kPlankaSocketEvents = [
   'commentCreate', 'commentUpdate', 'commentDelete',
   'notificationCreate', 'notificationUpdate',
   'boardMembershipCreate', 'boardMembershipUpdate', 'boardMembershipDelete',
+  'actionCreate',
   'userUpdate',
 ];
 

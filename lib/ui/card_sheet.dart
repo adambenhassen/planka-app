@@ -129,6 +129,12 @@ class CardSheet extends ConsumerWidget {
               onPressed: () => guardMutation(context,
                   notifier.setSubscribed(cardId, card.isSubscribed != true)),
             ),
+            IconButton(
+              icon: const Icon(Icons.copy_outlined),
+              tooltip: 'Duplicate card',
+              onPressed: () => guardMutation(
+                  context, notifier.duplicateCard(cardId)),
+            ),
             if (state.lists.any((l) => l.type == PlankaListType.archive))
               IconButton(
                 icon: const Icon(Icons.archive_outlined),

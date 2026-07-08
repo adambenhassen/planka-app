@@ -117,6 +117,9 @@ const Map<String, Gradient> _gradients = {
 /// The Planka gradient for a `backgroundGradient` name, or null if unknown.
 Gradient? plankaGradient(String? name) => name == null ? null : _gradients[name];
 
+/// All gradient names, for the project-background picker.
+List<String> plankaGradientNames() => _gradients.keys.toList();
+
 /// The gradient for a project's background, or null when there's none we render
 /// (no background set, or an `image` background we don't load yet). Callers fall
 /// back to a deterministic color.

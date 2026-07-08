@@ -57,6 +57,8 @@ class PlankaRepo {
           {'type': 'project', 'name': name, 'position': position});
   Future<Envelope> updateCard(String id, Map<String, dynamic> patch) =>
       api.patch('/cards/$id', patch);
+  Future<Envelope> duplicateCard(String id, {required double position}) =>
+      api.post('/cards/$id/duplicate', {'position': position});
   Future<Envelope> deleteCard(String id) => api.delete('/cards/$id');
   Future<Envelope> cardsOfList(String listId) => api.get('/lists/$listId/cards');
 

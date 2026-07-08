@@ -40,6 +40,21 @@ class _FakeApi extends PlankaApi {
   @override
   Future<Envelope> post(String path, Object? body) async {
     if (fail) throw ApiException(500, 'rejected');
+    // POST /cards/<id>/duplicate → a copy of the fixture card at the new position.
+    if (path.endsWith('/duplicate')) {
+      final cardId = path.split('/')[2];
+      final original = (( _fixture()['included']
+              as Map)['cards'] as List)
+          .cast<Map>()
+          .firstWhere((c) => c['id'] == cardId);
+      return Envelope.parse({
+        'item': {
+          ...original.cast<String, dynamic>(),
+          'id': 'copy-$cardId',
+          'position': (body as Map)['position'],
+        },
+      });
+    }
     final userId = (body as Map)['userId'] as String;
     return Envelope.parse({
       'item': {
@@ -139,6 +154,21 @@ void main() {
         container.read(boardProvider(boardId)).value!.cards[cardId]!
             .coverAttachmentId,
         isNull);
+  });
+
+  test('duplicateCard folds the server copy in after the original', () async {
+    final (container, notifier, boardId, _) = await boot();
+    addTearDown(container.dispose);
+    final original =
+        container.read(boardProvider(boardId)).value!.cards.values.first;
+
+    await notifier.duplicateCard(original.id);
+
+    final s = container.read(boardProvider(boardId)).value!;
+    final copy = s.cards['copy-${original.id}']!;
+    expect(copy.name, original.name);
+    expect(copy.listId, original.listId);
+    expect(copy.position, greaterThan(original.position ?? 0));
   });
 
   test('addBoardMember folds the membership and its user into state',

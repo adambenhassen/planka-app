@@ -73,6 +73,21 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
             position: last == null ? kPositionGap : last + kPositionGap);
       });
 
+  Future<void> setProjectGradient(String id, String gradient) =>
+      _mutate(() => _repo.updateProject(
+          id, {'backgroundType': 'gradient', 'backgroundGradient': gradient}));
+
+  Future<void> setProjectBackgroundImage(String id,
+          {required String filePath, required String name}) =>
+      _mutate(() async {
+        await _repo.uploadProjectBackgroundImage(id,
+            filePath: filePath, name: name);
+        return _repo.updateProject(id, {'backgroundType': 'image'});
+      });
+
+  Future<void> clearProjectBackground(String id) =>
+      _mutate(() => _repo.updateProject(id, {'backgroundType': null}));
+
   Future<void> renameBoard(String id, String name) =>
       _mutate(() => _repo.updateBoard(id, {'name': name}));
 

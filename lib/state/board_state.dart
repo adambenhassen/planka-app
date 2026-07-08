@@ -314,6 +314,12 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   }
 
   void _onEvent(SocketEvent event) {
+    // Activity lives in its own provider; a new action just invalidates the
+    // affected card's feed so an open sheet refreshes live.
+    if (event.name == 'actionCreate') {
+      final cardId = event.data.item['cardId'] as String?;
+      if (cardId != null) ref.invalidate(cardActionsProvider(cardId));
+    }
     final s = state.value;
     if (s != null) state = AsyncData(applyEvent(s, event));
   }
@@ -392,6 +398,19 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   Future<void> renameCard(String cardId, String name) =>
       _patchCard(cardId, {'name': name});
+
+  /// Duplicates a card server-side (copies tasks, labels, members) and folds
+  /// the new card into state, placed right after the original.
+  Future<void> duplicateCard(String cardId) async {
+    final card = state.value?.cards[cardId];
+    if (card == null) return;
+    await _createInto(
+      _repo.duplicateCard(cardId,
+          position: (card.position ?? 0) + kPositionGap),
+      PlankaCard.fromJson,
+      (b, c) => b.copyWith(cards: {...b.cards, c.id: c}),
+    );
+  }
 
   Future<void> deleteCard(String cardId) async {
     final s = state.value;

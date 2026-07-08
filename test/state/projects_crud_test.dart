@@ -68,12 +68,20 @@ void main() {
     addTearDown(container.dispose);
 
     await notifier.renameProject('p1', 'Renamed');
+    await notifier.setProjectGradient('p1', 'ocean-dive');
+    await notifier.setProjectBackgroundImage('p1',
+        filePath: 'test/fixtures/projects_index.json', name: 'bg.png');
+    await notifier.clearProjectBackground('p1');
     await notifier.deleteProject('p1');
     await notifier.createBoard('p1', 'Board');
     await notifier.renameBoard('b1', 'Renamed');
     await notifier.deleteBoard('b1');
 
     expect(api.calls, [
+      'PATCH /projects/p1',
+      'PATCH /projects/p1',
+      'POST /projects/p1/background-images',
+      'PATCH /projects/p1',
       'PATCH /projects/p1',
       'DELETE /projects/p1',
       'POST /projects/p1/boards',
