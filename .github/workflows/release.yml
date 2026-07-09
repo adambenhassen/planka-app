@@ -24,8 +24,8 @@ jobs:
             gh release create "$GITHUB_REF_NAME" \
               --title "$GITHUB_REF_NAME" --generate-notes
 
-  # Debug-signed APK — fine for sideloading; swap in a real keystore
-  # (android/app/build.gradle.kts) before any store distribution.
+  # Signed with the stable upload keystore (repo secrets) so sideloaded
+  # updates install over the previous version. Missing secrets → debug key.
   android:
     needs: create-release
     runs-on: ubuntu-latest
@@ -36,6 +36,14 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+      - name: Restore release keystore
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+          echo "$KEYSTORE" | base64 -d > android/app/upload-keystore.jks
+          echo "$KEY_PROPERTIES" > android/key.properties
       - run: flutter pub get
       - run: flutter build apk --release
       - name: Upload APK
