@@ -37,11 +37,14 @@ jobs:
           channel: stable
           cache: true
       - name: Restore release keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
         run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "no keystore secret; building debug-signed"
+            exit 0
+          fi
           echo "$KEYSTORE" | base64 -d > android/app/upload-keystore.jks
           echo "$KEY_PROPERTIES" > android/key.properties
       - run: flutter pub get
