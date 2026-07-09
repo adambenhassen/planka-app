@@ -294,12 +294,24 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
                 padding: const EdgeInsets.all(8),
                 itemCount: columns.length + 1,
                 itemBuilder: (context, i) => i == columns.length
-                    ? InlineAddField(
-                        label: 'Add list',
-                        hintText: 'List name',
-                        columnWidth: _columnWidth,
-                        onSubmit: (name) =>
-                            guardMutation(context, notifier.createList(name)),
+                    // Same translucent surface as the list columns — a bare
+                    // text button is illegible over photo backgrounds.
+                    ? Align(
+                        alignment: Alignment.topCenter,
+                        child: Container(
+                          width: _columnWidth,
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          decoration: BoxDecoration(
+                            color: context.tokens.listSurface,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: InlineAddField(
+                            label: 'Add list',
+                            hintText: 'List name',
+                            onSubmit: (name) => guardMutation(
+                                context, notifier.createList(name)),
+                          ),
+                        ),
                       )
                     : _ListColumn(
                         list: columns[i],
