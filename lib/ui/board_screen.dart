@@ -127,11 +127,17 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
     final board = ref.watch(boardProvider(boardId));
     final state = board.value;
     final b = state?.board;
-    final headerColor = b == null ? null : boardBackgroundFor(ref, b).tint;
     return Scaffold(
+      // Let the board background run behind the app bar; like the web
+      // client, the bar is just a subtle dark overlay on the photo — any
+      // tint color would clash with the image behind it.
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(b?.name ?? 'Board'),
-        backgroundColor: headerColor,
+        backgroundColor:
+            b == null ? null : Colors.black.withValues(alpha: 0.12),
+        elevation: 0,
+        scrolledUnderElevation: 0,
         foregroundColor: b == null ? null : Colors.white,
         actions: [
           IconButton(
@@ -284,7 +290,11 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
           child: BoardBackgroundView(background: background, token: token),
         ),
         Positioned.fill(child: ColoredBox(color: scrim)),
-        Column(
+        // extendBodyBehindAppBar puts the app bar height into the top
+        // padding; SafeArea keeps the lists below the bar while the
+        // background above still shows through it.
+        SafeArea(
+            child: Column(
           children: [
             _ConnectionBanner(boardId: widget.boardId),
             if (widget.filterBar != null) widget.filterBar!,
@@ -322,7 +332,7 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
               ),
             ),
           ],
-        ),
+        )),
       ],
     );
   }
@@ -391,7 +401,7 @@ class _ListColumn extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                padding: const EdgeInsets.fromLTRB(12, 4, 4, 0),
                 child: Row(
                   children: [
                     Expanded(
@@ -411,6 +421,11 @@ class _ListColumn extends StatelessWidget {
                     ),
                     PopupMenuButton<String>(
                       icon: const Icon(Icons.more_vert, size: 18),
+                      padding: EdgeInsets.zero,
+                      style: const ButtonStyle(
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
                       onSelected: (action) async {
                         if (action == 'rename') {
                           final name = await promptText(context,
