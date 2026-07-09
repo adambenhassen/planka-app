@@ -62,8 +62,7 @@ class CardTile extends ConsumerWidget {
                 imageUrl: coverUrl,
                 httpHeaders: imageAuthHeaders(token),
                 width: double.infinity,
-                height: 140,
-                fit: BoxFit.cover,
+                fit: BoxFit.fitWidth,
                 errorWidget: (_, _, _) => const SizedBox.shrink(),
               ),
             Padding(
