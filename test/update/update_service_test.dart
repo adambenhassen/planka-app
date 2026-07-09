@@ -57,6 +57,15 @@ void main() {
       expect(info.isApk, isFalse);
     });
 
+    test('skipped version → null even when newer', () async {
+      body = '{"tag_name":"v1.2.0","html_url":"http://x/rel","assets":[]}';
+      expect(
+        await checkForUpdate(
+            currentVersion: '1.0.0', skippedVersion: '1.2.0', url: url()),
+        isNull,
+      );
+    });
+
     test('server error → null (fails soft)', () async {
       status = 404;
       body = '{"message":"Not Found"}';

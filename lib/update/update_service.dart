@@ -1,4 +1,5 @@
 import 'dart:developer' as developer;
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -41,10 +42,12 @@ const _releasesLatest =
     'https://api.github.com/repos/adambenhassen/planka-app/releases/latest';
 
 /// Returns the latest release if it is newer than [currentVersion], else null.
+/// A release matching [skippedVersion] (user dismissed the prompt) is ignored.
 /// Fails soft: a network/parse error never throws — update checks must not
 /// break app start. [dio]/[url] are injectable for tests.
 Future<UpdateInfo?> checkForUpdate({
   required String currentVersion,
+  String? skippedVersion,
   Dio? dio,
   String url = _releasesLatest,
 }) async {
@@ -52,7 +55,8 @@ Future<UpdateInfo?> checkForUpdate({
     final res = await (dio ?? Dio()).get<Map<String, dynamic>>(url);
     final data = res.data ?? const {};
     final tag = (data['tag_name'] as String?)?.replaceFirst('v', '');
-    if (tag == null || !isNewerVersion(tag, currentVersion)) return null;
+    if (tag == null || tag == skippedVersion) return null;
+    if (!isNewerVersion(tag, currentVersion)) return null;
     final assets = (data['assets'] as List?)?.cast<Map>() ?? const [];
     final apk = assets.firstWhere(
       (a) => (a['name'] as String?)?.endsWith('.apk') ?? false,
@@ -80,11 +84,40 @@ bool isNewerVersion(String latest, String current) {
   return false;
 }
 
+/// Marker file remembering a version the user dismissed the prompt for.
+Future<File> _skipFile() async =>
+    File('${(await getApplicationSupportDirectory()).path}/skipped_update');
+
+/// Stops [version] from being offered again (user dismissed the prompt).
+Future<void> skipVersion(String version) async {
+  try {
+    await (await _skipFile()).writeAsString(version);
+  } catch (e) {
+    developer.log(
+      'persisting skipped version failed',
+      name: 'update',
+      error: e,
+    );
+  }
+}
+
+Future<String?> _skippedVersion() async {
+  try {
+    final f = await _skipFile();
+    return await f.exists() ? (await f.readAsString()).trim() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Checks once per session. Android-only (APK sideload); null elsewhere.
 /// Play Store installs are excluded — the store handles their updates.
 final updateCheckProvider = FutureProvider<UpdateInfo?>((ref) async {
   if (defaultTargetPlatform != TargetPlatform.android) return null;
   final info = await PackageInfo.fromPlatform();
   if (info.installerStore == 'com.android.vending') return null;
-  return checkForUpdate(currentVersion: info.version);
+  return checkForUpdate(
+    currentVersion: info.version,
+    skippedVersion: await _skippedVersion(),
+  );
 });

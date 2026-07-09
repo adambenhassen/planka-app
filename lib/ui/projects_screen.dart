@@ -32,20 +32,25 @@ Future<void> _runUpdate(BuildContext context, UpdateInfo info) async {
   final progress = ValueNotifier<double>(0);
   var dialogOpen = true;
   // Not awaited: the dialog stays up while the download runs below.
-  unawaited(showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => AlertDialog(
-      title: Text('Downloading v${info.version}'),
-      content: ValueListenableBuilder<double>(
-        valueListenable: progress,
-        builder: (_, value, _) =>
-            LinearProgressIndicator(value: value > 0 ? value : null),
+  unawaited(
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: Text('Downloading v${info.version}'),
+        content: ValueListenableBuilder<double>(
+          valueListenable: progress,
+          builder: (_, value, _) =>
+              LinearProgressIndicator(value: value > 0 ? value : null),
+        ),
       ),
-    ),
-  ).whenComplete(() => dialogOpen = false));
+    ).whenComplete(() => dialogOpen = false),
+  );
   try {
-    final path = await downloadUpdate(info, onProgress: (p) => progress.value = p);
+    final path = await downloadUpdate(
+      info,
+      onProgress: (p) => progress.value = p,
+    );
     final result = await OpenFilex.open(path);
     if (result.type != ResultType.done) {
       throw Exception('installer failed to open: ${result.message}');
@@ -68,15 +73,27 @@ class ProjectsScreen extends ConsumerWidget {
     ref.listen(updateCheckProvider, (_, next) {
       final info = next.value;
       if (info == null) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      final controller = ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Update available (v${info.version})'),
           duration: const Duration(seconds: 8),
+          showCloseIcon: true,
           action: SnackBarAction(
             label: info.isApk ? 'Update' : 'Get',
             onPressed: () => _runUpdate(context, info),
           ),
         ),
+      );
+      // Explicit dismissal (close icon or swipe) means "stop offering this
+      // version"; letting it time out does not.
+      unawaited(
+        controller.closed.then((reason) {
+          if (reason == SnackBarClosedReason.dismiss ||
+              reason == SnackBarClosedReason.swipe) {
+            return skipVersion(info.version);
+          }
+          return null;
+        }),
       );
     });
     return Scaffold(
@@ -87,13 +104,17 @@ class ProjectsScreen extends ConsumerWidget {
             icon: const Icon(Icons.add),
             tooltip: 'New project',
             onPressed: () async {
-              final name = await promptText(context,
-                  title: 'New project',
-                  hintText: 'Project name',
-                  confirmLabel: 'Create');
+              final name = await promptText(
+                context,
+                title: 'New project',
+                hintText: 'Project name',
+                confirmLabel: 'Create',
+              );
               if (name == null || !context.mounted) return;
-              guardMutation(context,
-                  ref.read(projectsProvider.notifier).createProject(name));
+              guardMutation(
+                context,
+                ref.read(projectsProvider.notifier).createProject(name),
+              );
             },
           ),
           IconButton(
@@ -127,13 +148,21 @@ class _ProjectList extends ConsumerWidget {
   final ProjectsView view;
   final String? token;
 
-  Future<void> _onProjectMenu(BuildContext context, WidgetRef ref,
-      PlankaProject project, String action) async {
+  Future<void> _onProjectMenu(
+    BuildContext context,
+    WidgetRef ref,
+    PlankaProject project,
+    String action,
+  ) async {
     final notifier = ref.read(projectsProvider.notifier);
     switch (action) {
       case 'addBoard':
-        final name = await promptText(context,
-            title: 'New board', hintText: 'Board name', confirmLabel: 'Create');
+        final name = await promptText(
+          context,
+          title: 'New board',
+          hintText: 'Board name',
+          confirmLabel: 'Create',
+        );
         if (name == null || !context.mounted) return;
         guardMutation(context, notifier.createBoard(project.id, name));
       case 'managers':
@@ -142,25 +171,38 @@ class _ProjectList extends ConsumerWidget {
         await showProjectBackgroundDialog(
           context,
           onGradient: (g) => guardMutation(
-              context, notifier.setProjectGradient(project.id, g)),
+            context,
+            notifier.setProjectGradient(project.id, g),
+          ),
           onImage: (path, name) => guardMutation(
-              context,
-              notifier.setProjectBackgroundImage(project.id,
-                  filePath: path, name: name)),
+            context,
+            notifier.setProjectBackgroundImage(
+              project.id,
+              filePath: path,
+              name: name,
+            ),
+          ),
           onClear: () => guardMutation(
-              context, notifier.clearProjectBackground(project.id)),
+            context,
+            notifier.clearProjectBackground(project.id),
+          ),
         );
       case 'rename':
-        final name = await promptText(context,
-            title: 'Rename project', initialValue: project.name);
+        final name = await promptText(
+          context,
+          title: 'Rename project',
+          initialValue: project.name,
+        );
         if (name == null || name == project.name || !context.mounted) return;
         guardMutation(context, notifier.renameProject(project.id, name));
       case 'delete':
-        final ok = await confirmDialog(context,
-            title: 'Delete project?',
-            message:
-                'The project and all its boards will be permanently deleted.',
-            confirmLabel: 'Delete');
+        final ok = await confirmDialog(
+          context,
+          title: 'Delete project?',
+          message:
+              'The project and all its boards will be permanently deleted.',
+          confirmLabel: 'Delete',
+        );
         if (!ok || !context.mounted) return;
         guardMutation(context, notifier.deleteProject(project.id));
     }
@@ -189,10 +231,9 @@ class _ProjectList extends ConsumerWidget {
                 Expanded(
                   child: Text(
                     p.name,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 PopupMenuButton<String>(
@@ -203,7 +244,9 @@ class _ProjectList extends ConsumerWidget {
                     PopupMenuItem(value: 'addBoard', child: Text('Add board')),
                     PopupMenuItem(value: 'managers', child: Text('Managers')),
                     PopupMenuItem(
-                        value: 'background', child: Text('Background')),
+                      value: 'background',
+                      child: Text('Background'),
+                    ),
                     PopupMenuItem(value: 'rename', child: Text('Rename')),
                     PopupMenuItem(value: 'delete', child: Text('Delete')),
                   ],
