@@ -42,6 +42,7 @@ void main() {
       expect(info, isNotNull);
       expect(info!.version, '1.2.0');
       expect(info.url, 'http://x/app.apk');
+      expect(info.isApk, isTrue);
     });
 
     test('same version → null', () async {
@@ -53,6 +54,7 @@ void main() {
       body = '{"tag_name":"v1.2.0","html_url":"http://x/rel","assets":[]}';
       final info = await checkForUpdate(currentVersion: '1.0.0', url: url());
       expect(info!.url, 'http://x/rel');
+      expect(info.isApk, isFalse);
     });
 
     test('server error → null (fails soft)', () async {

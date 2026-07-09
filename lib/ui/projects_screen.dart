@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/models.dart';
@@ -19,6 +22,42 @@ import 'widgets/profile_dialog.dart';
 import 'widgets/prompt_dialog.dart';
 import 'widgets/user_management_dialog.dart';
 
+/// Downloads the APK with a progress dialog and hands it to the system
+/// installer. Non-APK releases (no asset published) fall back to the browser.
+Future<void> _runUpdate(BuildContext context, UpdateInfo info) async {
+  if (!info.isApk) {
+    await launchUrl(Uri.parse(info.url), mode: LaunchMode.externalApplication);
+    return;
+  }
+  final progress = ValueNotifier<double>(0);
+  var dialogOpen = true;
+  // Not awaited: the dialog stays up while the download runs below.
+  unawaited(showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => AlertDialog(
+      title: Text('Downloading v${info.version}'),
+      content: ValueListenableBuilder<double>(
+        valueListenable: progress,
+        builder: (_, value, _) =>
+            LinearProgressIndicator(value: value > 0 ? value : null),
+      ),
+    ),
+  ).whenComplete(() => dialogOpen = false));
+  try {
+    final path = await downloadUpdate(info, onProgress: (p) => progress.value = p);
+    final result = await OpenFilex.open(path);
+    if (result.type != ResultType.done) {
+      throw Exception('installer failed to open: ${result.message}');
+    }
+  } catch (e) {
+    if (context.mounted) showApiError(context, e);
+  } finally {
+    if (dialogOpen && context.mounted) Navigator.of(context).pop();
+    progress.dispose();
+  }
+}
+
 class ProjectsScreen extends ConsumerWidget {
   const ProjectsScreen({super.key});
 
@@ -34,11 +73,8 @@ class ProjectsScreen extends ConsumerWidget {
           content: Text('Update available (v${info.version})'),
           duration: const Duration(seconds: 8),
           action: SnackBarAction(
-            label: 'Get',
-            onPressed: () => launchUrl(
-              Uri.parse(info.url),
-              mode: LaunchMode.externalApplication,
-            ),
+            label: info.isApk ? 'Update' : 'Get',
+            onPressed: () => _runUpdate(context, info),
           ),
         ),
       );

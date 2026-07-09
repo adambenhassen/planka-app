@@ -4,12 +4,36 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// A published release newer than the running build.
 class UpdateInfo {
   final String version; // e.g. "1.1.0"
   final String url; // APK download URL (or release page as fallback)
   UpdateInfo(this.version, this.url);
+
+  /// True when [url] points at an installable APK asset rather than the
+  /// release web page.
+  bool get isApk => url.endsWith('.apk');
+}
+
+/// Downloads the release APK to the temp dir and returns its path.
+/// [onProgress] receives 0..1 (best effort; stays 0 when length is unknown).
+Future<String> downloadUpdate(
+  UpdateInfo info, {
+  Dio? dio,
+  void Function(double progress)? onProgress,
+}) async {
+  final dir = await getTemporaryDirectory();
+  final path = '${dir.path}/planka-${info.version}.apk';
+  await (dio ?? Dio()).download(
+    info.url,
+    path,
+    onReceiveProgress: (received, total) {
+      if (total > 0) onProgress?.call(received / total);
+    },
+  );
+  return path;
 }
 
 /// Public repo → anonymous access; latest published release.
@@ -57,8 +81,10 @@ bool isNewerVersion(String latest, String current) {
 }
 
 /// Checks once per session. Android-only (APK sideload); null elsewhere.
+/// Play Store installs are excluded — the store handles their updates.
 final updateCheckProvider = FutureProvider<UpdateInfo?>((ref) async {
   if (defaultTargetPlatform != TargetPlatform.android) return null;
   final info = await PackageInfo.fromPlatform();
+  if (info.installerStore == 'com.android.vending') return null;
   return checkForUpdate(currentVersion: info.version);
 });
