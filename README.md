@@ -5,12 +5,12 @@
 <p align="center">
   <a href="https://flutter.dev"><img alt="Flutter" src="https://img.shields.io/badge/Flutter-3.44-02569B?logo=flutter&logoColor=white"></a>
   <a href="https://dart.dev"><img alt="Dart" src="https://img.shields.io/badge/Dart-3-0175C2?logo=dart&logoColor=white"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Android%20%7C%20iOS-3DDC84">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Android%20%7C%20iOS%20%7C%20macOS%20%7C%20Windows-3DDC84">
   <img alt="Planka" src="https://img.shields.io/badge/Planka-2.x-4675A4">
 </p>
 
 <p align="center">
-  A native mobile client for <a href="https://github.com/plankanban/planka">Planka</a>, the open-source kanban board.<br>
+  A Flutter client for <a href="https://github.com/plankanban/planka">Planka</a>, the open-source kanban board — on mobile and desktop.<br>
   Connect to your self-hosted server and manage boards on the go — with realtime sync.
 </p>
 
@@ -19,13 +19,17 @@
 ## Features
 
 - 🔐 **Multi-account** — log in to multiple Planka servers, switch instantly
-- 🗂 **Projects & boards** — browse everything you have access to
-- 🎯 **Kanban board** — drag-and-drop cards across lists, live-synced over WebSocket
-- 🃏 **Full card details** — description, due dates, labels, members, checklists, attachments, comments
+- 🗂 **Projects & boards** — browse everything you have access to, set project backgrounds, manage project managers
+- 🎯 **Kanban board** — drag-and-drop cards across lists, live-synced over WebSocket; filter and sort cards
+- 🃏 **Full card details** — description, due dates, labels, members, checklists, attachments, comments, activity feed
+- ✏️ **Complete CRUD** — create, rename, edit, and delete cards, lists, labels, checklists, tasks, and comments from the app
+- 📦 **Move, duplicate & restore** — move cards across boards and projects, duplicate cards, browse archive/trash and restore
+- 👤 **Profile & admin** — edit your profile and avatar; admins can manage server users
 - 🔔 **Notifications** — realtime unread badge, mark read / mark all read
 - ⚡ **Realtime everywhere** — changes from the web UI appear instantly, and vice versa
+- 🔄 **In-app updates** — sideloaded Android builds download and install new releases directly
 
-> **Status:** actively maintained. The API layer, auth, realtime socket client, and all UI screens (login, projects, board, card sheet, notifications) are built and shipping.
+> **Status:** actively maintained. Feature parity with the Planka web UI is largely complete across cards, boards, projects, and admin.
 
 ## Requirements
 
