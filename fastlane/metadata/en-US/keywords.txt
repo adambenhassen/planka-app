@@ -1,0 +1,1 @@
+kanban,planka,board,self-hosted,selfhosted,project,tasks,todo,agile,team

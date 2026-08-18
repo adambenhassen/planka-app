@@ -110,9 +110,18 @@ Future<String?> _skippedVersion() async {
   }
 }
 
+/// Compiled out of store builds: Google Play and F-Droid both forbid an app
+/// that installs its own updates. Set by the `store` Android flavor via
+/// `--dart-define=ENABLE_IN_APP_UPDATER=false`; sideload builds keep it on.
+const kInAppUpdaterEnabled = bool.fromEnvironment(
+  'ENABLE_IN_APP_UPDATER',
+  defaultValue: true,
+);
+
 /// Checks once per session. Android-only (APK sideload); null elsewhere.
 /// Play Store installs are excluded — the store handles their updates.
 final updateCheckProvider = FutureProvider<UpdateInfo?>((ref) async {
+  if (!kInAppUpdaterEnabled) return null;
   if (defaultTargetPlatform != TargetPlatform.android) return null;
   final info = await PackageInfo.fromPlatform();
   if (info.installerStore == 'com.android.vending') return null;

@@ -34,6 +34,17 @@ android {
         versionName = flutter.versionName
     }
 
+    // `github` is the sideloaded build (in-app updater, APK on the GitHub
+    // release); `store` is what Google Play and F-Droid get — same
+    // applicationId, but without the self-install permission, since both
+    // stores forbid an app that updates itself. Build the Dart side of the
+    // store flavor with `--dart-define=ENABLE_IN_APP_UPDATER=false`.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("github") { dimension = "distribution" }
+        create("store") { dimension = "distribution" }
+    }
+
     signingConfigs {
         if (keyProperties.isNotEmpty()) {
             create("release") {

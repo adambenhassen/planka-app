@@ -21,8 +21,11 @@ jobs:
 
   # Analysis and widget tests never compile the real app, so a breakage that
   # only shows up at build time (assets, manifest, platform config, codegen)
-  # used to reach a release tag unnoticed. Debug APK: no signing secrets, and
-  # a single ABI keeps it the cheapest build that exercises lib/main.dart.
+  # used to reach a release tag unnoticed. Both flavors are built: only the
+  # tag-triggered release workflow builds them otherwise, so a broken flavor
+  # or manifest merge would first surface while cutting a release. Debug and
+  # a single ABI keep it the cheapest build that exercises lib/main.dart; no
+  # signing secrets, and nothing is published.
   build-android:
     runs-on: ubuntu-latest
     steps:
@@ -33,5 +36,32 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - name: Build Android APK (debug)
-        run: flutter build apk --debug --target-platform android-arm64
+      - name: Build Android APK (debug, github flavor)
+        run: |
+          flutter build apk --debug --target-platform android-arm64 \
+            --flavor github
+      - name: Build Android APK (debug, store flavor)
+        run: |
+          flutter build apk --debug --target-platform android-arm64 \
+            --flavor store --dart-define=ENABLE_IN_APP_UPDATER=false
+      # The store build must not ship the self-install permission; Google Play
+      # and F-Droid both reject an app that updates itself.
+      - name: Assert store flavor drops REQUEST_INSTALL_PACKAGES
+        run: |
+          find_manifest() {
+            find build/app/intermediates/merged_manifests -ipath "*$1*" \
+              -name AndroidManifest.xml | head -1
+          }
+          STORE=$(find_manifest storeDebug)
+          GITHUB=$(find_manifest githubDebug)
+          test -n "$STORE" && test -n "$GITHUB" || {
+            echo "merged manifests not found under build/app/intermediates"; exit 1; }
+          # The github flavor must still declare it, otherwise the store
+          # assertion below would pass for the wrong reason.
+          grep -q REQUEST_INSTALL_PACKAGES "$GITHUB" || {
+            echo "github flavor lost REQUEST_INSTALL_PACKAGES ($GITHUB)"; exit 1; }
+          if grep -q REQUEST_INSTALL_PACKAGES "$STORE"; then
+            echo "store flavor still declares REQUEST_INSTALL_PACKAGES ($STORE)"
+            exit 1
+          fi
+          echo "ok: permission present in github flavor, absent from store flavor"
