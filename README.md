@@ -16,6 +16,17 @@
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src=".github/assets/screenshots/projects.png" alt="Projects screen" width="45%">
+  <img src=".github/assets/screenshots/board.png" alt="Kanban board" width="45%">
+</p>
+<p align="center">
+  <img src=".github/assets/screenshots/card.png" alt="Card details" width="45%">
+  <img src=".github/assets/screenshots/notifications.png" alt="Notifications" width="45%">
+</p>
+
 ## Features
 
 - 🔐 **Multi-account** — log in to multiple Planka servers, switch instantly
@@ -57,6 +68,13 @@ docker compose -f dev/docker-compose.yml up -d   # Planka at http://localhost:30
 ```
 
 Default dev credentials: `demo@demo.demo` / `demo`.
+
+Regenerate the README screenshots (needs the dev server and an iOS simulator):
+
+```bash
+./dev/seed_demo.sh
+flutter drive --driver=test_driver/screenshots_driver.dart --target=integration_test/screenshots_test.dart -d "iPhone 16 Pro"
+```
 
 Verify before committing:
 
