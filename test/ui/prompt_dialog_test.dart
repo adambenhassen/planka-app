@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/ui/widgets/prompt_dialog.dart';
 
 /// Renders a button that opens the prompt on tap (not during build, which would
@@ -7,6 +8,8 @@ import 'package:planka_app/ui/widgets/prompt_dialog.dart';
 Widget _host(Future<String?> Function(BuildContext) onTap,
         void Function(Future<String?>) capture) =>
     MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
         body: Builder(
           builder: (context) => ElevatedButton(

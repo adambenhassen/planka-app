@@ -1,6 +1,7 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../../l10n/gen/app_localizations.dart';
 import '../theme/planka_gradients.dart';
 
 /// Picker for a project's background: one of Planka's named gradients, an
@@ -14,7 +15,7 @@ Future<void> showProjectBackgroundDialog(
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Project background'),
+        title: Text(AppLocalizations.of(ctx).projectBackgroundTitle),
         content: SizedBox(
           width: 360,
           child: Column(
@@ -55,7 +56,8 @@ Future<void> showProjectBackgroundDialog(
                 children: [
                   TextButton.icon(
                     icon: const Icon(Icons.image_outlined, size: 18),
-                    label: const Text('Upload image'),
+                    label:
+                        Text(AppLocalizations.of(ctx).projectBackgroundUploadImage),
                     onPressed: () async {
                       final file = await openFile();
                       if (!ctx.mounted) return;
@@ -66,7 +68,7 @@ Future<void> showProjectBackgroundDialog(
                   TextButton.icon(
                     icon: const Icon(Icons.format_color_reset_outlined,
                         size: 18),
-                    label: const Text('None'),
+                    label: Text(AppLocalizations.of(ctx).projectBackgroundNone),
                     onPressed: () {
                       Navigator.pop(ctx);
                       onClear();
@@ -80,7 +82,7 @@ Future<void> showProjectBackgroundDialog(
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(ctx).actionCancel),
           ),
         ],
       ),

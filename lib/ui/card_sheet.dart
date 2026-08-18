@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../api/models.dart';
 import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
+import '../l10n/gen/app_localizations.dart';
 import 'error_handling.dart';
 import 'widgets/confirm_dialog.dart';
 import 'widgets/move_card_dialog.dart';
@@ -69,7 +70,8 @@ class CardSheet extends ConsumerWidget {
 
   /// Downloads an attachment to the temp dir (cookie-authenticated, root-level
   /// download route) and opens it with the platform default app.
-  Future<void> _openAttachment(PlankaApi api, PlankaAttachment a) async {
+  Future<void> _openAttachment(
+      AppLocalizations l10n, PlankaApi api, PlankaAttachment a) async {
     final dir = await getTemporaryDirectory();
     // Attachment names are user-supplied; strip path separators so they can't
     // escape the temp directory.
@@ -79,7 +81,8 @@ class CardSheet extends ConsumerWidget {
         '/attachments/${a.id}/download/${Uri.encodeComponent(a.name)}', path);
     final result = await OpenFilex.open(path);
     if (result.type != ResultType.done) {
-      throw ApiException(null, 'Could not open ${a.name}: ${result.message}');
+      throw ApiException(
+          null, l10n.cardOpenAttachmentFailed(a.name, result.message));
     }
   }
 
@@ -93,21 +96,23 @@ class CardSheet extends ConsumerWidget {
   /// Confirms, then optimistically deletes the card and closes the sheet.
   Future<void> _confirmDelete(
       BuildContext context, BoardNotifier notifier) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await confirmDialog(context,
-        title: 'Delete card?',
-        message: 'This card will be permanently deleted.',
-        confirmLabel: 'Delete');
+        title: l10n.cardDeleteTitle,
+        message: l10n.cardDeleteMessage,
+        confirmLabel: l10n.actionDelete);
     if (!confirmed || !context.mounted) return;
     _popAndRun(context, () => notifier.deleteCard(cardId));
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final state = ref.watch(boardProvider(boardId)).value;
     final card = state?.cards[cardId];
     if (state == null || card == null) {
-      return const SizedBox(
-          height: 200, child: Center(child: Text('Card no longer exists')));
+      return SizedBox(
+          height: 200, child: Center(child: Text(l10n.cardGone)));
     }
     final notifier = ref.read(boardProvider(boardId).notifier);
     final account = ref.watch(currentAccountProvider);
@@ -150,39 +155,39 @@ class CardSheet extends ConsumerWidget {
                   ? Icons.notifications_active
                   : Icons.notifications_none),
               tooltip: card.isSubscribed == true
-                  ? 'Unwatch card'
-                  : 'Watch card',
+                  ? l10n.cardUnwatch
+                  : l10n.cardWatch,
               onPressed: () => guardMutation(context,
                   notifier.setSubscribed(cardId, card.isSubscribed != true)),
             ),
             IconButton(
               icon: const Icon(Icons.copy_outlined),
-              tooltip: 'Duplicate card',
+              tooltip: l10n.cardDuplicate,
               onPressed: () => guardMutation(
                   context, notifier.duplicateCard(cardId)),
             ),
             IconButton(
               icon: const Icon(Icons.drive_file_move_outlined),
-              tooltip: 'Move…',
+              tooltip: l10n.cardMove,
               onPressed: () => _showMoveDialog(context),
             ),
             if (state.lists.any((l) => l.type == PlankaListType.archive))
               IconButton(
                 icon: const Icon(Icons.archive_outlined),
-                tooltip: 'Archive card',
+                tooltip: l10n.cardArchive,
                 onPressed: () =>
                     _popAndRun(context, () => notifier.archiveCard(cardId)),
               ),
             if (state.lists.any((l) => l.type == PlankaListType.trash))
               IconButton(
                 icon: const Icon(Icons.delete_sweep_outlined),
-                tooltip: 'Move to trash',
+                tooltip: l10n.cardMoveToTrash,
                 onPressed: () => _popAndRun(
                     context, () => notifier.moveCardToTrash(cardId)),
               ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete card',
+              tooltip: l10n.cardDelete,
               onPressed: () => _confirmDelete(context, notifier),
             ),
           ],
@@ -200,7 +205,7 @@ class CardSheet extends ConsumerWidget {
               guardMutation(context, notifier.setDueCompleted(cardId, v)),
         ),
         section(
-          'Stopwatch',
+          l10n.sectionStopwatch,
           CardStopwatchSection(
             stopwatch: card.stopwatch,
             onStart: (total) => guardMutation(
@@ -214,7 +219,7 @@ class CardSheet extends ConsumerWidget {
           ),
         ),
         section(
-          'Labels',
+          l10n.sectionLabels,
           CardLabelsSection(
             boardLabels: state.labels,
             activeLabelIds:
@@ -231,7 +236,7 @@ class CardSheet extends ConsumerWidget {
           ),
         ),
         section(
-          'Members',
+          l10n.sectionMembers,
           CardMembersSection(
             boardUsers: state.users,
             memberUserIds: state.membersOf(cardId).map((u) => u.id).toSet(),
@@ -240,7 +245,7 @@ class CardSheet extends ConsumerWidget {
           ),
         ),
         section(
-          'Checklists',
+          l10n.sectionChecklists,
           CardTaskListsSection(
             taskLists: cardTaskLists,
             tasks: state.tasks,
@@ -261,7 +266,7 @@ class CardSheet extends ConsumerWidget {
           ),
         ),
         section(
-          'Attachments',
+          l10n.sectionAttachments,
           CardAttachmentsSection(
             attachments: state.attachmentsOf(cardId),
             token: account?.token,
@@ -269,7 +274,7 @@ class CardSheet extends ConsumerWidget {
             onSetCover: (id) =>
                 guardMutation(context, notifier.setCover(cardId, id)),
             onOpen: (a) => guardMutation(
-                context, _openAttachment(ref.read(apiProvider), a)),
+                context, _openAttachment(l10n, ref.read(apiProvider), a)),
             onUpload: (path, name) =>
                 guardMutation(context,
                     notifier.uploadAttachment(cardId, filePath: path, name: name)),
@@ -277,7 +282,7 @@ class CardSheet extends ConsumerWidget {
           ),
         ),
         section(
-          'Comments',
+          l10n.sectionComments,
           CardCommentsSection(
             comments: comments,
             users: state.users,
@@ -289,7 +294,7 @@ class CardSheet extends ConsumerWidget {
           ),
         ),
         section(
-          'Activity',
+          l10n.sectionActivity,
           CardActivitySection(cardId: cardId, users: state.users),
         ),
       ],

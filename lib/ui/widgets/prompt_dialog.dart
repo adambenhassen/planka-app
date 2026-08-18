@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/gen/app_localizations.dart';
+
 /// Prompts for a single line of text. Returns the trimmed value, or null on
-/// cancel or empty input.
+/// cancel or empty input. [confirmLabel] defaults to the localized "Save",
+/// resolved from the dialog's context.
 Future<String?> promptText(
   BuildContext context, {
   required String title,
   String? initialValue,
   String? hintText,
-  String confirmLabel = 'Save',
+  String? confirmLabel,
 }) async {
   final value = await showDialog<String>(
     context: context,
-    builder: (_) => _PromptDialog(
+    builder: (ctx) => _PromptDialog(
       title: title,
       initialValue: initialValue,
       hintText: hintText,
-      confirmLabel: confirmLabel,
+      confirmLabel: confirmLabel ?? AppLocalizations.of(ctx).actionSave,
     ),
   );
   final trimmed = value?.trim();
@@ -63,7 +66,7 @@ class _PromptDialogState extends State<_PromptDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(AppLocalizations.of(context).actionCancel),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, _controller.text),

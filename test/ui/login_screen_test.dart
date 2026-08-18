@@ -6,6 +6,7 @@ import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
+import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/ui/login_screen.dart';
 
 class RecordingApi extends PlankaApi {
@@ -79,7 +80,11 @@ void main() {
         }),
         accountStoreProvider.overrideWithValue(AccountStore(MemStorage())),
       ],
-      child: MaterialApp.router(routerConfig: router),
+      child: MaterialApp.router(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        routerConfig: router,
+      ),
     );
   }
 
@@ -115,7 +120,11 @@ void main() {
           }),
           accountStoreProvider.overrideWithValue(AccountStore(MemStorage())),
         ],
-        child: MaterialApp.router(routerConfig: router),
+        child: MaterialApp.router(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          routerConfig: router,
+        ),
       );
     }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth/auth_providers.dart';
+import 'l10n/gen/app_localizations.dart';
 import 'router.dart';
 import 'ui/theme/app_theme.dart';
 
@@ -23,7 +24,11 @@ class PlankaApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
-      title: 'Planka',
+      // Follows the system locale; English is the only complete locale, so
+      // Flutter's default resolution falls back to it for anything else.
+      onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       theme: AppTheme.light,
       routerConfig: ref.watch(routerProvider),
     );

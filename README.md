@@ -97,6 +97,26 @@ graph LR
 - **State layer** — Riverpod; one in-memory board state per open board, patched by both REST responses and socket events
 - **UI layer** — Material 3: login → projects → board → card sheet → notifications
 
+## Translations
+
+UI strings live in ARB files under `lib/l10n/`, generated into `lib/l10n/gen/` by
+Flutter's `gen-l10n` (configured in `l10n.yaml`). English (`app_en.arb`) is the
+template every other locale is translated from. The app follows the system
+locale and falls back to English for anything it doesn't ship.
+
+To add one — German, say:
+
+```bash
+cp lib/l10n/app_en.arb lib/l10n/app_de.arb   # then translate the values
+flutter pub get                               # regenerates lib/l10n/gen/
+```
+
+In the copy, set `"@@locale": "de"` and translate only the values. Leave the
+keys and the `{placeholder}` names untouched — they are what the code calls.
+The `@key` metadata blocks describe where each string appears; drop them from
+the translated file. A locale may be partial: missing keys fall back to
+English. Commit the regenerated `lib/l10n/gen/` along with the ARB file.
+
 ## Contributing
 
 Issues and pull requests are welcome. Please run `dart analyze && flutter test` before submitting.

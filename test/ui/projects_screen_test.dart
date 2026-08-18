@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/models.dart';
+import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/state/projects_state.dart';
 import 'package:planka_app/ui/projects_screen.dart';
 
@@ -45,7 +46,11 @@ void main() {
       overrides: [
         projectsProvider.overrideWith(() => _FakeProjectsNotifier(view))
       ],
-      child: MaterialApp.router(routerConfig: router),
+      child: MaterialApp.router(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        routerConfig: router,
+      ),
     ));
     await tester.pumpAndSettle();
 

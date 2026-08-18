@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../api/models.dart';
+import '../l10n/gen/app_localizations.dart';
 import '../state/notifications_state.dart';
 import 'error_handling.dart';
 import 'widgets/async_retry.dart';
@@ -21,17 +22,18 @@ class NotificationsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final notifications = ref.watch(notificationsProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: Text(l10n.notificationsTitle),
         actions: [
           TextButton(
             onPressed: () => guardMutation(
               context,
               ref.read(notificationsProvider.notifier).markAllRead(),
             ),
-            child: const Text('Mark all read'),
+            child: Text(l10n.notificationsMarkAllRead),
           ),
         ],
       ),
@@ -39,7 +41,7 @@ class NotificationsScreen extends ConsumerWidget {
         notifications,
         () => ref.invalidate(notificationsProvider),
         (list) => list.isEmpty
-            ? const Center(child: Text('No notifications'))
+            ? Center(child: Text(l10n.notificationsEmpty))
             : ListView.builder(
                 itemCount: list.length,
                 itemBuilder: (context, i) =>
@@ -58,6 +60,7 @@ class _NotificationTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final data = notification.data ?? const {};
     final cardName = (data['card'] as Map?)?['name'] as String? ?? '';
     final boardId = (data['card'] as Map?)?['boardId'] as String?;
@@ -71,7 +74,8 @@ class _NotificationTile extends ConsumerWidget {
               : const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: notification.createdAt == null
           ? null
-          : Text(_formatRelativeTime(notification.createdAt!.toLocal())),
+          : Text(
+              _formatRelativeTime(l10n, notification.createdAt!.toLocal())),
       onTap: () {
         guardMutation(context,
             ref.read(notificationsProvider.notifier).markRead(notification.id));
@@ -80,12 +84,12 @@ class _NotificationTile extends ConsumerWidget {
     );
   }
 
-  String _formatRelativeTime(DateTime t) {
+  String _formatRelativeTime(AppLocalizations l10n, DateTime t) {
     final diff = DateTime.now().difference(t);
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    if (diff.inMinutes < 1) return l10n.timeJustNow;
+    if (diff.inMinutes < 60) return l10n.timeMinutesAgo(diff.inMinutes);
+    if (diff.inHours < 24) return l10n.timeHoursAgo(diff.inHours);
+    if (diff.inDays < 7) return l10n.timeDaysAgo(diff.inDays);
     return DateFormat.yMMMd().format(t);
   }
 }

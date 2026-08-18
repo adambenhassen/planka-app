@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../api/models.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/prompt_dialog.dart';
 
@@ -45,6 +46,7 @@ class _CardCommentsSectionState extends State<CardCommentsSection> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -90,19 +92,21 @@ class _CardCommentsSectionState extends State<CardCommentsSection> {
                     onSelected: (action) async {
                       if (action == 'edit') {
                         final text = await promptText(context,
-                            title: 'Edit comment', initialValue: c.text);
+                            title: l10n.commentEditTitle, initialValue: c.text);
                         if (!context.mounted || text == null) return;
                         widget.onEdit(c.id, text);
                       } else if (action == 'delete') {
                         if (await confirmDialog(context,
-                            title: 'Delete comment?', confirmLabel: 'Delete')) {
+                            title: l10n.commentDeleteTitle,
+                            confirmLabel: l10n.actionDelete)) {
                           widget.onDelete(c.id);
                         }
                       }
                     },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'edit', child: Text('Edit')),
-                      PopupMenuItem(value: 'delete', child: Text('Delete')),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(value: 'edit', child: Text(l10n.actionEdit)),
+                      PopupMenuItem(
+                          value: 'delete', child: Text(l10n.actionDelete)),
                     ],
                   ),
               ],
@@ -114,9 +118,9 @@ class _CardCommentsSectionState extends State<CardCommentsSection> {
             Expanded(
               child: TextField(
                 controller: _ctrl,
-                decoration: const InputDecoration(
-                  hintText: 'Write a comment…',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  hintText: l10n.commentHint,
+                  border: const OutlineInputBorder(),
                   isDense: true,
                 ),
                 onSubmitted: (_) => _send(),
@@ -124,7 +128,7 @@ class _CardCommentsSectionState extends State<CardCommentsSection> {
             ),
             IconButton(
               icon: const Icon(Icons.send),
-              tooltip: 'Send',
+              tooltip: l10n.commentSend,
               onPressed: _send,
             ),
           ],

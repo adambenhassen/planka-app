@@ -5,6 +5,7 @@ import '../../api/envelope.dart';
 import '../../api/models.dart';
 import '../../api/repositories.dart';
 import '../../auth/auth_providers.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../../state/board_state.dart';
 import '../../state/positions.dart';
 import '../../state/projects_state.dart';
@@ -75,10 +76,11 @@ class _MoveCardDialogState extends ConsumerState<_MoveCardDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final projects = ref.watch(projectsProvider).value;
 
     return AlertDialog(
-      title: const Text('Move card'),
+      title: Text(l10n.moveCardTitle),
       content: SizedBox(
         width: 360,
         child: Column(
@@ -86,7 +88,7 @@ class _MoveCardDialogState extends ConsumerState<_MoveCardDialog> {
           children: [
             DropdownButtonFormField<String>(
               initialValue: _projectId,
-              decoration: const InputDecoration(labelText: 'Project'),
+              decoration: InputDecoration(labelText: l10n.fieldProject),
               items: [
                 for (final p in projects?.projects ?? const <PlankaProject>[])
                   DropdownMenuItem(value: p.id, child: Text(p.name)),
@@ -99,7 +101,7 @@ class _MoveCardDialogState extends ConsumerState<_MoveCardDialog> {
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _targetBoardId,
-              decoration: const InputDecoration(labelText: 'Board'),
+              decoration: InputDecoration(labelText: l10n.fieldBoard),
               items: [
                 for (final b in (projects?.boards ?? const <PlankaBoard>[])
                     .where((b) => b.projectId == _projectId))
@@ -113,7 +115,7 @@ class _MoveCardDialogState extends ConsumerState<_MoveCardDialog> {
               builder: (context, snapshot) {
                 if (_targetBoardId == null) {
                   return DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(labelText: 'List'),
+                    decoration: InputDecoration(labelText: l10n.fieldList),
                     items: const [],
                     onChanged: null,
                   );
@@ -132,7 +134,7 @@ class _MoveCardDialogState extends ConsumerState<_MoveCardDialog> {
                     l.type == PlankaListType.closed);
                 return DropdownButtonFormField<String>(
                   initialValue: _targetListId,
-                  decoration: const InputDecoration(labelText: 'List'),
+                  decoration: InputDecoration(labelText: l10n.fieldList),
                   items: [
                     for (final l in lists)
                       DropdownMenuItem(value: l.id, child: Text(l.name ?? '')),
@@ -147,7 +149,7 @@ class _MoveCardDialogState extends ConsumerState<_MoveCardDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(l10n.actionCancel),
         ),
         FilledButton(
           onPressed: _targetListId == null || _submitting ? null : _confirm,
@@ -157,7 +159,7 @@ class _MoveCardDialogState extends ConsumerState<_MoveCardDialog> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Move'),
+              : Text(l10n.actionMove),
         ),
       ],
     );

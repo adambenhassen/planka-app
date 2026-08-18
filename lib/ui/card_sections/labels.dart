@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../api/models.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/label_colors.dart';
 import '../widgets/prompt_dialog.dart';
@@ -64,7 +65,7 @@ class CardLabelsSection extends StatelessWidget {
           ),
         ActionChip(
           avatar: const Icon(Icons.add, size: 18),
-          label: const Text('Label'),
+          label: Text(AppLocalizations.of(context).labelChip),
           onPressed: () => _manageDialog(context),
         ),
       ],
@@ -104,9 +105,10 @@ class _ManageLabelsDialogState extends State<_ManageLabelsDialog> {
 
   Future<void> _onAction(PlankaLabel label, String action) async {
     if (action == 'edit') {
+      final l10n = AppLocalizations.of(context);
       final name = await promptText(
         context,
-        title: 'Rename label',
+        title: l10n.labelRenameTitle,
         initialValue: label.name ?? '',
       );
       if (!mounted || name == null) return;
@@ -118,11 +120,12 @@ class _ManageLabelsDialogState extends State<_ManageLabelsDialog> {
         }
       });
     } else if (action == 'delete') {
+      final l10n = AppLocalizations.of(context);
       final ok = await confirmDialog(
         context,
-        title: 'Delete label?',
-        message: 'The label is removed from the board and all cards.',
-        confirmLabel: 'Delete',
+        title: l10n.labelDeleteTitle,
+        message: l10n.labelDeleteMessage,
+        confirmLabel: l10n.actionDelete,
       );
       if (!mounted || !ok) return;
       widget.onDeleteLabel(label.id);
@@ -132,8 +135,9 @@ class _ManageLabelsDialogState extends State<_ManageLabelsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return AlertDialog(
-      title: const Text('Labels'),
+      title: Text(l10n.sectionLabels),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -148,9 +152,10 @@ class _ManageLabelsDialogState extends State<_ManageLabelsDialog> {
                 trailing: PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert, size: 18),
                   onSelected: (action) => _onAction(l, action),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Edit')),
-                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(value: 'edit', child: Text(l10n.actionEdit)),
+                    PopupMenuItem(
+                        value: 'delete', child: Text(l10n.actionDelete)),
                   ],
                 ),
               ),
@@ -158,7 +163,7 @@ class _ManageLabelsDialogState extends State<_ManageLabelsDialog> {
             TextField(
               controller: _nameCtrl,
               autofocus: true,
-              decoration: const InputDecoration(labelText: 'New label name'),
+              decoration: InputDecoration(labelText: l10n.labelNewName),
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -192,14 +197,14 @@ class _ManageLabelsDialogState extends State<_ManageLabelsDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
+          child: Text(l10n.actionClose),
         ),
         FilledButton(
           onPressed: () {
             widget.onCreate(_nameCtrl.text.trim(), _color);
             Navigator.pop(context);
           },
-          child: const Text('Create'),
+          child: Text(l10n.actionCreate),
         ),
       ],
     );

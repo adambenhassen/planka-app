@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../api/models.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/inline_add_field.dart';
 import '../widgets/prompt_dialog.dart';
@@ -47,7 +48,9 @@ class CardTaskListsSection extends StatelessWidget {
           ),
           const SizedBox(height: 8),
         ],
-        InlineAddField(label: 'Add checklist', onSubmit: onAddTaskList),
+        InlineAddField(
+            label: AppLocalizations.of(context).checklistAdd,
+            onSubmit: onAddTaskList),
       ],
     );
   }
@@ -76,6 +79,7 @@ class _TaskList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final done = tasks.where((t) => t.isCompleted).length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,21 +95,22 @@ class _TaskList extends StatelessWidget {
               onSelected: (action) async {
                 if (action == 'rename') {
                   final name = await promptText(context,
-                      title: 'Rename checklist', initialValue: taskList.name);
+                      title: l10n.checklistRenameTitle,
+                      initialValue: taskList.name);
                   if (!context.mounted || name == null) return;
                   onRenameTaskList(taskList.id, name);
                 } else if (action == 'delete') {
                   final ok = await confirmDialog(context,
-                      title: 'Delete checklist?',
-                      message: 'The checklist and its tasks will be deleted.',
-                      confirmLabel: 'Delete');
+                      title: l10n.checklistDeleteTitle,
+                      message: l10n.checklistDeleteMessage,
+                      confirmLabel: l10n.actionDelete);
                   if (!context.mounted || !ok) return;
                   onDeleteTaskList(taskList.id);
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'rename', child: Text('Rename')),
-                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              itemBuilder: (_) => [
+                PopupMenuItem(value: 'rename', child: Text(l10n.actionRename)),
+                PopupMenuItem(value: 'delete', child: Text(l10n.actionDelete)),
               ],
             ),
           ],
@@ -131,24 +136,25 @@ class _TaskList extends StatelessWidget {
               onSelected: (action) async {
                 if (action == 'rename') {
                   final name = await promptText(context,
-                      title: 'Rename task', initialValue: t.name);
+                      title: l10n.taskRenameTitle, initialValue: t.name);
                   if (!context.mounted || name == null) return;
                   onRenameTask(t.id, name);
                 } else if (action == 'delete') {
                   final ok = await confirmDialog(context,
-                      title: 'Delete task?', confirmLabel: 'Delete');
+                      title: l10n.taskDeleteTitle,
+                      confirmLabel: l10n.actionDelete);
                   if (!context.mounted || !ok) return;
                   onDeleteTask(t.id);
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'rename', child: Text('Rename')),
-                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              itemBuilder: (_) => [
+                PopupMenuItem(value: 'rename', child: Text(l10n.actionRename)),
+                PopupMenuItem(value: 'delete', child: Text(l10n.actionDelete)),
               ],
             ),
             onChanged: (v) => onToggleTask(t.id, v ?? false),
           ),
-        InlineAddField(label: 'Add task', onSubmit: onAddTask),
+        InlineAddField(label: l10n.taskAdd, onSubmit: onAddTask),
       ],
     );
   }

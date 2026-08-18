@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../api/models.dart';
+import '../../l10n/gen/app_localizations.dart';
 
 class CardDueDateSection extends StatelessWidget {
   const CardDueDateSection({
@@ -35,6 +36,7 @@ class CardDueDateSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final due = card.dueDate?.toLocal();
     return Row(
       children: [
@@ -46,14 +48,14 @@ class CardDueDateSection extends StatelessWidget {
         TextButton.icon(
           icon: const Icon(Icons.schedule),
           label: Text(due == null
-              ? 'Set due date'
+              ? l10n.dueDateSet
               : DateFormat.yMMMd().add_Hm().format(due)),
           onPressed: () => _pick(context),
         ),
         if (due != null)
           IconButton(
             icon: const Icon(Icons.close),
-            tooltip: 'Remove due date',
+            tooltip: l10n.dueDateRemove,
             onPressed: () => onChanged(null),
           ),
       ],

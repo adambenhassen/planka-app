@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/gen/app_localizations.dart';
 import '../../state/board_state.dart';
 import '../error_handling.dart';
 import 'confirm_dialog.dart';
@@ -11,6 +12,14 @@ Future<void> showBoardMembersDialog(BuildContext context, String boardId) =>
       builder: (_) => _BoardMembersDialog(boardId: boardId),
     );
 
+/// Display name for a board membership role; unknown roles from a newer
+/// server fall back to the raw value.
+String _roleLabel(AppLocalizations l10n, String role) => switch (role) {
+      'editor' => l10n.boardRoleEditor,
+      'viewer' => l10n.boardRoleViewer,
+      _ => role,
+    };
+
 /// Manage board memberships: role toggle, remove, and (admin-only) add.
 /// Watches the board provider directly, so socket echoes and optimistic
 /// updates keep the dialog in sync while it stays open.
@@ -20,12 +29,13 @@ class _BoardMembersDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final state = ref.watch(boardProvider(boardId)).value;
     final notifier = ref.read(boardProvider(boardId).notifier);
     if (state == null) return const SizedBox.shrink();
     final memberIds = state.boardMemberships.map((m) => m.userId).toSet();
     return AlertDialog(
-      title: const Text('Board members'),
+      title: Text(l10n.boardMembersTitle),
       content: SizedBox(
         width: 400,
         child: ListView(
@@ -38,17 +48,16 @@ class _BoardMembersDialog extends ConsumerWidget {
                         .where((u) => u.id == m.userId)
                         .firstOrNull
                         ?.name ??
-                    'Unknown'),
-                subtitle: Text(m.role),
+                    l10n.unknownUser),
+                subtitle: Text(_roleLabel(l10n, m.role)),
                 trailing: PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert),
                   onSelected: (action) async {
                     if (action == 'remove') {
                       final ok = await confirmDialog(context,
-                          title: 'Remove member?',
-                          message:
-                              'They will lose access to this board.',
-                          confirmLabel: 'Remove');
+                          title: l10n.boardMemberRemoveTitle,
+                          message: l10n.boardMemberRemoveMessage,
+                          confirmLabel: l10n.actionRemove);
                       if (!ok || !context.mounted) return;
                       guardMutation(context, notifier.removeBoardMember(m.id));
                     } else {
@@ -60,10 +69,10 @@ class _BoardMembersDialog extends ConsumerWidget {
                     PopupMenuItem(
                         value: m.role == 'editor' ? 'viewer' : 'editor',
                         child: Text(m.role == 'editor'
-                            ? 'Make viewer'
-                            : 'Make editor')),
-                    const PopupMenuItem(
-                        value: 'remove', child: Text('Remove')),
+                            ? l10n.boardMemberMakeViewer
+                            : l10n.boardMemberMakeEditor)),
+                    PopupMenuItem(
+                        value: 'remove', child: Text(l10n.actionRemove)),
                   ],
                 ),
               ),
@@ -79,7 +88,7 @@ class _BoardMembersDialog extends ConsumerWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
+          child: Text(l10n.actionClose),
         ),
       ],
     );
@@ -93,6 +102,7 @@ class _AddMember extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final users = ref.watch(allUsersProvider);
     return users.when(
       loading: () => const Padding(
@@ -101,20 +111,20 @@ class _AddMember extends ConsumerWidget {
       ),
       // Listing all users needs admin/project-owner rights on the server.
       error: (_, _) => Text(
-        'Adding members requires admin rights',
+        l10n.boardMembersAdminRequired,
         style: TextStyle(color: Theme.of(context).hintColor),
       ),
       data: (all) {
         final candidates =
             all.where((u) => !memberIds.contains(u.id)).toList();
         if (candidates.isEmpty) {
-          return Text('Everyone is already a member',
+          return Text(l10n.boardMembersAllAdded,
               style: TextStyle(color: Theme.of(context).hintColor));
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Add member',
+            Text(l10n.boardMemberAdd,
                 style: Theme.of(context).textTheme.labelLarge),
             for (final u in candidates)
               ListTile(

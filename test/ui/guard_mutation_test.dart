@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/ui/error_handling.dart';
 
 Future<BuildContext> _pumpHost(WidgetTester tester) async {
   late BuildContext ctx;
   await tester.pumpWidget(MaterialApp(
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     home: Scaffold(
       body: Builder(builder: (context) {
         ctx = context;
