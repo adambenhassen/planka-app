@@ -78,9 +78,11 @@ dev_dependencies:
 # The following section is specific to Flutter packages.
 flutter:
 
-  # Runs gen-l10n over lib/l10n/*.arb (configured in l10n.yaml) on pub get.
-  # The output under lib/l10n/gen is committed so `dart analyze` works on a
-  # fresh checkout without a build step.
+  # Runs gen-l10n over lib/l10n/*.arb (configured in l10n.yaml) on pub get,
+  # so the output under lib/l10n/gen is rebuilt by every CI and release job.
+  # It is committed anyway to match the repo's other generated sources
+  # (models.freezed.dart, models.g.dart) and to keep an ARB change's effect
+  # visible in review.
   generate: true
 
   # The following line ensures that the Material Icons font is

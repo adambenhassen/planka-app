@@ -25,8 +25,11 @@ import 'widgets/user_management_dialog.dart';
 
 /// Downloads the APK with a progress dialog and hands it to the system
 /// installer. Non-APK releases (no asset published) fall back to the browser.
-Future<void> _runUpdate(BuildContext context, UpdateInfo info) async {
-  final l10n = AppLocalizations.of(context);
+/// [l10n] is resolved by the caller's build, not looked up here: the snackbar
+/// that triggers this outlives the screen, and the non-APK branch below must
+/// stay reachable without touching a possibly-defunct element.
+Future<void> _runUpdate(
+    AppLocalizations l10n, BuildContext context, UpdateInfo info) async {
   if (!info.isApk) {
     await launchUrl(Uri.parse(info.url), mode: LaunchMode.externalApplication);
     return;
@@ -83,7 +86,7 @@ class ProjectsScreen extends ConsumerWidget {
           showCloseIcon: true,
           action: SnackBarAction(
             label: info.isApk ? l10n.updateActionUpdate : l10n.updateActionGet,
-            onPressed: () => _runUpdate(context, info),
+            onPressed: () => _runUpdate(l10n, context, info),
           ),
         ),
       );
