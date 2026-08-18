@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../api/repositories.dart';
 import '../../auth/auth_providers.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../../state/current_user_state.dart';
 import '../error_handling.dart';
 import 'prompt_dialog.dart';
@@ -18,6 +19,7 @@ class _ProfileDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final user = ref.watch(currentUserProvider).value;
     if (user == null) return const SizedBox.shrink();
 
@@ -31,7 +33,7 @@ class _ProfileDialog extends ConsumerWidget {
     }
 
     return AlertDialog(
-      title: const Text('Profile'),
+      title: Text(l10n.profileTitle),
       content: SizedBox(
         width: 360,
         child: SingleChildScrollView(
@@ -55,25 +57,25 @@ class _ProfileDialog extends ConsumerWidget {
                       await mutate((repo) => repo.uploadUserAvatar(user.id,
                           filePath: file.path, name: file.name));
                     },
-                    child: const Text('Upload'),
+                    child: Text(l10n.actionUpload),
                   ),
                   if (user.avatar != null)
                     TextButton(
                       onPressed: () => mutate((repo) =>
                           repo.updateUser(user.id, {'avatar': null})),
-                      child: const Text('Remove'),
+                      child: Text(l10n.actionRemove),
                     ),
                 ],
               ),
               const Divider(),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Name'),
+                title: Text(l10n.fieldName),
                 subtitle: Text(user.name),
                 trailing: const Icon(Icons.edit_outlined, size: 18),
                 onTap: () async {
                   final value = await promptText(context,
-                      title: 'Name', initialValue: user.name);
+                      title: l10n.fieldName, initialValue: user.name);
                   if (value == null) return;
                   await mutate(
                       (repo) => repo.updateUser(user.id, {'name': value}));
@@ -81,12 +83,12 @@ class _ProfileDialog extends ConsumerWidget {
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Phone'),
-                subtitle: Text(user.phone ?? '—'),
+                title: Text(l10n.profilePhone),
+                subtitle: Text(user.phone ?? l10n.valueNotSet),
                 trailing: const Icon(Icons.edit_outlined, size: 18),
                 onTap: () async {
                   final value = await promptText(context,
-                      title: 'Phone', initialValue: user.phone);
+                      title: l10n.profilePhone, initialValue: user.phone);
                   if (value == null) return;
                   await mutate(
                       (repo) => repo.updateUser(user.id, {'phone': value}));
@@ -94,12 +96,13 @@ class _ProfileDialog extends ConsumerWidget {
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Organization'),
-                subtitle: Text(user.organization ?? '—'),
+                title: Text(l10n.profileOrganization),
+                subtitle: Text(user.organization ?? l10n.valueNotSet),
                 trailing: const Icon(Icons.edit_outlined, size: 18),
                 onTap: () async {
                   final value = await promptText(context,
-                      title: 'Organization', initialValue: user.organization);
+                      title: l10n.profileOrganization,
+                      initialValue: user.organization);
                   if (value == null) return;
                   await mutate((repo) =>
                       repo.updateUser(user.id, {'organization': value}));
@@ -108,13 +111,13 @@ class _ProfileDialog extends ConsumerWidget {
               const Divider(),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Email'),
-                subtitle: Text(user.email ?? '—'),
+                title: Text(l10n.fieldEmail),
+                subtitle: Text(user.email ?? l10n.valueNotSet),
                 trailing: const Icon(Icons.edit_outlined, size: 18),
                 onTap: () => _showCredentialDialog(
                   context,
-                  title: 'Change email',
-                  valueLabel: 'New email',
+                  title: l10n.profileChangeEmail,
+                  valueLabel: l10n.profileNewEmail,
                   onSubmit: (value, currentPassword) => mutate((repo) =>
                       repo.updateUserEmail(user.id,
                           email: value, currentPassword: currentPassword)),
@@ -122,13 +125,13 @@ class _ProfileDialog extends ConsumerWidget {
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Username'),
-                subtitle: Text(user.username ?? '—'),
+                title: Text(l10n.profileUsername),
+                subtitle: Text(user.username ?? l10n.valueNotSet),
                 trailing: const Icon(Icons.edit_outlined, size: 18),
                 onTap: () => _showCredentialDialog(
                   context,
-                  title: 'Change username',
-                  valueLabel: 'New username',
+                  title: l10n.profileChangeUsername,
+                  valueLabel: l10n.profileNewUsername,
                   onSubmit: (value, currentPassword) => mutate((repo) =>
                       repo.updateUserUsername(user.id,
                           username: value, currentPassword: currentPassword)),
@@ -136,12 +139,12 @@ class _ProfileDialog extends ConsumerWidget {
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Password'),
+                title: Text(l10n.fieldPassword),
                 trailing: const Icon(Icons.edit_outlined, size: 18),
                 onTap: () => _showCredentialDialog(
                   context,
-                  title: 'Change password',
-                  valueLabel: 'New password',
+                  title: l10n.profileChangePassword,
+                  valueLabel: l10n.profileNewPassword,
                   obscureValue: true,
                   onSubmit: (value, currentPassword) async {
                     try {
@@ -174,7 +177,7 @@ class _ProfileDialog extends ConsumerWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
+          child: Text(l10n.actionClose),
         ),
       ],
     );
@@ -209,18 +212,19 @@ Future<void> _showCredentialDialog(
           TextField(
             controller: passwordController,
             obscureText: true,
-            decoration: const InputDecoration(hintText: 'Current password'),
+            decoration: InputDecoration(
+                hintText: AppLocalizations.of(ctx).profileCurrentPassword),
           ),
         ],
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel'),
+          child: Text(AppLocalizations.of(ctx).actionCancel),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Save'),
+          child: Text(AppLocalizations.of(ctx).actionSave),
         ),
       ],
     ),

@@ -2,6 +2,7 @@ import 'package:file_selector_platform_interface/file_selector_platform_interfac
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/models.dart';
+import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/ui/card_sections/attachments.dart';
 
 /// Stands in for the native file dialog, which can't be driven in a test.
@@ -31,6 +32,8 @@ void main() {
     void Function(String id) onDelete = _noop,
   }) =>
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: CardAttachmentsSection(
             attachments: attachments,

@@ -4,11 +4,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../api/models.dart';
 import '../../api/repositories.dart';
 import '../../auth/auth_providers.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../../state/current_user_state.dart';
 import '../error_handling.dart';
 import 'confirm_dialog.dart';
 
 const _roles = ['admin', 'projectOwner', 'boardUser'];
+
+/// Display name for a Planka user role; a role from a newer server that this
+/// client doesn't know falls back to the raw value.
+String _roleLabel(AppLocalizations l10n, String role) => switch (role) {
+      'admin' => l10n.userRoleAdmin,
+      'projectOwner' => l10n.userRoleProjectOwner,
+      'boardUser' => l10n.userRoleBoardUser,
+      _ => role,
+    };
 
 Future<void> showUserManagementDialog(BuildContext context) => showDialog(
       context: context,
@@ -62,10 +72,11 @@ class _UserManagementDialogState extends ConsumerState<_UserManagementDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final selfId = ref.watch(currentUserProvider).value?.id;
 
     return AlertDialog(
-      title: const Text('Manage users'),
+      title: Text(l10n.manageUsersTitle),
       content: SizedBox(
         width: 420,
         height: 480,
@@ -87,10 +98,9 @@ class _UserManagementDialogState extends ConsumerState<_UserManagementDialog> {
                                   {'isDeactivated': u.isDeactivated != true})),
                           onDelete: () async {
                             final ok = await confirmDialog(context,
-                                title: 'Delete user?',
-                                message:
-                                    '${u.name} will be permanently removed.',
-                                confirmLabel: 'Delete');
+                                title: l10n.userDeleteTitle,
+                                message: l10n.userDeleteMessage(u.name),
+                                confirmLabel: l10n.actionDelete);
                             if (!ok || !context.mounted) return;
                             await _mutate((repo) => repo.deleteUser(u.id));
                           },
@@ -98,7 +108,7 @@ class _UserManagementDialogState extends ConsumerState<_UserManagementDialog> {
                       const Divider(),
                       TextButton.icon(
                         icon: const Icon(Icons.person_add_alt),
-                        label: const Text('Add user'),
+                        label: Text(l10n.userAdd),
                         onPressed: () => _showAddUserDialog(context),
                       ),
                     ],
@@ -107,13 +117,14 @@ class _UserManagementDialogState extends ConsumerState<_UserManagementDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
+          child: Text(l10n.actionClose),
         ),
       ],
     );
   }
 
   Future<void> _showAddUserDialog(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
     final nameController = TextEditingController();
@@ -123,29 +134,29 @@ class _UserManagementDialogState extends ConsumerState<_UserManagementDialog> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
-          title: const Text('Add user'),
+          title: Text(l10n.userAdd),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: nameController,
                 autofocus: true,
-                decoration: const InputDecoration(hintText: 'Name'),
+                decoration: InputDecoration(hintText: l10n.fieldName),
               ),
               TextField(
                 controller: emailController,
-                decoration: const InputDecoration(hintText: 'Email'),
+                decoration: InputDecoration(hintText: l10n.fieldEmail),
               ),
               TextField(
                 controller: passwordController,
                 obscureText: true,
-                decoration: const InputDecoration(hintText: 'Password'),
+                decoration: InputDecoration(hintText: l10n.fieldPassword),
               ),
               DropdownButton<String>(
                 value: role,
                 items: [
                   for (final r in _roles)
-                    DropdownMenuItem(value: r, child: Text(r)),
+                    DropdownMenuItem(value: r, child: Text(_roleLabel(l10n, r))),
                 ],
                 onChanged: (value) => setState(() => role = value!),
               ),
@@ -154,11 +165,11 @@ class _UserManagementDialogState extends ConsumerState<_UserManagementDialog> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+              child: Text(l10n.actionCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Add'),
+              child: Text(l10n.actionAdd),
             ),
           ],
         ),
@@ -200,6 +211,7 @@ class _UserTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final deactivated = user.isDeactivated == true;
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -208,11 +220,14 @@ class _UserTile extends StatelessWidget {
           style: deactivated
               ? TextStyle(color: Theme.of(context).disabledColor)
               : null),
-      subtitle: Text(user.email ?? '—'),
+      subtitle: Text(user.email ?? l10n.valueNotSet),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Chip(label: Text(user.role ?? '—')),
+          Chip(
+              label: Text(user.role == null
+                  ? l10n.valueNotSet
+                  : _roleLabel(l10n, user.role!))),
           if (!isSelf)
             PopupMenuButton<String>(
               onSelected: (value) {
@@ -227,13 +242,15 @@ class _UserTile extends StatelessWidget {
               itemBuilder: (context) => [
                 for (final r in _roles)
                   if (r != user.role)
-                    PopupMenuItem(value: r, child: Text('Make $r')),
+                    PopupMenuItem(
+                        value: r,
+                        child: Text(l10n.userMakeRole(_roleLabel(l10n, r)))),
                 PopupMenuItem(
                   value: 'toggleDeactivated',
-                  child:
-                      Text(deactivated ? 'Reactivate' : 'Deactivate'),
+                  child: Text(
+                      deactivated ? l10n.userReactivate : l10n.userDeactivate),
                 ),
-                const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                PopupMenuItem(value: 'delete', child: Text(l10n.actionDelete)),
               ],
             ),
         ],

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
+import '../l10n/gen/app_localizations.dart';
 import 'error_handling.dart';
 import 'widgets/confirm_dialog.dart';
 
@@ -32,7 +33,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Session expired — log in again')),
+          SnackBar(
+            content:
+                Text(AppLocalizations.of(context).loginSessionExpired),
+          ),
         );
         ref.read(authExpiredProvider.notifier).clear();
       });
@@ -61,13 +65,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return true;
   }
 
-  Future<bool> _confirmTerms() => confirmDialog(
-    context,
-    title: 'Accept Terms of Service?',
-    message:
-        'This server requires you to accept its Terms of Service to log in.',
-    confirmLabel: 'Accept',
-  );
+  Future<bool> _confirmTerms() {
+    final l10n = AppLocalizations.of(context);
+    return confirmDialog(
+      context,
+      title: l10n.loginTermsTitle,
+      message: l10n.loginTermsMessage,
+      confirmLabel: l10n.actionAccept,
+    );
+  }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -90,6 +96,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Scaffold(
@@ -135,13 +142,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               ),
                               const SizedBox(height: 16),
                               Text(
-                                'Planka',
+                                l10n.appTitle,
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.headlineMedium,
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Sign in to your server',
+                                l10n.loginSubtitle,
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   color: scheme.onSurfaceVariant,
@@ -150,10 +157,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               const SizedBox(height: 32),
                               TextFormField(
                                 controller: _serverCtrl,
-                                decoration: const InputDecoration(
-                                  labelText: 'Server URL',
-                                  prefixIcon: Icon(Icons.dns_outlined),
-                                  border: OutlineInputBorder(),
+                                decoration: InputDecoration(
+                                  labelText: l10n.loginServerUrl,
+                                  prefixIcon: const Icon(Icons.dns_outlined),
+                                  border: const OutlineInputBorder(),
                                 ),
                                 keyboardType: TextInputType.url,
                                 autocorrect: false,
@@ -163,16 +170,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     (v == null ||
                                         v.trim().isEmpty ||
                                         v.trim() == 'https://')
-                                    ? 'Required'
+                                    ? l10n.fieldRequired
                                     : null,
                               ),
                               const SizedBox(height: 16),
                               TextFormField(
                                 controller: _emailCtrl,
-                                decoration: const InputDecoration(
-                                  labelText: 'Email or username',
-                                  prefixIcon: Icon(Icons.person_outline),
-                                  border: OutlineInputBorder(),
+                                decoration: InputDecoration(
+                                  labelText: l10n.loginEmailOrUsername,
+                                  prefixIcon: const Icon(Icons.person_outline),
+                                  border: const OutlineInputBorder(),
                                 ),
                                 keyboardType: TextInputType.emailAddress,
                                 autocorrect: false,
@@ -180,20 +187,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 autofillHints: const [AutofillHints.username],
                                 validator: (v) =>
                                     (v == null || v.trim().isEmpty)
-                                    ? 'Required'
+                                    ? l10n.fieldRequired
                                     : null,
                               ),
                               const SizedBox(height: 16),
                               TextFormField(
                                 controller: _passwordCtrl,
                                 decoration: InputDecoration(
-                                  labelText: 'Password',
+                                  labelText: l10n.fieldPassword,
                                   prefixIcon: const Icon(Icons.lock_outline),
                                   border: const OutlineInputBorder(),
                                   suffixIcon: IconButton(
                                     tooltip: _obscurePassword
-                                        ? 'Show password'
-                                        : 'Hide password',
+                                        ? l10n.loginShowPassword
+                                        : l10n.loginHidePassword,
                                     icon: Icon(
                                       _obscurePassword
                                           ? Icons.visibility_outlined
@@ -209,7 +216,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 textInputAction: TextInputAction.done,
                                 autofillHints: const [AutofillHints.password],
                                 validator: (v) => (v == null || v.isEmpty)
-                                    ? 'Required'
+                                    ? l10n.fieldRequired
                                     : null,
                                 onFieldSubmitted: (_) => _submit(),
                               ),
@@ -227,7 +234,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : const Text('Log in'),
+                                    : Text(l10n.loginSubmit),
                               ),
                             ],
                           ),

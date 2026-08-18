@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../api/models.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../../state/board_state.dart';
 
 IconData _iconFor(PlankaActionType type) => switch (type) {
@@ -15,7 +16,7 @@ IconData _iconFor(PlankaActionType type) => switch (type) {
       PlankaActionType.unknown => Icons.history,
     };
 
-String _describe(PlankaAction a) {
+String _describe(AppLocalizations l10n, PlankaAction a) {
   final data = a.data ?? const {};
   String? str(String key) {
     final v = data[key];
@@ -30,19 +31,24 @@ String _describe(PlankaAction a) {
   }
 
   return switch (a.type) {
-    PlankaActionType.createCard =>
-      'created this card${nestedName('list') != null ? ' in ${nestedName('list')}' : ''}',
+    PlankaActionType.createCard => switch (nestedName('list')) {
+        final list? => l10n.activityCreatedCardInList(list),
+        _ => l10n.activityCreatedCard,
+      },
     PlankaActionType.moveCard =>
-      'moved this card${nestedName('fromList') != null && nestedName('toList') != null ? ' from ${nestedName('fromList')} to ${nestedName('toList')}' : ''}',
+      switch ((nestedName('fromList'), nestedName('toList'))) {
+        (final from?, final to?) => l10n.activityMovedCardFromTo(from, to),
+        _ => l10n.activityMovedCard,
+      },
     PlankaActionType.addMemberToCard =>
-      'added ${nestedName('user') ?? 'a member'} to this card',
+      l10n.activityAddedMember(nestedName('user') ?? l10n.activityAMember),
     PlankaActionType.removeMemberFromCard =>
-      'removed ${nestedName('user') ?? 'a member'} from this card',
-    PlankaActionType.completeTask =>
-      'completed ${nestedName('task') ?? str('name') ?? 'a task'}',
-    PlankaActionType.uncompleteTask =>
-      'uncompleted ${nestedName('task') ?? str('name') ?? 'a task'}',
-    PlankaActionType.unknown => 'updated this card',
+      l10n.activityRemovedMember(nestedName('user') ?? l10n.activityAMember),
+    PlankaActionType.completeTask => l10n.activityCompletedTask(
+        nestedName('task') ?? str('name') ?? l10n.activityATask),
+    PlankaActionType.uncompleteTask => l10n.activityUncompletedTask(
+        nestedName('task') ?? str('name') ?? l10n.activityATask),
+    PlankaActionType.unknown => l10n.activityUpdatedCard,
   };
 }
 
@@ -59,16 +65,17 @@ class CardActivitySection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final actions = ref.watch(cardActionsProvider(cardId));
+    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     return actions.when(
       loading: () => const Padding(
         padding: EdgeInsets.all(8),
         child: Center(child: CircularProgressIndicator()),
       ),
-      error: (e, _) => Text('Could not load activity',
+      error: (e, _) => Text(l10n.activityLoadError,
           style: TextStyle(color: theme.colorScheme.error)),
       data: (items) {
-        if (items.isEmpty) return const Text('No activity yet');
+        if (items.isEmpty) return Text(l10n.activityEmpty);
         final dateFormat = DateFormat.yMMMd().add_jm();
         return Column(
           children: [
@@ -79,8 +86,11 @@ class CardActivitySection extends ConsumerWidget {
                 leading: Icon(_iconFor(a.type),
                     size: 20, color: theme.colorScheme.onSurfaceVariant),
                 title: Text(
-                  '${users.where((u) => u.id == a.userId).firstOrNull?.name ?? 'Someone'} '
-                  '${_describe(a)}',
+                  l10n.activityEntry(
+                    users.where((u) => u.id == a.userId).firstOrNull?.name ??
+                        l10n.activitySomeone,
+                    _describe(l10n, a),
+                  ),
                 ),
                 subtitle: a.createdAt == null
                     ? null

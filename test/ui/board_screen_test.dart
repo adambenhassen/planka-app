@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
+import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/ui/board_screen.dart';
 import 'package:planka_app/ui/theme/app_theme.dart';
@@ -45,7 +46,12 @@ void main() {
           return notifier;
         }),
       ],
-      child: MaterialApp(theme: AppTheme.light, home: BoardScreen(boardId: boardId)),
+      child: MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: AppTheme.light,
+        home: BoardScreen(boardId: boardId),
+      ),
     ));
     await tester.pumpAndSettle();
 

@@ -30,6 +30,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   flutter_riverpod: ^3.3.2
   dio: ^5.10.0
@@ -38,7 +40,9 @@ dependencies:
   go_router: ^17.3.0
   freezed_annotation: ^3.1.0
   json_annotation: ^4.12.0
-  intl: ^0.20.3
+  # Kept at the version flutter_localizations pins, so gen-l10n's output and
+  # the app's own DateFormat calls share one intl.
+  intl: ^0.20.2
   cached_network_image: ^3.4.1
   file_selector: ^1.1.0
   package_info_plus: ^10.2.0
@@ -73,6 +77,13 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+
+  # Runs gen-l10n over lib/l10n/*.arb (configured in l10n.yaml) on pub get,
+  # so the output under lib/l10n/gen is rebuilt by every CI and release job.
+  # It is committed anyway to match the repo's other generated sources
+  # (models.freezed.dart, models.g.dart) and to keep an ARB change's effect
+  # visible in review.
+  generate: true
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

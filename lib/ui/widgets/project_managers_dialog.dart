@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../api/models.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../../state/board_state.dart';
 import '../../state/projects_state.dart';
 import '../error_handling.dart';
@@ -21,6 +22,7 @@ class _ProjectManagersDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final view = ref.watch(projectsProvider).value;
     final notifier = ref.read(projectsProvider.notifier);
     if (view == null) return const SizedBox.shrink();
@@ -31,7 +33,7 @@ class _ProjectManagersDialog extends ConsumerWidget {
         view.users.where((u) => u.id == id).firstOrNull;
 
     return AlertDialog(
-      title: const Text('Project managers'),
+      title: Text(l10n.projectManagersTitle),
       content: SizedBox(
         width: 400,
         child: ListView(
@@ -41,16 +43,15 @@ class _ProjectManagersDialog extends ConsumerWidget {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.manage_accounts_outlined),
-                title: Text(userOf(m.userId)?.name ?? 'Unknown'),
+                title: Text(userOf(m.userId)?.name ?? l10n.unknownUser),
                 trailing: IconButton(
                   icon: const Icon(Icons.remove_circle_outline),
-                  tooltip: 'Remove manager',
+                  tooltip: l10n.projectManagerRemoveTooltip,
                   onPressed: () async {
                     final ok = await confirmDialog(context,
-                        title: 'Remove manager?',
-                        message:
-                            'They will lose manager access to this project.',
-                        confirmLabel: 'Remove');
+                        title: l10n.projectManagerRemoveTitle,
+                        message: l10n.projectManagerRemoveMessage,
+                        confirmLabel: l10n.actionRemove);
                     if (!ok || !context.mounted) return;
                     guardMutation(
                         context, notifier.removeProjectManager(m.id));
@@ -69,7 +70,7 @@ class _ProjectManagersDialog extends ConsumerWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
+          child: Text(l10n.actionClose),
         ),
       ],
     );
@@ -83,6 +84,7 @@ class _AddManager extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final users = ref.watch(allUsersProvider);
     return users.when(
       loading: () => const Padding(
@@ -91,20 +93,21 @@ class _AddManager extends ConsumerWidget {
       ),
       // Listing all users needs admin/project-owner rights on the server.
       error: (_, _) => Text(
-        'Adding managers requires admin rights',
+        l10n.projectManagersAdminRequired,
         style: TextStyle(color: Theme.of(context).hintColor),
       ),
       data: (all) {
         final candidates =
             all.where((u) => !managerUserIds.contains(u.id)).toList();
         if (candidates.isEmpty) {
-          return Text('Everyone is already a manager',
+          return Text(l10n.projectManagersAllAdded,
               style: TextStyle(color: Theme.of(context).hintColor));
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Add manager', style: Theme.of(context).textTheme.labelLarge),
+            Text(l10n.projectManagerAdd,
+                style: Theme.of(context).textTheme.labelLarge),
             for (final u in candidates)
               ListTile(
                 contentPadding: EdgeInsets.zero,

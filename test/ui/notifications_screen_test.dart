@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/models.dart';
+import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/state/notifications_state.dart';
 import 'package:planka_app/ui/notifications_screen.dart';
 
@@ -34,7 +35,11 @@ void main() {
           return notifier;
         }),
       ],
-      child: const MaterialApp(home: NotificationsScreen()),
+      child: MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: const NotificationsScreen(),
+      ),
     ));
     await tester.pumpAndSettle();
 

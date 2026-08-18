@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../api/models.dart';
 import '../auth/auth_providers.dart';
+import '../l10n/gen/app_localizations.dart';
 import '../state/board_state.dart';
 import '../state/projects_state.dart';
 import 'error_handling.dart';
@@ -93,11 +94,12 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
   String get boardId => widget.boardId;
 
   Future<void> _onMenu(String action, BoardState state) async {
+    final l10n = AppLocalizations.of(context);
     final notifier = ref.read(boardProvider(boardId).notifier);
     switch (action) {
       case 'rename':
         final name = await promptText(context,
-            title: 'Rename board', initialValue: state.board.name);
+            title: l10n.boardRenameTitle, initialValue: state.board.name);
         if (!mounted || name == null || name == state.board.name) return;
         guardMutation(context, notifier.renameBoard(name));
       case 'members':
@@ -106,9 +108,9 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
         await showArchiveTrashDialog(context, boardId);
       case 'delete':
         final ok = await confirmDialog(context,
-            title: 'Delete board?',
-            message: 'The board and everything on it will be deleted.',
-            confirmLabel: 'Delete');
+            title: l10n.boardDeleteTitle,
+            message: l10n.boardDeleteMessage,
+            confirmLabel: l10n.actionDelete);
         if (!ok || !mounted) return;
         // Leave the board first — deleting disposes this board's provider.
         final messenger = ScaffoldMessenger.of(context);
@@ -124,6 +126,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final board = ref.watch(boardProvider(boardId));
     final state = board.value;
     final b = state?.board;
@@ -133,7 +136,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
       // tint color would clash with the image behind it.
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(b?.name ?? 'Board'),
+        title: Text(b?.name ?? l10n.boardFallbackTitle),
         backgroundColor:
             b == null ? null : Colors.black.withValues(alpha: 0.12),
         elevation: 0,
@@ -144,7 +147,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
             icon: Icon(_showFilter || _filter.isActive
                 ? Icons.filter_alt
                 : Icons.filter_alt_outlined),
-            tooltip: 'Filter cards',
+            tooltip: l10n.boardFilterTooltip,
             onPressed: () => setState(() {
               _showFilter = !_showFilter;
               if (!_showFilter) _filter = const BoardFilter();
@@ -153,12 +156,15 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
           if (state != null)
             PopupMenuButton<String>(
               onSelected: (action) => _onMenu(action, state),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'rename', child: Text('Rename board')),
-                PopupMenuItem(value: 'members', child: Text('Members')),
+              itemBuilder: (_) => [
                 PopupMenuItem(
-                    value: 'archive', child: Text('Archive & trash')),
-                PopupMenuItem(value: 'delete', child: Text('Delete board')),
+                    value: 'rename', child: Text(l10n.boardMenuRename)),
+                PopupMenuItem(
+                    value: 'members', child: Text(l10n.sectionMembers)),
+                PopupMenuItem(
+                    value: 'archive', child: Text(l10n.archiveTrashTitle)),
+                PopupMenuItem(
+                    value: 'delete', child: Text(l10n.boardMenuDelete)),
               ],
             ),
         ],
@@ -203,11 +209,11 @@ class _FilterBar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             TextField(
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                hintText: 'Search cards…',
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                hintText: AppLocalizations.of(context).boardSearchHint,
                 isDense: true,
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
               ),
               onChanged: (q) => onChanged(BoardFilter(
                   query: q.trim(),
@@ -316,8 +322,9 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: InlineAddField(
-                            label: 'Add list',
-                            hintText: 'List name',
+                            label: AppLocalizations.of(context).listAdd,
+                            hintText:
+                                AppLocalizations.of(context).listNameHint,
                             onSubmit: (name) => guardMutation(
                                 context, notifier.createList(name)),
                           ),
@@ -350,7 +357,7 @@ class _ConnectionBanner extends ConsumerWidget {
       initialData: true,
       builder: (context, snap) => snap.data == false
           ? MaterialBanner(
-              content: const Text('Reconnecting…'),
+              content: Text(AppLocalizations.of(context).boardReconnecting),
               leading: const Icon(Icons.wifi_off),
               actions: const [SizedBox.shrink()],
             )
@@ -374,6 +381,7 @@ class _ListColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final tokens = context.tokens;
     final cards = filter.isActive
@@ -429,7 +437,8 @@ class _ListColumn extends StatelessWidget {
                       onSelected: (action) async {
                         if (action == 'rename') {
                           final name = await promptText(context,
-                              title: 'Rename list', initialValue: list.name);
+                              title: l10n.listRenameTitle,
+                              initialValue: list.name);
                           if (!context.mounted) return;
                           if (name != null && name != list.name) {
                             guardMutation(
@@ -444,20 +453,22 @@ class _ListColumn extends StatelessWidget {
                                   fieldName: choice.$1, order: choice.$2));
                         } else if (action == 'delete') {
                           final ok = await confirmDialog(context,
-                              title: 'Delete list?',
-                              message:
-                                  'The list and all its cards will be deleted.',
-                              confirmLabel: 'Delete');
+                              title: l10n.listDeleteTitle,
+                              message: l10n.listDeleteMessage,
+                              confirmLabel: l10n.actionDelete);
                           if (!context.mounted) return;
                           if (ok) {
                             guardMutation(context, notifier.deleteList(list.id));
                           }
                         }
                       },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'rename', child: Text('Rename')),
-                        PopupMenuItem(value: 'sort', child: Text('Sort by…')),
-                        PopupMenuItem(value: 'delete', child: Text('Delete')),
+                      itemBuilder: (_) => [
+                        PopupMenuItem(
+                            value: 'rename', child: Text(l10n.actionRename)),
+                        PopupMenuItem(
+                            value: 'sort', child: Text(l10n.listMenuSort)),
+                        PopupMenuItem(
+                            value: 'delete', child: Text(l10n.actionDelete)),
                       ],
                     ),
                   ],
@@ -491,8 +502,8 @@ class _ListColumn extends StatelessWidget {
                 ),
               ),
               InlineAddField(
-                label: 'Add card',
-                hintText: 'Card name',
+                label: l10n.cardAdd,
+                hintText: l10n.cardNameHint,
                 onSubmit: (name) =>
                     guardMutation(context, notifier.createCard(list.id, name)),
               ),
@@ -508,22 +519,28 @@ class _ListColumn extends StatelessWidget {
 Future<(String, String?)?> _pickSort(BuildContext context) =>
     showDialog<(String, String?)>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Sort by'),
-        children: [
-          for (final field in const [
-            ('name', 'Name'),
-            ('dueDate', 'Due date'),
-            ('createdAt', 'Created date'),
-          ])
-            for (final order in const [('asc', 'ascending'), ('desc', 'descending')])
-              SimpleDialogOption(
-                onPressed: () =>
-                    Navigator.pop(ctx, (field.$1, order.$1)),
-                child: Text('${field.$2} (${order.$2})'),
-              ),
-        ],
-      ),
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
+        return SimpleDialog(
+          title: Text(l10n.listSortTitle),
+          children: [
+            for (final field in [
+              ('name', l10n.fieldName),
+              ('dueDate', l10n.listSortFieldDueDate),
+              ('createdAt', l10n.listSortFieldCreatedDate),
+            ])
+              for (final order in [
+                ('asc', l10n.listSortOrderAscending),
+                ('desc', l10n.listSortOrderDescending),
+              ])
+                SimpleDialogOption(
+                  onPressed: () =>
+                      Navigator.pop(ctx, (field.$1, order.$1)),
+                  child: Text(l10n.listSortOption(field.$2, order.$2)),
+                ),
+          ],
+        );
+      },
     );
 
 class _DraggableCard extends StatelessWidget {

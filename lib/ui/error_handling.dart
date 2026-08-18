@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../api/planka_api.dart';
+import '../l10n/gen/app_localizations.dart';
 
 /// Single place all API errors surface to the user.
 void showApiError(BuildContext context, Object error) {
   final message = switch (error) {
-    ApiException(statusCode: 401) => 'Invalid credentials',
+    ApiException(statusCode: 401) =>
+      AppLocalizations.of(context).errorInvalidCredentials,
     ApiException(:final message) => message,
     _ => '$error',
   };

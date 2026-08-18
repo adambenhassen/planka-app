@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/gen/app_localizations.dart';
+
 /// Renders an [AsyncValue]'s three states with the app's standard affordances:
 /// loading -> centered spinner; error -> message plus a Retry button that calls
 /// [onRetry]; data -> [data]. Keeps the loading/error scaffold in one place.
@@ -17,7 +19,12 @@ Widget asyncRetry<T>(
         children: [
           Text('$e'),
           const SizedBox(height: 8),
-          FilledButton(onPressed: onRetry, child: const Text('Retry')),
+          Builder(
+            builder: (context) => FilledButton(
+              onPressed: onRetry,
+              child: Text(AppLocalizations.of(context).actionRetry),
+            ),
+          ),
         ],
       ),
     ),

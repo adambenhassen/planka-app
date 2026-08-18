@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 import '../../api/models.dart';
+import '../../l10n/gen/app_localizations.dart';
 
 class CardHeaderSection extends StatefulWidget {
   const CardHeaderSection({
@@ -24,6 +25,7 @@ class _CardHeaderSectionState extends State<CardHeaderSection> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final description = widget.card.description ?? '';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -47,8 +49,8 @@ class _CardHeaderSectionState extends State<CardHeaderSection> {
             autofocus: true,
             maxLines: null,
             minLines: 2,
-            decoration: const InputDecoration(
-              hintText: 'Add a description…',
+            decoration: InputDecoration(
+              hintText: l10n.cardDescriptionHint,
               border: InputBorder.none,
             ),
             onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
@@ -65,7 +67,7 @@ class _CardHeaderSectionState extends State<CardHeaderSection> {
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: description.isEmpty
                   ? Text(
-                      'Add a description…',
+                      l10n.cardDescriptionHint,
                       style: TextStyle(
                           color: Theme.of(context).hintColor),
                     )

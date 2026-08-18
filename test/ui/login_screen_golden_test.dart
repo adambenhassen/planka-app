@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/ui/login_screen.dart';
 import 'package:planka_app/ui/theme/app_theme.dart';
 
@@ -10,7 +11,12 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(420, 800));
     tester.view.devicePixelRatio = 1.0;
     await tester.pumpWidget(ProviderScope(
-      child: MaterialApp(theme: AppTheme.light, home: const LoginScreen()),
+      child: MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: AppTheme.light,
+        home: const LoginScreen(),
+      ),
     ));
     // Decode the logo asset — golden tests skip async image loading otherwise.
     await tester.runAsync(() async {

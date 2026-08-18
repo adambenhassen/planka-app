@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:planka_app/api/models.dart';
+import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/ui/card_sections/due_date.dart';
 
 void main() {
@@ -21,6 +22,8 @@ void main() {
     required ValueChanged<bool> onCompletedToggle,
   }) =>
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: CardDueDateSection(
             card: c,

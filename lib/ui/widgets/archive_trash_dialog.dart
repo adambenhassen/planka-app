@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../api/models.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../../state/board_state.dart';
 import '../error_handling.dart';
 import 'confirm_dialog.dart';
@@ -70,8 +71,9 @@ class _ArchiveTrashDialogState extends ConsumerState<_ArchiveTrashDialog>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return AlertDialog(
-      title: const Text('Archive & trash'),
+      title: Text(l10n.archiveTrashTitle),
       content: SizedBox(
         width: 400,
         height: 400,
@@ -79,7 +81,7 @@ class _ArchiveTrashDialogState extends ConsumerState<_ArchiveTrashDialog>
           children: [
             TabBar(
               controller: _tabController,
-              tabs: const [Tab(text: 'Archive'), Tab(text: 'Trash')],
+              tabs: [Tab(text: l10n.archiveTab), Tab(text: l10n.trashTab)],
             ),
             Expanded(
               child: TabBarView(
@@ -103,7 +105,7 @@ class _ArchiveTrashDialogState extends ConsumerState<_ArchiveTrashDialog>
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
+          child: Text(l10n.actionClose),
         ),
       ],
     );
@@ -127,10 +129,11 @@ class _ArchiveTrashDialogState extends ConsumerState<_ArchiveTrashDialog>
       _mutateThenRefetch(_notifier.restoreCard(card), from);
 
   Future<void> _delete(PlankaCard card) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await confirmDialog(context,
-        title: 'Delete card?',
-        message: 'This card will be permanently deleted.',
-        confirmLabel: 'Delete');
+        title: l10n.cardDeleteTitle,
+        message: l10n.cardDeleteMessage,
+        confirmLabel: l10n.actionDelete);
     if (!confirmed || !mounted) return;
     await _mutateThenRefetch(
         _notifier.deleteCard(card.id), PlankaListType.trash);
@@ -145,8 +148,9 @@ class _CardList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     if (future == null) {
-      return const Center(child: Text('No list on this board'));
+      return Center(child: Text(l10n.archiveTrashNoList));
     }
     return FutureBuilder<List<PlankaCard>>(
       future: future,
@@ -159,7 +163,7 @@ class _CardList extends StatelessWidget {
         }
         final cards = snapshot.data ?? const [];
         if (cards.isEmpty) {
-          return const Center(child: Text('Nothing here'));
+          return Center(child: Text(l10n.archiveTrashEmpty));
         }
         return ListView(
           children: [
@@ -171,13 +175,13 @@ class _CardList extends StatelessWidget {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.restore),
-                      tooltip: 'Restore',
+                      tooltip: l10n.actionRestore,
                       onPressed: () => onRestore(card),
                     ),
                     if (onDelete != null)
                       IconButton(
                         icon: const Icon(Icons.delete_outline),
-                        tooltip: 'Delete',
+                        tooltip: l10n.actionDelete,
                         onPressed: () => onDelete!(card),
                       ),
                   ],

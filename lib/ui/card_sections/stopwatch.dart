@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../api/models.dart';
+import '../../l10n/gen/app_localizations.dart';
 
 String _formatElapsed(Duration d) {
   final h = d.inHours;
@@ -75,13 +76,14 @@ class _CardStopwatchSectionState extends State<CardStopwatchSection> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final sw = widget.stopwatch;
     if (sw == null) {
       return Align(
         alignment: Alignment.centerLeft,
         child: TextButton.icon(
           icon: const Icon(Icons.timer_outlined, size: 18),
-          label: const Text('Start stopwatch'),
+          label: Text(l10n.stopwatchStart),
           onPressed: () => widget.onStart(0),
         ),
       );
@@ -103,14 +105,14 @@ class _CardStopwatchSectionState extends State<CardStopwatchSection> {
         const SizedBox(width: 8),
         IconButton(
           icon: Icon(running ? Icons.pause : Icons.play_arrow),
-          tooltip: running ? 'Pause' : 'Resume',
+          tooltip: running ? l10n.stopwatchPause : l10n.stopwatchResume,
           onPressed: () => running
               ? widget.onPause(elapsed.inSeconds)
               : widget.onStart(sw.total),
         ),
         IconButton(
           icon: const Icon(Icons.restart_alt),
-          tooltip: 'Reset stopwatch',
+          tooltip: l10n.stopwatchReset,
           onPressed: widget.onReset,
         ),
       ],

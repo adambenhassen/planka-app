@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api/models.dart';
 import '../auth/auth_providers.dart';
+import '../l10n/gen/app_localizations.dart';
 import '../state/current_user_state.dart';
 import '../state/notifications_state.dart';
 import '../state/projects_state.dart';
@@ -24,7 +25,11 @@ import 'widgets/user_management_dialog.dart';
 
 /// Downloads the APK with a progress dialog and hands it to the system
 /// installer. Non-APK releases (no asset published) fall back to the browser.
-Future<void> _runUpdate(BuildContext context, UpdateInfo info) async {
+/// [l10n] is resolved by the caller's build, not looked up here: the snackbar
+/// that triggers this outlives the screen, and the non-APK branch below must
+/// stay reachable without touching a possibly-defunct element.
+Future<void> _runUpdate(
+    AppLocalizations l10n, BuildContext context, UpdateInfo info) async {
   if (!info.isApk) {
     await launchUrl(Uri.parse(info.url), mode: LaunchMode.externalApplication);
     return;
@@ -37,7 +42,7 @@ Future<void> _runUpdate(BuildContext context, UpdateInfo info) async {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        title: Text('Downloading v${info.version}'),
+        title: Text(l10n.updateDownloading(info.version)),
         content: ValueListenableBuilder<double>(
           valueListenable: progress,
           builder: (_, value, _) =>
@@ -53,7 +58,7 @@ Future<void> _runUpdate(BuildContext context, UpdateInfo info) async {
     );
     final result = await OpenFilex.open(path);
     if (result.type != ResultType.done) {
-      throw Exception('installer failed to open: ${result.message}');
+      throw Exception(l10n.updateInstallerFailed(result.message));
     }
   } catch (e) {
     if (context.mounted) showApiError(context, e);
@@ -68,6 +73,7 @@ class ProjectsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final projects = ref.watch(projectsProvider);
     // Prompt once if a newer APK has been published (Android sideload).
     ref.listen(updateCheckProvider, (_, next) {
@@ -75,12 +81,12 @@ class ProjectsScreen extends ConsumerWidget {
       if (info == null) return;
       final controller = ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Update available (v${info.version})'),
+          content: Text(l10n.updateAvailable(info.version)),
           duration: const Duration(seconds: 8),
           showCloseIcon: true,
           action: SnackBarAction(
-            label: info.isApk ? 'Update' : 'Get',
-            onPressed: () => _runUpdate(context, info),
+            label: info.isApk ? l10n.updateActionUpdate : l10n.updateActionGet,
+            onPressed: () => _runUpdate(l10n, context, info),
           ),
         ),
       );
@@ -98,17 +104,17 @@ class ProjectsScreen extends ConsumerWidget {
     });
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Projects'),
+        title: Text(l10n.projectsTitle),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            tooltip: 'New project',
+            tooltip: l10n.projectNewTooltip,
             onPressed: () async {
               final name = await promptText(
                 context,
-                title: 'New project',
-                hintText: 'Project name',
-                confirmLabel: 'Create',
+                title: l10n.projectNewTitle,
+                hintText: l10n.projectNameHint,
+                confirmLabel: l10n.actionCreate,
               );
               if (name == null || !context.mounted) return;
               guardMutation(
@@ -154,14 +160,15 @@ class _ProjectList extends ConsumerWidget {
     PlankaProject project,
     String action,
   ) async {
+    final l10n = AppLocalizations.of(context);
     final notifier = ref.read(projectsProvider.notifier);
     switch (action) {
       case 'addBoard':
         final name = await promptText(
           context,
-          title: 'New board',
-          hintText: 'Board name',
-          confirmLabel: 'Create',
+          title: l10n.boardNewTitle,
+          hintText: l10n.boardNameHint,
+          confirmLabel: l10n.actionCreate,
         );
         if (name == null || !context.mounted) return;
         guardMutation(context, notifier.createBoard(project.id, name));
@@ -190,7 +197,7 @@ class _ProjectList extends ConsumerWidget {
       case 'rename':
         final name = await promptText(
           context,
-          title: 'Rename project',
+          title: l10n.projectRenameTitle,
           initialValue: project.name,
         );
         if (name == null || name == project.name || !context.mounted) return;
@@ -198,10 +205,9 @@ class _ProjectList extends ConsumerWidget {
       case 'delete':
         final ok = await confirmDialog(
           context,
-          title: 'Delete project?',
-          message:
-              'The project and all its boards will be permanently deleted.',
-          confirmLabel: 'Delete',
+          title: l10n.projectDeleteTitle,
+          message: l10n.projectDeleteMessage,
+          confirmLabel: l10n.actionDelete,
         );
         if (!ok || !context.mounted) return;
         guardMutation(context, notifier.deleteProject(project.id));
@@ -210,13 +216,14 @@ class _ProjectList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final boards = view.boards;
     final projects = view.projects;
     if (projects.isEmpty) {
       return ListView(
-        children: const [
-          SizedBox(height: 120),
-          Center(child: Text('No projects yet')),
+        children: [
+          const SizedBox(height: 120),
+          Center(child: Text(l10n.projectsEmpty)),
         ],
       );
     }
@@ -240,15 +247,27 @@ class _ProjectList extends ConsumerWidget {
                   icon: const Icon(Icons.more_vert, size: 18),
                   onSelected: (action) =>
                       _onProjectMenu(context, ref, p, action),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'addBoard', child: Text('Add board')),
-                    PopupMenuItem(value: 'managers', child: Text('Managers')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'addBoard',
+                      child: Text(l10n.projectMenuAddBoard),
+                    ),
+                    PopupMenuItem(
+                      value: 'managers',
+                      child: Text(l10n.projectMenuManagers),
+                    ),
                     PopupMenuItem(
                       value: 'background',
-                      child: Text('Background'),
+                      child: Text(l10n.projectMenuBackground),
                     ),
-                    PopupMenuItem(value: 'rename', child: Text('Rename')),
-                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+                    PopupMenuItem(
+                      value: 'rename',
+                      child: Text(l10n.actionRename),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text(l10n.actionDelete),
+                    ),
                   ],
                 ),
               ],
@@ -337,6 +356,7 @@ class _AccountSwitcher extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final accounts = ref.watch(accountsProvider).value ?? [];
     final current = ref.watch(currentAccountProvider);
     final isAdmin = ref.watch(currentUserProvider).value?.role == 'admin';
@@ -376,29 +396,29 @@ class _AccountSwitcher extends ConsumerWidget {
               subtitle: Text(a.serverUrl),
             ),
           ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: '_profile',
           child: ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.person_outline),
-            title: Text('Profile'),
+            leading: const Icon(Icons.person_outline),
+            title: Text(l10n.profileTitle),
           ),
         ),
         if (isAdmin)
-          const PopupMenuItem(
+          PopupMenuItem(
             value: '_manageUsers',
             child: ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.manage_accounts_outlined),
-              title: Text('Manage users'),
+              leading: const Icon(Icons.manage_accounts_outlined),
+              title: Text(l10n.manageUsersTitle),
             ),
           ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: '_add',
           child: ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.add),
-            title: Text('Add account'),
+            leading: const Icon(Icons.add),
+            title: Text(l10n.accountAdd),
           ),
         ),
       ],

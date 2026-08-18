@@ -1,0 +1,907 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "Planka",
+  "@appTitle": {
+    "description": "Application name, shown on the login card and as the task title"
+  },
+
+  "actionAccept": "Accept",
+  "@actionAccept": {
+    "description": "Button that accepts the server's terms of service"
+  },
+  "actionAdd": "Add",
+  "@actionAdd": {
+    "description": "Button that confirms creating a new user"
+  },
+  "actionCancel": "Cancel",
+  "@actionCancel": {
+    "description": "Button that dismisses a dialog without applying it"
+  },
+  "actionClose": "Close",
+  "@actionClose": {
+    "description": "Button that closes a dialog"
+  },
+  "actionCreate": "Create",
+  "@actionCreate": {
+    "description": "Button that confirms creating a project, board or label"
+  },
+  "actionDelete": "Delete",
+  "@actionDelete": {
+    "description": "Menu entry and button that deletes the selected item"
+  },
+  "actionEdit": "Edit",
+  "@actionEdit": {
+    "description": "Menu entry that edits the selected item"
+  },
+  "actionMove": "Move",
+  "@actionMove": {
+    "description": "Button that confirms moving a card to another list"
+  },
+  "actionRemove": "Remove",
+  "@actionRemove": {
+    "description": "Button that removes a member, manager or avatar"
+  },
+  "actionRename": "Rename",
+  "@actionRename": {
+    "description": "Menu entry that renames the selected item"
+  },
+  "actionRestore": "Restore",
+  "@actionRestore": {
+    "description": "Tooltip on the button that restores an archived or trashed card"
+  },
+  "actionRetry": "Retry",
+  "@actionRetry": {
+    "description": "Button that re-runs a request that failed"
+  },
+  "actionSave": "Save",
+  "@actionSave": {
+    "description": "Button that confirms a text prompt or a credential change"
+  },
+  "actionUpload": "Upload",
+  "@actionUpload": {
+    "description": "Button that picks a file to upload as the profile avatar"
+  },
+
+  "fieldBoard": "Board",
+  "@fieldBoard": {
+    "description": "Label of the board picker in the move-card dialog"
+  },
+  "fieldEmail": "Email",
+  "@fieldEmail": {
+    "description": "Label of the email field"
+  },
+  "fieldList": "List",
+  "@fieldList": {
+    "description": "Label of the list picker in the move-card dialog"
+  },
+  "fieldName": "Name",
+  "@fieldName": {
+    "description": "Label of the name field, and the name option in the list sort dialog"
+  },
+  "fieldPassword": "Password",
+  "@fieldPassword": {
+    "description": "Label of the password field"
+  },
+  "fieldProject": "Project",
+  "@fieldProject": {
+    "description": "Label of the project picker in the move-card dialog"
+  },
+  "fieldRequired": "Required",
+  "@fieldRequired": {
+    "description": "Validation error shown under a login field left empty"
+  },
+  "valueNotSet": "—",
+  "@valueNotSet": {
+    "description": "Placeholder shown instead of a profile value the user has not set"
+  },
+  "unknownUser": "Unknown",
+  "@unknownUser": {
+    "description": "Shown instead of a member's name when that user is not in the loaded data"
+  },
+
+  "errorInvalidCredentials": "Invalid credentials",
+  "@errorInvalidCredentials": {
+    "description": "Snackbar shown when the server rejects the email/username and password"
+  },
+
+  "loginSubtitle": "Sign in to your server",
+  "@loginSubtitle": {
+    "description": "Subtitle under the app name on the login screen"
+  },
+  "loginServerUrl": "Server URL",
+  "@loginServerUrl": {
+    "description": "Label of the Planka server address field"
+  },
+  "loginEmailOrUsername": "Email or username",
+  "@loginEmailOrUsername": {
+    "description": "Label of the login identity field"
+  },
+  "loginShowPassword": "Show password",
+  "@loginShowPassword": {
+    "description": "Tooltip of the button that reveals the typed password"
+  },
+  "loginHidePassword": "Hide password",
+  "@loginHidePassword": {
+    "description": "Tooltip of the button that masks the typed password"
+  },
+  "loginSubmit": "Log in",
+  "@loginSubmit": {
+    "description": "Button that submits the login form"
+  },
+  "loginSessionExpired": "Session expired — log in again",
+  "@loginSessionExpired": {
+    "description": "Snackbar shown when the stored session was rejected and the user is back on the login screen"
+  },
+  "loginTermsTitle": "Accept Terms of Service?",
+  "@loginTermsTitle": {
+    "description": "Title of the dialog shown when the server requires accepting its terms"
+  },
+  "loginTermsMessage": "This server requires you to accept its Terms of Service to log in.",
+  "@loginTermsMessage": {
+    "description": "Body of the terms-of-service dialog"
+  },
+
+  "projectsTitle": "Projects",
+  "@projectsTitle": {
+    "description": "Title of the projects screen"
+  },
+  "projectsEmpty": "No projects yet",
+  "@projectsEmpty": {
+    "description": "Shown on the projects screen when the account has no projects"
+  },
+  "projectNewTooltip": "New project",
+  "@projectNewTooltip": {
+    "description": "Tooltip of the app bar button that creates a project"
+  },
+  "projectNewTitle": "New project",
+  "@projectNewTitle": {
+    "description": "Title of the create-project prompt"
+  },
+  "projectNameHint": "Project name",
+  "@projectNameHint": {
+    "description": "Hint of the project name field"
+  },
+  "projectRenameTitle": "Rename project",
+  "@projectRenameTitle": {
+    "description": "Title of the rename-project prompt"
+  },
+  "projectDeleteTitle": "Delete project?",
+  "@projectDeleteTitle": {
+    "description": "Title of the delete-project confirmation"
+  },
+  "projectDeleteMessage": "The project and all its boards will be permanently deleted.",
+  "@projectDeleteMessage": {
+    "description": "Body of the delete-project confirmation"
+  },
+  "projectMenuAddBoard": "Add board",
+  "@projectMenuAddBoard": {
+    "description": "Project menu entry that creates a board"
+  },
+  "projectMenuManagers": "Managers",
+  "@projectMenuManagers": {
+    "description": "Project menu entry that opens the managers dialog"
+  },
+  "projectMenuBackground": "Background",
+  "@projectMenuBackground": {
+    "description": "Project menu entry that opens the background picker"
+  },
+
+  "boardNewTitle": "New board",
+  "@boardNewTitle": {
+    "description": "Title of the create-board prompt"
+  },
+  "boardNameHint": "Board name",
+  "@boardNameHint": {
+    "description": "Hint of the board name field"
+  },
+  "boardFallbackTitle": "Board",
+  "@boardFallbackTitle": {
+    "description": "App bar title on the board screen while the board is still loading"
+  },
+  "boardFilterTooltip": "Filter cards",
+  "@boardFilterTooltip": {
+    "description": "Tooltip of the button that shows the card filter bar"
+  },
+  "boardSearchHint": "Search cards…",
+  "@boardSearchHint": {
+    "description": "Hint of the card search field in the filter bar"
+  },
+  "boardMenuRename": "Rename board",
+  "@boardMenuRename": {
+    "description": "Board menu entry that renames the board"
+  },
+  "boardMenuDelete": "Delete board",
+  "@boardMenuDelete": {
+    "description": "Board menu entry that deletes the board"
+  },
+  "boardRenameTitle": "Rename board",
+  "@boardRenameTitle": {
+    "description": "Title of the rename-board prompt"
+  },
+  "boardDeleteTitle": "Delete board?",
+  "@boardDeleteTitle": {
+    "description": "Title of the delete-board confirmation"
+  },
+  "boardDeleteMessage": "The board and everything on it will be deleted.",
+  "@boardDeleteMessage": {
+    "description": "Body of the delete-board confirmation"
+  },
+  "boardReconnecting": "Reconnecting…",
+  "@boardReconnecting": {
+    "description": "Banner shown while the board's realtime socket is down"
+  },
+
+  "listAdd": "Add list",
+  "@listAdd": {
+    "description": "Button that adds a list to the board"
+  },
+  "listNameHint": "List name",
+  "@listNameHint": {
+    "description": "Hint of the list name field"
+  },
+  "listRenameTitle": "Rename list",
+  "@listRenameTitle": {
+    "description": "Title of the rename-list prompt"
+  },
+  "listDeleteTitle": "Delete list?",
+  "@listDeleteTitle": {
+    "description": "Title of the delete-list confirmation"
+  },
+  "listDeleteMessage": "The list and all its cards will be deleted.",
+  "@listDeleteMessage": {
+    "description": "Body of the delete-list confirmation"
+  },
+  "listMenuSort": "Sort by…",
+  "@listMenuSort": {
+    "description": "List menu entry that opens the sort picker"
+  },
+  "listSortTitle": "Sort by",
+  "@listSortTitle": {
+    "description": "Title of the list sort dialog"
+  },
+  "listSortOption": "{field} ({order})",
+  "@listSortOption": {
+    "description": "One row of the list sort dialog, combining a field with a direction",
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "example": "Due date"
+      },
+      "order": {
+        "type": "String",
+        "example": "ascending"
+      }
+    }
+  },
+  "listSortFieldDueDate": "Due date",
+  "@listSortFieldDueDate": {
+    "description": "Sort the list by each card's due date"
+  },
+  "listSortFieldCreatedDate": "Created date",
+  "@listSortFieldCreatedDate": {
+    "description": "Sort the list by when each card was created"
+  },
+  "listSortOrderAscending": "ascending",
+  "@listSortOrderAscending": {
+    "description": "Sort direction, lowercase because it appears in parentheses after the field"
+  },
+  "listSortOrderDescending": "descending",
+  "@listSortOrderDescending": {
+    "description": "Sort direction, lowercase because it appears in parentheses after the field"
+  },
+
+  "cardAdd": "Add card",
+  "@cardAdd": {
+    "description": "Button that adds a card to a list"
+  },
+  "cardNameHint": "Card name",
+  "@cardNameHint": {
+    "description": "Hint of the card name field"
+  },
+  "cardGone": "Card no longer exists",
+  "@cardGone": {
+    "description": "Shown in the card sheet when the card was deleted while it was open"
+  },
+  "cardWatch": "Watch card",
+  "@cardWatch": {
+    "description": "Tooltip of the button that subscribes to a card's notifications"
+  },
+  "cardUnwatch": "Unwatch card",
+  "@cardUnwatch": {
+    "description": "Tooltip of the button that unsubscribes from a card's notifications"
+  },
+  "cardDuplicate": "Duplicate card",
+  "@cardDuplicate": {
+    "description": "Tooltip of the button that copies the card"
+  },
+  "cardMove": "Move…",
+  "@cardMove": {
+    "description": "Tooltip of the button that opens the move-card dialog"
+  },
+  "cardArchive": "Archive card",
+  "@cardArchive": {
+    "description": "Tooltip of the button that moves the card to the board's archive"
+  },
+  "cardMoveToTrash": "Move to trash",
+  "@cardMoveToTrash": {
+    "description": "Tooltip of the button that moves the card to the board's trash"
+  },
+  "cardDelete": "Delete card",
+  "@cardDelete": {
+    "description": "Tooltip of the button that deletes the card outright"
+  },
+  "cardDeleteTitle": "Delete card?",
+  "@cardDeleteTitle": {
+    "description": "Title of the delete-card confirmation"
+  },
+  "cardDeleteMessage": "This card will be permanently deleted.",
+  "@cardDeleteMessage": {
+    "description": "Body of the delete-card confirmation"
+  },
+  "cardDescriptionHint": "Add a description…",
+  "@cardDescriptionHint": {
+    "description": "Placeholder shown in place of an empty card description"
+  },
+  "cardOpenAttachmentFailed": "Could not open {name}: {message}",
+  "@cardOpenAttachmentFailed": {
+    "description": "Error shown when the platform cannot open a downloaded attachment",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "spec.pdf"
+      },
+      "message": {
+        "type": "String",
+        "example": "No APP found to open this file"
+      }
+    }
+  },
+  "moveCardTitle": "Move card",
+  "@moveCardTitle": {
+    "description": "Title of the move-card dialog"
+  },
+
+  "sectionStopwatch": "Stopwatch",
+  "@sectionStopwatch": {
+    "description": "Card sheet section heading"
+  },
+  "sectionLabels": "Labels",
+  "@sectionLabels": {
+    "description": "Card sheet section heading, and title of the manage-labels dialog"
+  },
+  "sectionMembers": "Members",
+  "@sectionMembers": {
+    "description": "Card sheet section heading, and board menu entry that opens the members dialog"
+  },
+  "sectionChecklists": "Checklists",
+  "@sectionChecklists": {
+    "description": "Card sheet section heading"
+  },
+  "sectionAttachments": "Attachments",
+  "@sectionAttachments": {
+    "description": "Card sheet section heading"
+  },
+  "sectionComments": "Comments",
+  "@sectionComments": {
+    "description": "Card sheet section heading"
+  },
+  "sectionActivity": "Activity",
+  "@sectionActivity": {
+    "description": "Card sheet section heading"
+  },
+
+  "dueDateSet": "Set due date",
+  "@dueDateSet": {
+    "description": "Button shown in place of a due date the card does not have yet"
+  },
+  "dueDateRemove": "Remove due date",
+  "@dueDateRemove": {
+    "description": "Tooltip of the button that clears the card's due date"
+  },
+
+  "stopwatchStart": "Start stopwatch",
+  "@stopwatchStart": {
+    "description": "Button that starts timing a card that has no stopwatch yet"
+  },
+  "stopwatchPause": "Pause",
+  "@stopwatchPause": {
+    "description": "Tooltip of the button that pauses a running stopwatch"
+  },
+  "stopwatchResume": "Resume",
+  "@stopwatchResume": {
+    "description": "Tooltip of the button that resumes a paused stopwatch"
+  },
+  "stopwatchReset": "Reset stopwatch",
+  "@stopwatchReset": {
+    "description": "Tooltip of the button that clears the card's stopwatch"
+  },
+
+  "labelChip": "Label",
+  "@labelChip": {
+    "description": "Chip that opens the manage-labels dialog"
+  },
+  "labelNewName": "New label name",
+  "@labelNewName": {
+    "description": "Label of the field that names a label about to be created"
+  },
+  "labelRenameTitle": "Rename label",
+  "@labelRenameTitle": {
+    "description": "Title of the rename-label prompt"
+  },
+  "labelDeleteTitle": "Delete label?",
+  "@labelDeleteTitle": {
+    "description": "Title of the delete-label confirmation"
+  },
+  "labelDeleteMessage": "The label is removed from the board and all cards.",
+  "@labelDeleteMessage": {
+    "description": "Body of the delete-label confirmation"
+  },
+
+  "checklistAdd": "Add checklist",
+  "@checklistAdd": {
+    "description": "Button that adds a checklist to the card"
+  },
+  "checklistRenameTitle": "Rename checklist",
+  "@checklistRenameTitle": {
+    "description": "Title of the rename-checklist prompt"
+  },
+  "checklistDeleteTitle": "Delete checklist?",
+  "@checklistDeleteTitle": {
+    "description": "Title of the delete-checklist confirmation"
+  },
+  "checklistDeleteMessage": "The checklist and its tasks will be deleted.",
+  "@checklistDeleteMessage": {
+    "description": "Body of the delete-checklist confirmation"
+  },
+  "taskAdd": "Add task",
+  "@taskAdd": {
+    "description": "Button that adds a task to a checklist"
+  },
+  "taskRenameTitle": "Rename task",
+  "@taskRenameTitle": {
+    "description": "Title of the rename-task prompt"
+  },
+  "taskDeleteTitle": "Delete task?",
+  "@taskDeleteTitle": {
+    "description": "Title of the delete-task confirmation"
+  },
+
+  "attachmentAdd": "Add attachment",
+  "@attachmentAdd": {
+    "description": "Button that picks a file to attach to the card"
+  },
+  "attachmentCover": "Cover",
+  "@attachmentCover": {
+    "description": "Subtitle marking the attachment currently used as the card cover"
+  },
+  "attachmentSetAsCover": "Set as cover",
+  "@attachmentSetAsCover": {
+    "description": "Menu entry that makes this attachment the card cover"
+  },
+  "attachmentRemoveCover": "Remove cover",
+  "@attachmentRemoveCover": {
+    "description": "Menu entry that clears the card cover"
+  },
+
+  "commentHint": "Write a comment…",
+  "@commentHint": {
+    "description": "Hint of the new-comment field"
+  },
+  "commentSend": "Send",
+  "@commentSend": {
+    "description": "Tooltip of the button that posts the comment"
+  },
+  "commentEditTitle": "Edit comment",
+  "@commentEditTitle": {
+    "description": "Title of the edit-comment prompt"
+  },
+  "commentDeleteTitle": "Delete comment?",
+  "@commentDeleteTitle": {
+    "description": "Title of the delete-comment confirmation"
+  },
+
+  "activityLoadError": "Could not load activity",
+  "@activityLoadError": {
+    "description": "Shown in the activity section when its request failed"
+  },
+  "activityEmpty": "No activity yet",
+  "@activityEmpty": {
+    "description": "Shown in the activity section when the card has no recorded actions"
+  },
+  "activityEntry": "{user} {description}",
+  "@activityEntry": {
+    "description": "One activity row: who acted, followed by what they did",
+    "placeholders": {
+      "user": {
+        "type": "String",
+        "example": "Ada"
+      },
+      "description": {
+        "type": "String",
+        "example": "moved this card from To do to Doing"
+      }
+    }
+  },
+  "activitySomeone": "Someone",
+  "@activitySomeone": {
+    "description": "Stands in for the actor of an activity entry whose user is unknown"
+  },
+  "activityAMember": "a member",
+  "@activityAMember": {
+    "description": "Stands in for a card member the activity payload did not name"
+  },
+  "activityATask": "a task",
+  "@activityATask": {
+    "description": "Stands in for a task the activity payload did not name"
+  },
+  "activityCreatedCard": "created this card",
+  "@activityCreatedCard": {
+    "description": "Activity description, follows the actor's name"
+  },
+  "activityCreatedCardInList": "created this card in {list}",
+  "@activityCreatedCardInList": {
+    "description": "Activity description, follows the actor's name",
+    "placeholders": {
+      "list": {
+        "type": "String",
+        "example": "To do"
+      }
+    }
+  },
+  "activityMovedCard": "moved this card",
+  "@activityMovedCard": {
+    "description": "Activity description, follows the actor's name"
+  },
+  "activityMovedCardFromTo": "moved this card from {from} to {to}",
+  "@activityMovedCardFromTo": {
+    "description": "Activity description, follows the actor's name",
+    "placeholders": {
+      "from": {
+        "type": "String",
+        "example": "To do"
+      },
+      "to": {
+        "type": "String",
+        "example": "Doing"
+      }
+    }
+  },
+  "activityAddedMember": "added {member} to this card",
+  "@activityAddedMember": {
+    "description": "Activity description, follows the actor's name",
+    "placeholders": {
+      "member": {
+        "type": "String",
+        "example": "Ada"
+      }
+    }
+  },
+  "activityRemovedMember": "removed {member} from this card",
+  "@activityRemovedMember": {
+    "description": "Activity description, follows the actor's name",
+    "placeholders": {
+      "member": {
+        "type": "String",
+        "example": "Ada"
+      }
+    }
+  },
+  "activityCompletedTask": "completed {task}",
+  "@activityCompletedTask": {
+    "description": "Activity description, follows the actor's name",
+    "placeholders": {
+      "task": {
+        "type": "String",
+        "example": "Write the changelog"
+      }
+    }
+  },
+  "activityUncompletedTask": "uncompleted {task}",
+  "@activityUncompletedTask": {
+    "description": "Activity description, follows the actor's name",
+    "placeholders": {
+      "task": {
+        "type": "String",
+        "example": "Write the changelog"
+      }
+    }
+  },
+  "activityUpdatedCard": "updated this card",
+  "@activityUpdatedCard": {
+    "description": "Activity description for an action type this client does not model"
+  },
+
+  "notificationsTitle": "Notifications",
+  "@notificationsTitle": {
+    "description": "Title of the notifications screen"
+  },
+  "notificationsEmpty": "No notifications",
+  "@notificationsEmpty": {
+    "description": "Shown when the account has no notifications"
+  },
+  "notificationsMarkAllRead": "Mark all read",
+  "@notificationsMarkAllRead": {
+    "description": "Button that marks every notification as read"
+  },
+  "timeJustNow": "just now",
+  "@timeJustNow": {
+    "description": "Relative timestamp for something that happened under a minute ago"
+  },
+  "timeMinutesAgo": "{minutes}m ago",
+  "@timeMinutesAgo": {
+    "description": "Short relative timestamp in minutes",
+    "placeholders": {
+      "minutes": {
+        "type": "int",
+        "example": "42"
+      }
+    }
+  },
+  "timeHoursAgo": "{hours}h ago",
+  "@timeHoursAgo": {
+    "description": "Short relative timestamp in hours",
+    "placeholders": {
+      "hours": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+  "timeDaysAgo": "{days}d ago",
+  "@timeDaysAgo": {
+    "description": "Short relative timestamp in days",
+    "placeholders": {
+      "days": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+
+  "boardMembersTitle": "Board members",
+  "@boardMembersTitle": {
+    "description": "Title of the board members dialog"
+  },
+  "boardMemberAdd": "Add member",
+  "@boardMemberAdd": {
+    "description": "Heading of the list of users who can be added to the board"
+  },
+  "boardMemberRemoveTitle": "Remove member?",
+  "@boardMemberRemoveTitle": {
+    "description": "Title of the remove-board-member confirmation"
+  },
+  "boardMemberRemoveMessage": "They will lose access to this board.",
+  "@boardMemberRemoveMessage": {
+    "description": "Body of the remove-board-member confirmation"
+  },
+  "boardMemberMakeEditor": "Make editor",
+  "@boardMemberMakeEditor": {
+    "description": "Menu entry that promotes a board member to editor"
+  },
+  "boardMemberMakeViewer": "Make viewer",
+  "@boardMemberMakeViewer": {
+    "description": "Menu entry that demotes a board member to viewer"
+  },
+  "boardMembersAdminRequired": "Adding members requires admin rights",
+  "@boardMembersAdminRequired": {
+    "description": "Shown instead of the user list when the server refuses to list users"
+  },
+  "boardMembersAllAdded": "Everyone is already a member",
+  "@boardMembersAllAdded": {
+    "description": "Shown when every known user is already on the board"
+  },
+  "boardRoleEditor": "editor",
+  "@boardRoleEditor": {
+    "description": "Board membership role, shown under a member's name"
+  },
+  "boardRoleViewer": "viewer",
+  "@boardRoleViewer": {
+    "description": "Board membership role, shown under a member's name"
+  },
+
+  "projectManagersTitle": "Project managers",
+  "@projectManagersTitle": {
+    "description": "Title of the project managers dialog"
+  },
+  "projectManagerAdd": "Add manager",
+  "@projectManagerAdd": {
+    "description": "Heading of the list of users who can be made managers"
+  },
+  "projectManagerRemoveTooltip": "Remove manager",
+  "@projectManagerRemoveTooltip": {
+    "description": "Tooltip of the button that removes a project manager"
+  },
+  "projectManagerRemoveTitle": "Remove manager?",
+  "@projectManagerRemoveTitle": {
+    "description": "Title of the remove-manager confirmation"
+  },
+  "projectManagerRemoveMessage": "They will lose manager access to this project.",
+  "@projectManagerRemoveMessage": {
+    "description": "Body of the remove-manager confirmation"
+  },
+  "projectManagersAdminRequired": "Adding managers requires admin rights",
+  "@projectManagersAdminRequired": {
+    "description": "Shown instead of the user list when the server refuses to list users"
+  },
+  "projectManagersAllAdded": "Everyone is already a manager",
+  "@projectManagersAllAdded": {
+    "description": "Shown when every known user already manages the project"
+  },
+
+  "projectBackgroundTitle": "Project background",
+  "@projectBackgroundTitle": {
+    "description": "Title of the project background picker"
+  },
+  "projectBackgroundUploadImage": "Upload image",
+  "@projectBackgroundUploadImage": {
+    "description": "Button that picks an image to use as the project background"
+  },
+  "projectBackgroundNone": "None",
+  "@projectBackgroundNone": {
+    "description": "Button that clears the project background"
+  },
+
+  "profileTitle": "Profile",
+  "@profileTitle": {
+    "description": "Title of the profile dialog, and the account menu entry that opens it"
+  },
+  "profilePhone": "Phone",
+  "@profilePhone": {
+    "description": "Label of the phone field"
+  },
+  "profileOrganization": "Organization",
+  "@profileOrganization": {
+    "description": "Label of the organization field"
+  },
+  "profileUsername": "Username",
+  "@profileUsername": {
+    "description": "Label of the username field"
+  },
+  "profileChangeEmail": "Change email",
+  "@profileChangeEmail": {
+    "description": "Title of the dialog that changes the signed-in user's email"
+  },
+  "profileNewEmail": "New email",
+  "@profileNewEmail": {
+    "description": "Hint of the new email field"
+  },
+  "profileChangeUsername": "Change username",
+  "@profileChangeUsername": {
+    "description": "Title of the dialog that changes the signed-in user's username"
+  },
+  "profileNewUsername": "New username",
+  "@profileNewUsername": {
+    "description": "Hint of the new username field"
+  },
+  "profileChangePassword": "Change password",
+  "@profileChangePassword": {
+    "description": "Title of the dialog that changes the signed-in user's password"
+  },
+  "profileNewPassword": "New password",
+  "@profileNewPassword": {
+    "description": "Hint of the new password field"
+  },
+  "profileCurrentPassword": "Current password",
+  "@profileCurrentPassword": {
+    "description": "Hint of the field that confirms the change with the existing password"
+  },
+
+  "manageUsersTitle": "Manage users",
+  "@manageUsersTitle": {
+    "description": "Title of the admin user management dialog, and the account menu entry that opens it"
+  },
+  "userAdd": "Add user",
+  "@userAdd": {
+    "description": "Button and dialog title for creating a user"
+  },
+  "userDeleteTitle": "Delete user?",
+  "@userDeleteTitle": {
+    "description": "Title of the delete-user confirmation"
+  },
+  "userDeleteMessage": "{name} will be permanently removed.",
+  "@userDeleteMessage": {
+    "description": "Body of the delete-user confirmation",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "userMakeRole": "Make {role}",
+  "@userMakeRole": {
+    "description": "Menu entry that gives a user another role",
+    "placeholders": {
+      "role": {
+        "type": "String",
+        "example": "admin"
+      }
+    }
+  },
+  "userDeactivate": "Deactivate",
+  "@userDeactivate": {
+    "description": "Menu entry that suspends a user's access"
+  },
+  "userReactivate": "Reactivate",
+  "@userReactivate": {
+    "description": "Menu entry that restores a suspended user's access"
+  },
+  "userRoleAdmin": "admin",
+  "@userRoleAdmin": {
+    "description": "Planka user role granting full server administration"
+  },
+  "userRoleProjectOwner": "projectOwner",
+  "@userRoleProjectOwner": {
+    "description": "Planka user role allowed to create projects"
+  },
+  "userRoleBoardUser": "boardUser",
+  "@userRoleBoardUser": {
+    "description": "Planka user role limited to the boards they are a member of"
+  },
+
+  "accountAdd": "Add account",
+  "@accountAdd": {
+    "description": "Account menu entry that logs in to another server or user"
+  },
+
+  "archiveTrashTitle": "Archive & trash",
+  "@archiveTrashTitle": {
+    "description": "Title of the archive/trash browser, and the board menu entry that opens it"
+  },
+  "archiveTab": "Archive",
+  "@archiveTab": {
+    "description": "Tab listing the board's archived cards"
+  },
+  "trashTab": "Trash",
+  "@trashTab": {
+    "description": "Tab listing the board's trashed cards"
+  },
+  "archiveTrashNoList": "No list on this board",
+  "@archiveTrashNoList": {
+    "description": "Shown in a tab when the board has no archive or trash list at all"
+  },
+  "archiveTrashEmpty": "Nothing here",
+  "@archiveTrashEmpty": {
+    "description": "Shown in a tab when the archive or trash list is empty"
+  },
+
+  "updateAvailable": "Update available (v{version})",
+  "@updateAvailable": {
+    "description": "Snackbar offering a newer release",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "1.11.0"
+      }
+    }
+  },
+  "updateActionUpdate": "Update",
+  "@updateActionUpdate": {
+    "description": "Snackbar action that downloads and installs the new APK"
+  },
+  "updateActionGet": "Get",
+  "@updateActionGet": {
+    "description": "Snackbar action that opens the release page for a non-APK platform"
+  },
+  "updateDownloading": "Downloading v{version}",
+  "@updateDownloading": {
+    "description": "Title of the update download progress dialog",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "1.11.0"
+      }
+    }
+  },
+  "updateInstallerFailed": "installer failed to open: {message}",
+  "@updateInstallerFailed": {
+    "description": "Error shown when the downloaded installer could not be launched",
+    "placeholders": {
+      "message": {
+        "type": "String",
+        "example": "No APP found to open this file"
+      }
+    }
+  }
+}
