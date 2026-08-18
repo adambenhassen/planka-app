@@ -406,8 +406,8 @@ void main() {
 
   test('sortList applies server-returned card positions and reorders cardsOf',
       () async {
-    final existingCardId = '1812851462108087322';
-    final listId = '1812851461772543001';
+    final existingCardId = '1844335858241504267';
+    final listId = '1844335857713021962';
     final extraCard = PlankaCard.fromJson({
       'id': 'extra-1',
       'boardId': 'b1',
