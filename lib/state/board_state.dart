@@ -23,6 +23,13 @@ class BoardState {
   final List<PlankaTask> tasks;
   final List<PlankaAttachment> attachments;
   final List<PlankaComment> comments;
+  final List<PlankaCustomFieldGroup> customFieldGroups;
+
+  /// Fields of both kinds of group: those keyed by a board/card group come from
+  /// the board response, those keyed by a base group from the project response.
+  final List<PlankaCustomField> customFields;
+  final List<PlankaCustomFieldValue> customFieldValues;
+  final List<PlankaBaseCustomFieldGroup> baseCustomFieldGroups;
 
   BoardState({
     required this.board,
@@ -37,6 +44,10 @@ class BoardState {
     this.tasks = const [],
     this.attachments = const [],
     this.comments = const [],
+    this.customFieldGroups = const [],
+    this.customFields = const [],
+    this.customFieldValues = const [],
+    this.baseCustomFieldGroups = const [],
   }) : lists = [...lists]
           ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
 
@@ -85,6 +96,65 @@ class BoardState {
         ..sort((a, b) => (a.createdAt ?? DateTime(0))
             .compareTo(b.createdAt ?? DateTime(0)));
 
+  /// The custom field groups a card shows: the board's groups first, then the
+  /// card's own, each in the server's position order — the order the Planka
+  /// web client renders them in.
+  List<PlankaCustomFieldGroup> customFieldGroupsOf(String cardId) {
+    List<PlankaCustomFieldGroup> sorted(
+            bool Function(PlankaCustomFieldGroup) test) =>
+        customFieldGroups.where(test).toList()
+          ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
+    return [
+      ...sorted((g) => g.boardId == board.id),
+      ...sorted((g) => g.cardId == cardId),
+    ];
+  }
+
+  /// A group's display name. A group instantiated from a project base group
+  /// carries no name of its own and shows the base group's.
+  String customFieldGroupName(PlankaCustomFieldGroup group) =>
+      group.name ??
+      baseCustomFieldGroups
+          .where((b) => b.id == group.baseCustomFieldGroupId)
+          .firstOrNull
+          ?.name ??
+      '';
+
+  /// A group's fields in position order. An instantiated group shows the
+  /// fields of the base group it was built from, not fields of its own.
+  List<PlankaCustomField> customFieldsOf(PlankaCustomFieldGroup group) {
+    final baseId = group.baseCustomFieldGroupId;
+    return customFields
+        .where((f) => baseId == null
+            ? f.customFieldGroupId == group.id
+            : f.baseCustomFieldGroupId == baseId)
+        .toList()
+      ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
+  }
+
+  /// The card's value for a (group, field) pair, or null when none is set.
+  PlankaCustomFieldValue? customFieldValueOf(
+          String cardId, String groupId, String fieldId) =>
+      customFieldValues
+          .where((v) =>
+              v.cardId == cardId &&
+              v.customFieldGroupId == groupId &&
+              v.customFieldId == fieldId)
+          .firstOrNull;
+
+  /// The (field, value) pairs shown on the card tile: fields flagged
+  /// `showOnFrontOfCard` that this card actually holds a value for.
+  List<(PlankaCustomField, PlankaCustomFieldValue)> frontOfCardCustomFieldsOf(
+          String cardId) =>
+      [
+        for (final group in customFieldGroupsOf(cardId))
+          for (final field in customFieldsOf(group))
+            if (field.showOnFrontOfCard == true)
+              if (customFieldValueOf(cardId, group.id, field.id)
+                  case final value?)
+                (field, value),
+      ];
+
   factory BoardState.fromEnvelope(Envelope env) {
     final included = env.included;
     return BoardState(
@@ -100,8 +170,19 @@ class BoardState {
       tasks: included.tasks,
       attachments: included.attachments,
       comments: included.comments,
+      customFieldGroups: included.customFieldGroups,
+      customFields: included.customFields,
+      customFieldValues: included.customFieldValues,
     );
   }
+
+  /// Folds a project response in, supplying what the board response omits for
+  /// groups instantiated from a base group: the base groups themselves (for
+  /// the display name) and their fields.
+  BoardState withBaseCustomFields(Envelope projectEnv) => copyWith(
+        customFields: [...customFields, ...projectEnv.included.customFields],
+        baseCustomFieldGroups: projectEnv.included.baseCustomFieldGroups,
+      );
 
   BoardState copyWith({
     PlankaBoard? board,
@@ -116,6 +197,10 @@ class BoardState {
     List<PlankaTask>? tasks,
     List<PlankaAttachment>? attachments,
     List<PlankaComment>? comments,
+    List<PlankaCustomFieldGroup>? customFieldGroups,
+    List<PlankaCustomField>? customFields,
+    List<PlankaCustomFieldValue>? customFieldValues,
+    List<PlankaBaseCustomFieldGroup>? baseCustomFieldGroups,
   }) =>
       BoardState(
         board: board ?? this.board,
@@ -130,6 +215,11 @@ class BoardState {
         tasks: tasks ?? this.tasks,
         attachments: attachments ?? this.attachments,
         comments: comments ?? this.comments,
+        customFieldGroups: customFieldGroups ?? this.customFieldGroups,
+        customFields: customFields ?? this.customFields,
+        customFieldValues: customFieldValues ?? this.customFieldValues,
+        baseCustomFieldGroups:
+            baseCustomFieldGroups ?? this.baseCustomFieldGroups,
       );
 }
 
@@ -284,14 +374,44 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   PlankaRepo get _repo => PlankaRepo(ref.read(apiProvider));
   PlankaSocket? _socket;
 
+  /// Loads the board, serving the last good copy when the network is down
+  /// (offline read cache); the socket reconnect refetch heals it once we're
+  /// back online. Exported so tests can exercise the load without a socket.
+  Future<BoardState> load() async {
+    final account = ref.read(currentAccountProvider);
+    final env = account == null
+        ? await _repo.board(boardId)
+        : await ref.read(envelopeCacheProvider).fetchOrCached(
+            '${account.id}-board-$boardId', () => _repo.board(boardId));
+    return _withBaseCustomFields(BoardState.fromEnvelope(env));
+  }
+
+  /// A custom field group instantiated from a project base group takes its name
+  /// and fields from that template, which the board response omits — so fetch
+  /// the project, but only for a board that actually has such a group. A
+  /// failure here only costs those groups their fields, so the board still
+  /// loads.
+  Future<BoardState> _withBaseCustomFields(BoardState s) async {
+    if (!s.customFieldGroups.any((g) => g.baseCustomFieldGroupId != null)) {
+      return s;
+    }
+    final projectId = s.board.projectId;
+    final account = ref.read(currentAccountProvider);
+    try {
+      final env = account == null
+          ? await _repo.project(projectId)
+          : await ref.read(envelopeCacheProvider).fetchOrCached(
+              '${account.id}-project-$projectId', () => _repo.project(projectId));
+      return s.withBaseCustomFields(env);
+    } on ApiException {
+      return s;
+    }
+  }
+
   @override
   Future<BoardState> build() async {
     final account = ref.read(currentAccountProvider)!;
-    // Serve the last good copy when the network is down (offline read cache);
-    // the socket reconnect refetch below heals it once we're back online.
-    final env = await ref
-        .read(envelopeCacheProvider)
-        .fetchOrCached('${account.id}-board-$boardId', () => _repo.board(boardId));
+    final loaded = await load();
     final socket = PlankaSocket(account.serverUrl, account.token);
     _socket = socket;
     ref.onDispose(socket.dispose);
@@ -310,7 +430,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     });
     await socket.connect();
     await socket.subscribeBoard(boardId);
-    return BoardState.fromEnvelope(env);
+    return loaded;
   }
 
   void _onEvent(SocketEvent event) {
@@ -351,7 +471,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
             .read(envelopeCacheProvider)
             .put('${account.id}-board-$boardId', env);
       }
-      state = AsyncData(BoardState.fromEnvelope(env));
+      state = AsyncData(await _withBaseCustomFields(BoardState.fromEnvelope(env)));
     } on ApiException {
       // Keep current state; next socket event or user retry will heal it.
     }

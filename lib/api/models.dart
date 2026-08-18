@@ -265,6 +265,68 @@ extension PlankaAttachmentThumbnails on PlankaAttachment {
       (_thumbs?['outside360'] ?? _thumbs?['outside720']) as String?;
 }
 
+/// A set of custom fields shown on cards. A group belongs either to a board
+/// (shared by every card on it) or to a single card — the other id is null.
+/// When [baseCustomFieldGroupId] is set the group was instantiated from a
+/// project-level template: [name] is null and the fields live on that template,
+/// neither of which the board response carries.
+@freezed
+abstract class PlankaCustomFieldGroup with _$PlankaCustomFieldGroup {
+  const factory PlankaCustomFieldGroup({
+    required String id,
+    String? name,
+    String? boardId,
+    String? cardId,
+    String? baseCustomFieldGroupId,
+    @JsonKey(fromJson: _toDouble) double? position,
+  }) = _PlankaCustomFieldGroup;
+  factory PlankaCustomFieldGroup.fromJson(Map<String, dynamic> json) =>
+      _$PlankaCustomFieldGroupFromJson(json);
+}
+
+/// A project-level template a board's custom field group can be built from.
+/// Only the projects response carries these.
+@freezed
+abstract class PlankaBaseCustomFieldGroup with _$PlankaBaseCustomFieldGroup {
+  const factory PlankaBaseCustomFieldGroup({
+    required String id,
+    required String projectId,
+    String? name,
+  }) = _PlankaBaseCustomFieldGroup;
+  factory PlankaBaseCustomFieldGroup.fromJson(Map<String, dynamic> json) =>
+      _$PlankaBaseCustomFieldGroupFromJson(json);
+}
+
+/// One field of a custom field group. Exactly one of [customFieldGroupId] and
+/// [baseCustomFieldGroupId] identifies the group it belongs to.
+@freezed
+abstract class PlankaCustomField with _$PlankaCustomField {
+  const factory PlankaCustomField({
+    required String id,
+    required String name,
+    String? customFieldGroupId,
+    String? baseCustomFieldGroupId,
+    bool? showOnFrontOfCard,
+    @JsonKey(fromJson: _toDouble) double? position,
+  }) = _PlankaCustomField;
+  factory PlankaCustomField.fromJson(Map<String, dynamic> json) =>
+      _$PlankaCustomFieldFromJson(json);
+}
+
+/// A card's value for one field, keyed by the (group, field) pair.
+@freezed
+abstract class PlankaCustomFieldValue with _$PlankaCustomFieldValue {
+  const factory PlankaCustomFieldValue({
+    required String id,
+    required String cardId,
+    required String customFieldGroupId,
+    required String customFieldId,
+    required String content,
+  }) = _PlankaCustomFieldValue;
+  factory PlankaCustomFieldValue.fromJson(Map<String, dynamic> json) =>
+      _$PlankaCustomFieldValueFromJson(json);
+}
+
 /// Server-recorded card activity kinds. [unknown] is a forward-compat fallback
 /// so a new server action type parses and shows a generic entry.
 enum PlankaActionType {

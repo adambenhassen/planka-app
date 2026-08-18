@@ -40,6 +40,7 @@ class CardTile extends ConsumerWidget {
     final tasks = state.tasksOfCard(card.id);
     final done = tasks.where((t) => t.isCompleted).length;
     final attachmentCount = state.attachmentsOf(card.id).length;
+    final customFields = state.frontOfCardCustomFieldsOf(card.id);
     final due = card.dueDate;
 
     // Downloads authenticate via the accessToken cookie, not a Bearer header.
@@ -99,6 +100,17 @@ class CardTile extends ConsumerWidget {
                   Text(card.name,
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(fontWeight: FontWeight.w500)),
+                  if (customFields.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        for (final (field, value) in customFields)
+                          _CustomFieldChip(field: field, value: value),
+                      ],
+                    ),
+                  ],
                   if (due != null ||
                       tasks.isNotEmpty ||
                       attachmentCount > 0 ||
@@ -146,6 +158,35 @@ class CardTile extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A front-of-card custom field value. The web client shows the value alone,
+/// prefixing it with the field name only when the value is a bare number and
+/// would otherwise mean nothing on its own.
+class _CustomFieldChip extends StatelessWidget {
+  const _CustomFieldChip({required this.field, required this.value});
+  final PlankaCustomField field;
+  final PlankaCustomFieldValue value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = double.tryParse(value.content) == null
+        ? value.content
+        : '${field.name}: ${value.content}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall
+            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       ),
     );
   }
