@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
+import 'package:planka_app/api/models.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
+import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/ui/card_sections/custom_fields.dart';
 import 'package:planka_app/ui/card_sheet.dart';
@@ -27,6 +29,36 @@ BoardState _plainBoard() =>
 
 String _cardIdOf(String fixture) =>
     ((_json(fixture)['included'] as Map)['cards'] as List).first['id'] as String;
+
+/// A minimal board carrying one front-of-card field named `Front` holding
+/// [content], for exercising the chip's labelling on its own.
+BoardState _chipBoard(String content) {
+  const card = PlankaCard(
+      id: 'c1', boardId: 'b1', listId: 'l1', type: 'project', name: 'Card');
+  return BoardState(
+    board: const PlankaBoard(id: 'b1', projectId: 'p1', name: 'B'),
+    lists: const [],
+    cards: const {'c1': card},
+    customFieldGroups: const [
+      PlankaCustomFieldGroup(id: 'g1', name: 'G', boardId: 'b1'),
+    ],
+    customFields: const [
+      PlankaCustomField(
+          id: 'f1',
+          name: 'Front',
+          customFieldGroupId: 'g1',
+          showOnFrontOfCard: true),
+    ],
+    customFieldValues: [
+      PlankaCustomFieldValue(
+          id: 'v1',
+          cardId: 'c1',
+          customFieldGroupId: 'g1',
+          customFieldId: 'f1',
+          content: content),
+    ],
+  );
+}
 
 class _AccNotifier extends CurrentAccountNotifier {
   _AccNotifier(this.account);
@@ -50,6 +82,8 @@ void main() {
         ],
         child: MaterialApp(
           theme: AppTheme.light,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(
             body: CardSheet(boardId: s.board.id, cardId: cardId),
           ),
@@ -66,6 +100,8 @@ void main() {
         ],
         child: MaterialApp(
           theme: AppTheme.light,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(body: CardTile(card: s.cards[cardId]!, state: s)),
         ),
       );
@@ -133,6 +169,20 @@ void main() {
     expect(y('Front'), lessThan(y('Empty')));
   });
 
+  testWidgets('card sheet skips a group the project read left unresolved',
+      (tester) async {
+    // The board envelope alone — the project read that would name the
+    // instantiated group and supply its fields never landed.
+    final s =
+        BoardState.fromEnvelope(Envelope.parse(_json('board_show_custom_fields')));
+    await pumpTall(tester, sheet(s, _cardIdOf('board_show_custom_fields')));
+
+    // No untitled empty block; the groups that did resolve still render.
+    expect(find.byType(CardCustomFieldsSection), findsNWidgets(2));
+    expect(find.text('BG'), findsOneWidget);
+    expect(find.text('CG'), findsOneWidget);
+  });
+
   testWidgets('card sheet for a board with no custom fields adds nothing',
       (tester) async {
     final s = _plainBoard();
@@ -168,4 +218,23 @@ void main() {
 
     expect(find.text('Empty'), findsNothing);
   });
+
+  // The web client prefixes the field name only when the value starts with a
+  // number, which on its own would say nothing about what it measures.
+  for (final (content, expected) in const [
+    ('on front', 'on front'),
+    ('42', 'Front: 42'),
+    ('42 units', 'Front: 42 units'),
+    ('-1.5e3', 'Front: -1.5e3'),
+    ('.5', 'Front: .5'),
+    ('v2', 'v2'),
+  ]) {
+    testWidgets('tile chip for "$content" reads "$expected"', (tester) async {
+      final s = _chipBoard(content);
+      await tester.pumpWidget(tile(s, 'c1'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(expected), findsOneWidget);
+    });
+  }
 }

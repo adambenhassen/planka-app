@@ -98,11 +98,15 @@ class BoardState {
 
   /// The custom field groups a card shows: the board's groups first, then the
   /// card's own, each in the server's position order — the order the Planka
-  /// web client renders them in.
+  /// web client renders them in. A group that resolved to neither a name nor
+  /// any fields is left out: that is an instantiated group whose project could
+  /// not be read, and all it can render is an untitled empty block.
   List<PlankaCustomFieldGroup> customFieldGroupsOf(String cardId) {
+    bool resolved(PlankaCustomFieldGroup g) =>
+        customFieldGroupName(g).isNotEmpty || customFieldsOf(g).isNotEmpty;
     List<PlankaCustomFieldGroup> sorted(
             bool Function(PlankaCustomFieldGroup) test) =>
-        customFieldGroups.where(test).toList()
+        customFieldGroups.where(test).where(resolved).toList()
           ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
     return [
       ...sorted((g) => g.boardId == board.id),
@@ -378,32 +382,33 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   /// (offline read cache); the socket reconnect refetch heals it once we're
   /// back online. Exported so tests can exercise the load without a socket.
   Future<BoardState> load() async {
-    final account = ref.read(currentAccountProvider);
-    final env = account == null
-        ? await _repo.board(boardId)
-        : await ref.read(envelopeCacheProvider).fetchOrCached(
-            '${account.id}-board-$boardId', () => _repo.board(boardId));
+    final account = ref.read(currentAccountProvider)!;
+    final env = await ref.read(envelopeCacheProvider).fetchOrCached(
+        '${account.id}-board-$boardId', () => _repo.board(boardId));
     return _withBaseCustomFields(BoardState.fromEnvelope(env));
   }
 
   /// A custom field group instantiated from a project base group takes its name
   /// and fields from that template, which the board response omits — so fetch
-  /// the project, but only for a board that actually has such a group. A
-  /// failure here only costs those groups their fields, so the board still
-  /// loads.
+  /// the project, but only for a board that actually has such a group.
   Future<BoardState> _withBaseCustomFields(BoardState s) async {
     if (!s.customFieldGroups.any((g) => g.baseCustomFieldGroupId != null)) {
       return s;
     }
+    final account = ref.read(currentAccountProvider)!;
     final projectId = s.board.projectId;
-    final account = ref.read(currentAccountProvider);
     try {
-      final env = account == null
-          ? await _repo.project(projectId)
-          : await ref.read(envelopeCacheProvider).fetchOrCached(
-              '${account.id}-project-$projectId', () => _repo.project(projectId));
+      final env = await ref.read(envelopeCacheProvider).fetchOrCached(
+          '${account.id}-project-$projectId', () => _repo.project(projectId));
       return s.withBaseCustomFields(env);
-    } on ApiException {
+    } on ApiException catch (e) {
+      // Reachable offline on the first open after an upgrade: the board
+      // envelope is cached, the project one never was. The board still loads;
+      // only the instantiated groups lose their name and fields, and
+      // customFieldGroupsOf then leaves them out rather than rendering an
+      // untitled empty block. Log it — otherwise "my base group shows nothing"
+      // arrives with nothing to debug from.
+      debugPrint('board $boardId: base custom fields unavailable: $e');
       return s;
     }
   }

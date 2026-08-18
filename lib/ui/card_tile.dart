@@ -163,9 +163,14 @@ class CardTile extends ConsumerWidget {
   }
 }
 
+/// A value that opens with a number, matching what JS `parseFloat` accepts —
+/// trailing text and all, so `42 units` counts. Dart's `double.tryParse` wants
+/// the whole string to be a number and would miss it.
+final _leadingNumber = RegExp(r'^\s*[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?');
+
 /// A front-of-card custom field value. The web client shows the value alone,
-/// prefixing it with the field name only when the value is a bare number and
-/// would otherwise mean nothing on its own.
+/// prefixing it with the field name only when the value opens with a number
+/// and would otherwise say nothing about what it measures.
 class _CustomFieldChip extends StatelessWidget {
   const _CustomFieldChip({required this.field, required this.value});
   final PlankaCustomField field;
@@ -174,9 +179,9 @@ class _CustomFieldChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final label = double.tryParse(value.content) == null
-        ? value.content
-        : '${field.name}: ${value.content}';
+    final label = _leadingNumber.hasMatch(value.content)
+        ? '${field.name}: ${value.content}'
+        : value.content;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(

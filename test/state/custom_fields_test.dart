@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/planka_api.dart';
+import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
 
@@ -23,15 +24,20 @@ String _cardId() =>
 
 /// Serves the custom-field board and its project, counting the project reads
 /// so a board without a based group can be shown to make no extra request.
+/// With [failProject] the project read is rejected, the degraded case where
+/// the board envelope is cached but the project one never was.
 class _FakeApi extends PlankaApi {
-  _FakeApi({required this.boardFixture}) : super('http://x', 'tok');
+  _FakeApi({required this.boardFixture, this.failProject = false})
+      : super('http://x', 'tok');
   final String boardFixture;
+  final bool failProject;
   int projectCalls = 0;
 
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     if (path.startsWith('/projects/')) {
       projectCalls++;
+      if (failProject) throw ApiException(503, 'offline');
       return Envelope.parse(_json('project_show_custom_fields'));
     }
     return Envelope.parse(_json(boardFixture));
@@ -46,11 +52,24 @@ class _SocketlessNotifier extends BoardNotifier {
   Future<BoardState> build() => load();
 }
 
-Future<(ProviderContainer, BoardState, _FakeApi)> _boot(
-    String boardFixture) async {
-  final api = _FakeApi(boardFixture: boardFixture);
+class _AccNotifier extends CurrentAccountNotifier {
+  @override
+  Account build() => Account(
+      serverUrl: 'http://x',
+      token: 'tok',
+      userId: 'u1',
+      displayName: 'U');
+}
+
+Future<(ProviderContainer, BoardState, _FakeApi)> _boot(String boardFixture,
+    {bool failProject = false}) async {
+  final api =
+      _FakeApi(boardFixture: boardFixture, failProject: failProject);
   final container = ProviderContainer(overrides: [
     apiProvider.overrideWithValue(api),
+    // A signed-in account, so the load takes the same cache-backed path
+    // production does rather than a test-only shortcut.
+    currentAccountProvider.overrideWith(_AccNotifier.new),
     boardProvider.overrideWith2(_SocketlessNotifier.new),
   ]);
   final boardId = _json(boardFixture)['item']['id'] as String;
@@ -142,5 +161,25 @@ void main() {
     addTearDown(container.dispose);
 
     expect(api.projectCalls, 0);
+  });
+
+  test('a rejected project read still loads the board', () async {
+    final (container, state, api) = await _boot('board_show_custom_fields',
+        failProject: true);
+    addTearDown(container.dispose);
+
+    expect(api.projectCalls, 1);
+    expect(state.cards, isNotEmpty, reason: 'the board itself still loads');
+  });
+
+  test('a group left with no name and no fields is not shown', () async {
+    final (container, state, _) = await _boot('board_show_custom_fields',
+        failProject: true);
+    addTearDown(container.dispose);
+
+    // The instantiated group resolved to nothing, so it would render as an
+    // untitled empty block. The groups that did resolve are unaffected.
+    final shown = state.customFieldGroupsOf(_cardId());
+    expect(shown.map((g) => g.name), ['BG', 'CG']);
   });
 }
