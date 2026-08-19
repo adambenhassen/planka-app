@@ -38,22 +38,29 @@ Future<void> showCustomFieldsManagerSheet(
   );
 }
 
-/// Like [guardMutation] but maps HTTP 403 to the board-editor-only copy.
+/// Surfaces [e] to the user: 403 maps to the board-editor-only copy; anything
+/// else goes through the generic [showApiError] path.
+void _handleCfError(
+    BuildContext context, AppLocalizations l10n, Object e) {
+  if (!context.mounted) {
+    debugPrint('_handleCfError: failed after context unmounted: $e');
+    return;
+  }
+  if (e is ApiException && e.statusCode == 403) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(l10n.customFieldsEditorRequired),
+      backgroundColor: Theme.of(context).colorScheme.error,
+    ));
+  } else {
+    showApiError(context, e);
+  }
+}
+
+/// Like [guardMutation] but routes errors through [_handleCfError].
 void _guardCfMutation(
     BuildContext context, AppLocalizations l10n, Future<void> future) {
   future.catchError((Object e) {
-    if (!context.mounted) {
-      debugPrint('_guardCfMutation: failed after context unmounted: $e');
-      return;
-    }
-    if (e is ApiException && e.statusCode == 403) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(l10n.customFieldsEditorRequired),
-        backgroundColor: Theme.of(context).colorScheme.error,
-      ));
-    } else {
-      showApiError(context, e);
-    }
+    if (context.mounted) _handleCfError(context, l10n, e);
   });
 }
 
@@ -422,7 +429,7 @@ class _GroupRow extends StatelessWidget {
                         try {
                           await notifier.moveCustomFieldGroupUp(group.id);
                         } catch (e) {
-                          if (context.mounted) showApiError(context, e);
+                          if (context.mounted) _handleCfError(context, l10n, e);
                           return;
                         }
                         if (context.mounted) {
@@ -438,7 +445,7 @@ class _GroupRow extends StatelessWidget {
                         try {
                           await notifier.moveCustomFieldGroupDown(group.id);
                         } catch (e) {
-                          if (context.mounted) showApiError(context, e);
+                          if (context.mounted) _handleCfError(context, l10n, e);
                           return;
                         }
                         if (context.mounted) {
@@ -610,7 +617,7 @@ class _FieldRow extends StatelessWidget {
                     try {
                       await notifier.moveCustomFieldUp(field.id);
                     } catch (e) {
-                      if (context.mounted) showApiError(context, e);
+                      if (context.mounted) _handleCfError(context, l10n, e);
                       return;
                     }
                     if (context.mounted) {
@@ -624,7 +631,7 @@ class _FieldRow extends StatelessWidget {
                     try {
                       await notifier.moveCustomFieldDown(field.id);
                     } catch (e) {
-                      if (context.mounted) showApiError(context, e);
+                      if (context.mounted) _handleCfError(context, l10n, e);
                       return;
                     }
                     if (context.mounted) {

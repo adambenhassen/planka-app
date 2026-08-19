@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/models.dart';
+import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/l10n/gen/app_localizations.dart';
@@ -158,6 +159,25 @@ class _FakeNotifier extends BoardNotifier {
   @override
   Future<void> deleteCustomField(String id) async {
     calls.add(('deleteField', id));
+  }
+}
+
+/// Always fails to load — exercises the asyncRetry error branch.
+class _ErrorNotifier extends BoardNotifier {
+  _ErrorNotifier(super.boardId);
+  @override
+  Future<BoardState> build() async => throw Exception('load failed');
+}
+
+/// Succeeds to load but rejects mutations with 403.
+class _ForbiddenNotifier extends BoardNotifier {
+  _ForbiddenNotifier(super.boardId, this._state);
+  final BoardState _state;
+  @override
+  Future<BoardState> build() async => _state;
+  @override
+  Future<void> createBoardCustomFieldGroup(String name) async {
+    throw ApiException(403, 'not enough rights');
   }
 }
 
@@ -601,6 +621,56 @@ void main() {
             .controller;
         expect(controller.text.length, 128);
       });
+    });
+  });
+
+  group('error and 403 handling', () {
+    testWidgets('board load failure shows Retry button via asyncRetry',
+        (tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          currentAccountProvider.overrideWith(() => _AccNotifier()),
+          boardProvider.overrideWith2((arg) => _ErrorNotifier(arg)),
+        ],
+        child: const MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: CustomFieldsManagerSheet(boardId: _boardId),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Retry'), findsOneWidget);
+    });
+
+    testWidgets('403 on a mutation shows customFieldsEditorRequired snackbar',
+        (tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          currentAccountProvider.overrideWith(() => _AccNotifier()),
+          boardProvider.overrideWith2(
+              (arg) => _ForbiddenNotifier(arg, _makeState())),
+        ],
+        child: const MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: CustomFieldsManagerSheet(boardId: _boardId),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Add group'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'New group');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(
+          find.text('Only board editors can change custom fields.'),
+          findsOneWidget);
     });
   });
 
