@@ -1269,6 +1269,190 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'installer failed to open: {message}'**
   String updateInstallerFailed(String message);
+
+  /// Title of the custom fields manager sheet
+  ///
+  /// In en, this message translates to:
+  /// **'Custom fields'**
+  String get customFieldsTitle;
+
+  /// Inline-add label for a new custom field group
+  ///
+  /// In en, this message translates to:
+  /// **'Add group'**
+  String get customFieldsAddGroup;
+
+  /// Inline-add label for a new custom field
+  ///
+  /// In en, this message translates to:
+  /// **'Add field'**
+  String get customFieldsAddField;
+
+  /// Menu item to rename a group or field
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get customFieldsMenuRename;
+
+  /// Menu item to move a group or field up
+  ///
+  /// In en, this message translates to:
+  /// **'Move up'**
+  String get customFieldsMenuMoveUp;
+
+  /// Menu item to move a group or field down
+  ///
+  /// In en, this message translates to:
+  /// **'Move down'**
+  String get customFieldsMenuMoveDown;
+
+  /// Menu item to delete a group or field
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get customFieldsMenuDelete;
+
+  /// Menu item to remove an instantiated group from the board
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from board'**
+  String get customFieldsMenuRemoveFromBoard;
+
+  /// Checked menu item and subtitle for the front-of-card toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Show on front of card'**
+  String get customFieldsMenuShowOnFrontOfCard;
+
+  /// Prefix for the popup-menu tooltip; followed by the group or field name
+  ///
+  /// In en, this message translates to:
+  /// **'More actions for'**
+  String get customFieldsMoreActions;
+
+  /// Section header for board-level custom field groups
+  ///
+  /// In en, this message translates to:
+  /// **'Board'**
+  String get customFieldsBoardSection;
+
+  /// Section header for card-level custom field groups
+  ///
+  /// In en, this message translates to:
+  /// **'This card'**
+  String get customFieldsCardSection;
+
+  /// Empty state for the board section
+  ///
+  /// In en, this message translates to:
+  /// **'No custom fields on this board yet. Fields you add here appear on every card.'**
+  String get customFieldsBoardEmpty;
+
+  /// Empty state for the card section
+  ///
+  /// In en, this message translates to:
+  /// **'No fields on just this card. Fields you add here appear on this card only.'**
+  String get customFieldsCardEmpty;
+
+  /// Subtitle on an instantiated group row
+  ///
+  /// In en, this message translates to:
+  /// **'From project template'**
+  String get customFieldsFromTemplate;
+
+  /// Caption under an instantiated group's read-only field list
+  ///
+  /// In en, this message translates to:
+  /// **'Fields come from the template'**
+  String get customFieldsTemplateFieldsReadOnly;
+
+  /// Banner shown to board viewers at the top of the sheet
+  ///
+  /// In en, this message translates to:
+  /// **'You have view-only access to this board.'**
+  String get customFieldsViewerReadOnly;
+
+  /// In en, this message translates to:
+  /// **'Only board editors can change custom fields.'**
+  String get customFieldsEditorRequired;
+
+  /// Title of the rename-group dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Rename group'**
+  String get customFieldsRenameGroupTitle;
+
+  /// Title of the rename-field dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Rename field'**
+  String get customFieldsRenameFieldTitle;
+
+  /// Title of the board-group delete confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Delete group?'**
+  String get customFieldsGroupDeleteTitle;
+
+  /// Body of the board-group delete confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\", its {fieldCount} fields, and every value stored under them on this board\'s cards are deleted. This cannot be undone.'**
+  String customFieldsGroupDeleteMessage(String name, int fieldCount);
+
+  /// Title of the card-group delete confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Delete group?'**
+  String get customFieldsCardGroupDeleteTitle;
+
+  /// Body of the card-group delete confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\", its {fieldCount} fields, and this card\'s values under them are deleted. This cannot be undone.'**
+  String customFieldsCardGroupDeleteMessage(String name, int fieldCount);
+
+  /// Title of the board-group field delete confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Delete field?'**
+  String get customFieldsFieldInGroupDeleteTitle;
+
+  /// Body of the board-group field delete confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" and its values on every card on this board are deleted. This cannot be undone.'**
+  String customFieldsFieldInGroupDeleteMessage(String name);
+
+  /// Title of the card-group field delete confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Delete field?'**
+  String get customFieldsFieldInCardGroupDeleteTitle;
+
+  /// Body of the card-group field delete confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" and its value on this card are deleted. This cannot be undone.'**
+  String customFieldsFieldInCardGroupDeleteMessage(String name);
+
+  /// Title of the remove-instantiated-group confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from board?'**
+  String get customFieldsInstantiatedGroupRemoveTitle;
+
+  /// Body of the remove-instantiated-group confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" is removed from this board, and the values stored under it on this board\'s cards are deleted. The project template itself is kept. This cannot be undone.'**
+  String customFieldsInstantiatedGroupRemoveMessage(String name);
+
+  /// Accessibility announcement after a group or field is reordered
+  ///
+  /// In en, this message translates to:
+  /// **'{name} moved to position {position} of {total}'**
+  String customFieldsMovedToPosition(String name, int position, int total);
 }
 
 class _AppLocalizationsDelegate

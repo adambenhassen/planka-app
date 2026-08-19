@@ -927,5 +927,132 @@
         "example": "No APP found to open this file"
       }
     }
+  },
+
+  "customFieldsTitle": "Custom fields",
+  "@customFieldsTitle": { "description": "Title of the custom fields manager sheet" },
+
+  "customFieldsAddGroup": "Add group",
+  "@customFieldsAddGroup": { "description": "Inline-add label for a new custom field group" },
+
+  "customFieldsAddField": "Add field",
+  "@customFieldsAddField": { "description": "Inline-add label for a new custom field" },
+
+  "customFieldsMenuRename": "Rename",
+  "@customFieldsMenuRename": { "description": "Menu item to rename a group or field" },
+
+  "customFieldsMenuMoveUp": "Move up",
+  "@customFieldsMenuMoveUp": { "description": "Menu item to move a group or field up" },
+
+  "customFieldsMenuMoveDown": "Move down",
+  "@customFieldsMenuMoveDown": { "description": "Menu item to move a group or field down" },
+
+  "customFieldsMenuDelete": "Delete",
+  "@customFieldsMenuDelete": { "description": "Menu item to delete a group or field" },
+
+  "customFieldsMenuRemoveFromBoard": "Remove from board",
+  "@customFieldsMenuRemoveFromBoard": { "description": "Menu item to remove an instantiated group from the board" },
+
+  "customFieldsMenuShowOnFrontOfCard": "Show on front of card",
+  "@customFieldsMenuShowOnFrontOfCard": { "description": "Checked menu item and subtitle for the front-of-card toggle" },
+
+  "customFieldsMoreActions": "More actions for",
+  "@customFieldsMoreActions": { "description": "Prefix for the popup-menu tooltip; followed by the group or field name" },
+
+  "customFieldsBoardSection": "Board",
+  "@customFieldsBoardSection": { "description": "Section header for board-level custom field groups" },
+
+  "customFieldsCardSection": "This card",
+  "@customFieldsCardSection": { "description": "Section header for card-level custom field groups" },
+
+  "customFieldsBoardEmpty": "No custom fields on this board yet. Fields you add here appear on every card.",
+  "@customFieldsBoardEmpty": { "description": "Empty state for the board section" },
+
+  "customFieldsCardEmpty": "No fields on just this card. Fields you add here appear on this card only.",
+  "@customFieldsCardEmpty": { "description": "Empty state for the card section" },
+
+  "customFieldsFromTemplate": "From project template",
+  "@customFieldsFromTemplate": { "description": "Subtitle on an instantiated group row" },
+
+  "customFieldsTemplateFieldsReadOnly": "Fields come from the template",
+  "@customFieldsTemplateFieldsReadOnly": { "description": "Caption under an instantiated group's read-only field list" },
+
+  "customFieldsViewerReadOnly": "You have view-only access to this board.",
+  "@customFieldsViewerReadOnly": { "description": "Banner shown to board viewers at the top of the sheet" },
+
+  "customFieldsEditorRequired": "Only board editors can change custom fields.",
+  "@customFieldsEditorRequired": { "description": "Snackbar shown when a viewer or guest gets a 403 trying to write a custom field" },
+
+  "customFieldsRenameGroupTitle": "Rename group",
+  "@customFieldsRenameGroupTitle": { "description": "Title of the rename-group dialog" },
+
+  "customFieldsRenameFieldTitle": "Rename field",
+  "@customFieldsRenameFieldTitle": { "description": "Title of the rename-field dialog" },
+
+  "customFieldsGroupDeleteTitle": "Delete group?",
+  "@customFieldsGroupDeleteTitle": { "description": "Title of the board-group delete confirmation" },
+
+  "customFieldsGroupDeleteMessage": "\"{name}\", its {fieldCount} fields, and every value stored under them on this board's cards are deleted. This cannot be undone.",
+  "@customFieldsGroupDeleteMessage": {
+    "description": "Body of the board-group delete confirmation",
+    "placeholders": {
+      "name": { "type": "String" },
+      "fieldCount": { "type": "int" }
+    }
+  },
+
+  "customFieldsCardGroupDeleteTitle": "Delete group?",
+  "@customFieldsCardGroupDeleteTitle": { "description": "Title of the card-group delete confirmation" },
+
+  "customFieldsCardGroupDeleteMessage": "\"{name}\", its {fieldCount} fields, and this card's values under them are deleted. This cannot be undone.",
+  "@customFieldsCardGroupDeleteMessage": {
+    "description": "Body of the card-group delete confirmation",
+    "placeholders": {
+      "name": { "type": "String" },
+      "fieldCount": { "type": "int" }
+    }
+  },
+
+  "customFieldsFieldInGroupDeleteTitle": "Delete field?",
+  "@customFieldsFieldInGroupDeleteTitle": { "description": "Title of the board-group field delete confirmation" },
+
+  "customFieldsFieldInGroupDeleteMessage": "\"{name}\" and its values on every card on this board are deleted. This cannot be undone.",
+  "@customFieldsFieldInGroupDeleteMessage": {
+    "description": "Body of the board-group field delete confirmation",
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
+  "customFieldsFieldInCardGroupDeleteTitle": "Delete field?",
+  "@customFieldsFieldInCardGroupDeleteTitle": { "description": "Title of the card-group field delete confirmation" },
+
+  "customFieldsFieldInCardGroupDeleteMessage": "\"{name}\" and its value on this card are deleted. This cannot be undone.",
+  "@customFieldsFieldInCardGroupDeleteMessage": {
+    "description": "Body of the card-group field delete confirmation",
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
+  "customFieldsInstantiatedGroupRemoveTitle": "Remove from board?",
+  "@customFieldsInstantiatedGroupRemoveTitle": { "description": "Title of the remove-instantiated-group confirmation" },
+
+  "customFieldsInstantiatedGroupRemoveMessage": "\"{name}\" is removed from this board, and the values stored under it on this board's cards are deleted. The project template itself is kept. This cannot be undone.",
+  "@customFieldsInstantiatedGroupRemoveMessage": {
+    "description": "Body of the remove-instantiated-group confirmation",
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
+  "customFieldsMovedToPosition": "{name} moved to position {position} of {total}",
+  "@customFieldsMovedToPosition": {
+    "description": "Accessibility announcement after a group or field is reordered",
+    "placeholders": {
+      "name": { "type": "String" },
+      "position": { "type": "int" },
+      "total": { "type": "int" }
+    }
   }
 }

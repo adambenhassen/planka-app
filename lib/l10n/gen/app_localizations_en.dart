@@ -639,4 +639,114 @@ class AppLocalizationsEn extends AppLocalizations {
   String updateInstallerFailed(String message) {
     return 'installer failed to open: $message';
   }
+
+  @override
+  String get customFieldsTitle => 'Custom fields';
+
+  @override
+  String get customFieldsAddGroup => 'Add group';
+
+  @override
+  String get customFieldsAddField => 'Add field';
+
+  @override
+  String get customFieldsMenuRename => 'Rename';
+
+  @override
+  String get customFieldsMenuMoveUp => 'Move up';
+
+  @override
+  String get customFieldsMenuMoveDown => 'Move down';
+
+  @override
+  String get customFieldsMenuDelete => 'Delete';
+
+  @override
+  String get customFieldsMenuRemoveFromBoard => 'Remove from board';
+
+  @override
+  String get customFieldsMenuShowOnFrontOfCard => 'Show on front of card';
+
+  @override
+  String get customFieldsMoreActions => 'More actions for';
+
+  @override
+  String get customFieldsBoardSection => 'Board';
+
+  @override
+  String get customFieldsCardSection => 'This card';
+
+  @override
+  String get customFieldsBoardEmpty =>
+      'No custom fields on this board yet. Fields you add here appear on every card.';
+
+  @override
+  String get customFieldsCardEmpty =>
+      'No fields on just this card. Fields you add here appear on this card only.';
+
+  @override
+  String get customFieldsFromTemplate => 'From project template';
+
+  @override
+  String get customFieldsTemplateFieldsReadOnly =>
+      'Fields come from the template';
+
+  @override
+  String get customFieldsViewerReadOnly =>
+      'You have view-only access to this board.';
+
+  @override
+  String get customFieldsEditorRequired =>
+      'Only board editors can change custom fields.';
+
+  @override
+  String get customFieldsRenameGroupTitle => 'Rename group';
+
+  @override
+  String get customFieldsRenameFieldTitle => 'Rename field';
+
+  @override
+  String get customFieldsGroupDeleteTitle => 'Delete group?';
+
+  @override
+  String customFieldsGroupDeleteMessage(String name, int fieldCount) {
+    return '\"$name\", its $fieldCount fields, and every value stored under them on this board\'s cards are deleted. This cannot be undone.';
+  }
+
+  @override
+  String get customFieldsCardGroupDeleteTitle => 'Delete group?';
+
+  @override
+  String customFieldsCardGroupDeleteMessage(String name, int fieldCount) {
+    return '\"$name\", its $fieldCount fields, and this card\'s values under them are deleted. This cannot be undone.';
+  }
+
+  @override
+  String get customFieldsFieldInGroupDeleteTitle => 'Delete field?';
+
+  @override
+  String customFieldsFieldInGroupDeleteMessage(String name) {
+    return '\"$name\" and its values on every card on this board are deleted. This cannot be undone.';
+  }
+
+  @override
+  String get customFieldsFieldInCardGroupDeleteTitle => 'Delete field?';
+
+  @override
+  String customFieldsFieldInCardGroupDeleteMessage(String name) {
+    return '\"$name\" and its value on this card are deleted. This cannot be undone.';
+  }
+
+  @override
+  String get customFieldsInstantiatedGroupRemoveTitle => 'Remove from board?';
+
+  @override
+  String customFieldsInstantiatedGroupRemoveMessage(String name) {
+    return '\"$name\" is removed from this board, and the values stored under it on this board\'s cards are deleted. The project template itself is kept. This cannot be undone.';
+  }
+
+  @override
+  String customFieldsMovedToPosition(String name, int position, int total) {
+    return '$name moved to position $position of $total';
+  }
 }

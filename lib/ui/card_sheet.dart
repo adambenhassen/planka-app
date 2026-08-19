@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../api/models.dart';
 import '../api/planka_api.dart';
+import 'custom_fields_manager_sheet.dart';
 import '../auth/auth_providers.dart';
 import '../l10n/gen/app_localizations.dart';
 import 'error_handling.dart';
@@ -263,6 +264,15 @@ class CardSheet extends ConsumerWidget {
                       content: content)),
             ),
           ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            icon: const Icon(Icons.tune, size: 18),
+            label: Text(l10n.customFieldsTitle),
+            onPressed: () => showCustomFieldsManagerSheet(context,
+                boardId: boardId, cardId: cardId),
+          ),
+        ),
         section(
           l10n.sectionChecklists,
           CardTaskListsSection(
