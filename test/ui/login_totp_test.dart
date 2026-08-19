@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,14 +22,26 @@ class TotpApi extends PlankaApi {
 
   final List<Object> outcomes;
   final verifyCalls = <(String, String)>[];
+  int loginCalls = 0;
+
+  /// When set, a request blocks on it — lets a test hold one call in flight
+  /// while it tries to start a second. Calls are counted before they block, so
+  /// a leaked second request shows up even though neither has returned.
+  Completer<void>? gate;
 
   @override
-  Future<String> login(String emailOrUsername, String password) async =>
-      throw TotpRequiredException(_pendingToken);
+  Future<String> login(String emailOrUsername, String password) async {
+    loginCalls++;
+    final g = gate;
+    if (g != null) await g.future;
+    throw TotpRequiredException(_pendingToken);
+  }
 
   @override
   Future<String> verifyTotp(String pendingToken, String code) async {
     verifyCalls.add((pendingToken, code));
+    final g = gate;
+    if (g != null) await g.future;
     final outcome = outcomes.removeAt(0);
     if (outcome is Exception) throw outcome;
     token = outcome as String;
@@ -55,8 +69,16 @@ void main() {
   late TotpApi api;
   late MemStorage storage;
 
-  Widget app(List<Object> outcomes) {
+  /// Every client the login flow built. A second `_submit` would build a second
+  /// one, so counting logins across all of them is what proves no login was
+  /// started twice — `api` alone would silently follow the newest instance.
+  late List<TotpApi> apis;
+
+  int totalLogins() => apis.fold(0, (sum, a) => sum + a.loginCalls);
+
+  Widget app(List<Object> outcomes, {Completer<void>? gate}) {
     storage = MemStorage();
+    apis = [];
     final router = GoRouter(initialLocation: '/login', routes: [
       GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
       GoRoute(
@@ -66,7 +88,8 @@ void main() {
     return ProviderScope(
       overrides: [
         apiFactoryProvider.overrideWithValue((url) {
-          api = TotpApi(url, null, outcomes: outcomes);
+          api = TotpApi(url, null, outcomes: outcomes)..gate = gate;
+          apis.add(api);
           return api;
         }),
         accountStoreProvider.overrideWithValue(AccountStore(storage)),
@@ -197,6 +220,60 @@ void main() {
     expect(find.text('Required'), findsOneWidget);
     expect(api.verifyCalls, isEmpty);
     expectNoPendingTokenStored();
+  });
+
+  testWidgets('Enter cannot start a second verification while one is in flight',
+      (tester) async {
+    await reachCodeStep(tester, ['realtok']);
+    final gate = Completer<void>();
+    api.gate = gate;
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Authentication code'), '123456');
+
+    final field = find.widgetWithText(TextFormField, 'Authentication code');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    // `done` unfocuses the field, so a second Enter needs the caret back in it
+    // first. That is a plain user action and nothing about it waits for the
+    // request still in flight.
+    await tester.showKeyboard(field);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    // Two Enter presses, one request against the pending token.
+    expect(api.verifyCalls, [(_pendingToken, '123456')]);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(api.verifyCalls, [(_pendingToken, '123456')]);
+    expect(find.text('PROJECTS'), findsOneWidget);
+    expectNoPendingTokenStored();
+  });
+
+  testWidgets('Enter cannot start a second login while one is in flight',
+      (tester) async {
+    final gate = Completer<void>();
+    await tester.pumpWidget(app(['realtok'], gate: gate));
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Server URL'), 'http://x');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Email or username'), 'demo@d.d');
+    final password = find.widgetWithText(TextFormField, 'Password');
+    await tester.enterText(password, 'pw');
+
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.showKeyboard(password);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    // One login in flight, and no second client built to carry another.
+    expect(totalLogins(), 1);
+    expect(apis, hasLength(1));
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(totalLogins(), 1);
+    // The single login still lands on the code step as usual.
+    expect(find.text('Two-factor authentication'), findsOneWidget);
   });
 
   testWidgets('an unexpected verify-totp response stores no pending token',

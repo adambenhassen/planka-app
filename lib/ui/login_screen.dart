@@ -107,6 +107,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// Submits one code per user action — never retried automatically, so the
   /// app cannot amplify a guess rate against a six-digit secret.
   Future<void> _submitCode() async {
+    // Guards the entry point rather than each caller: the buttons refuse while
+    // loading, but they decide that at build time, so a second Enter or tap
+    // arriving before the next frame would slip past them.
+    if (_loading) return;
     if (!_codeFormKey.currentState!.validate()) return;
     final api = _pendingApi;
     final pendingToken = _pendingToken;
@@ -169,6 +173,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _submit() async {
+    // Same entry-point guard as _submitCode: one login in flight at a time,
+    // however many times Enter or the button is pressed.
+    if (_loading) return;
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _loading = true;
