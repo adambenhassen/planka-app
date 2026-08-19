@@ -809,6 +809,32 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   Future<void> clearStopwatch(String cardId) =>
       _patchCard(cardId, {'stopwatch': null});
 
+  /// The write in flight for each (card, group, field), so the next one can be
+  /// chained behind it.
+  final Map<String, Future<void>> _customFieldValueWrites = {};
+
+  /// Runs [write] once every earlier write to the same value has finished.
+  /// Unlike the create paths, this key is writable over and over: raced, two
+  /// edits reach the server in either order and the app folds whichever
+  /// response lands last, so a slower earlier write wins and set-then-clear
+  /// leaves the app holding a value the server does not have.
+  Future<void> _queueCustomFieldValueWrite(String cardId, String groupId,
+      String fieldId, Future<void> Function() write) {
+    final key = '$cardId/$groupId/$fieldId';
+    final prior = _customFieldValueWrites[key] ?? Future<void>.value();
+    final next = prior.then((_) => write());
+    // The queue waits on completion, not on success: a rejected write must not
+    // strand the edits made after it.
+    final settled = next.then((_) {}, onError: (_) {});
+    _customFieldValueWrites[key] = settled;
+    settled.whenComplete(() {
+      if (identical(_customFieldValueWrites[key], settled)) {
+        _customFieldValueWrites.remove(key);
+      }
+    });
+    return next;
+  }
+
   /// Sets this card's value for a (group, field) pair — the server addresses a
   /// value by that pair and has one endpoint for creating and updating it.
   /// [content] is trimmed, and blank content clears the value: the server
@@ -817,11 +843,36 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   Future<void> setCustomFieldValue(String cardId,
       {required String groupId,
       required String fieldId,
-      required String content}) async {
+      required String content}) {
     final trimmed = content.trim();
-    if (trimmed.isEmpty) {
-      return clearCustomFieldValue(cardId, groupId: groupId, fieldId: fieldId);
-    }
+    return _queueCustomFieldValueWrite(
+        cardId,
+        groupId,
+        fieldId,
+        () => trimmed.isEmpty
+            ? _clearCustomFieldValue(cardId, groupId: groupId, fieldId: fieldId)
+            : _setCustomFieldValue(cardId,
+                groupId: groupId, fieldId: fieldId, content: trimmed));
+  }
+
+  /// Removes the card's value for a (group, field) pair, leaving the field
+  /// exactly as one that was never set.
+  Future<void> clearCustomFieldValue(String cardId,
+          {required String groupId, required String fieldId}) =>
+      _queueCustomFieldValueWrite(
+          cardId,
+          groupId,
+          fieldId,
+          () => _clearCustomFieldValue(cardId,
+              groupId: groupId, fieldId: fieldId));
+
+  /// The write itself. Reads state at the moment it runs rather than when it
+  /// was queued, so it builds on the edit before it instead of on what the
+  /// field held when the user left it.
+  Future<void> _setCustomFieldValue(String cardId,
+      {required String groupId,
+      required String fieldId,
+      required String content}) async {
     final s = state.value;
     if (s == null) return;
     final existing = s.customFieldValueOf(cardId, groupId, fieldId);
@@ -832,7 +883,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       cardId: cardId,
       customFieldGroupId: groupId,
       customFieldId: fieldId,
-      content: trimmed,
+      content: content,
     );
     await _optimistic(
       s.copyWith(
@@ -840,7 +891,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
               upsertCustomFieldValue(s.customFieldValues, optimistic)),
       () async {
         final env = await _repo.setCustomFieldValue(cardId,
-            groupId: groupId, fieldId: fieldId, content: trimmed);
+            groupId: groupId, fieldId: fieldId, content: content);
         final cur = state.value;
         if (cur != null) {
           state = AsyncData(cur.copyWith(
@@ -852,9 +903,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
-  /// Removes the card's value for a (group, field) pair, leaving the field
-  /// exactly as one that was never set.
-  Future<void> clearCustomFieldValue(String cardId,
+  Future<void> _clearCustomFieldValue(String cardId,
       {required String groupId, required String fieldId}) async {
     final s = state.value;
     final existing = s?.customFieldValueOf(cardId, groupId, fieldId);

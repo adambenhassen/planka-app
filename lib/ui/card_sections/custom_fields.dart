@@ -82,11 +82,14 @@ class _CustomFieldValueFieldState extends State<_CustomFieldValueField> {
   @override
   void didUpdateWidget(covariant _CustomFieldValueField oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // A value edited elsewhere, arriving over the socket. A field the user is
-    // typing in keeps what they typed — that edit is the one about to be
-    // submitted, and taking the caret away mid-word is worse than being stale
-    // for a moment.
-    if (widget.content != oldWidget.content && !_focus.hasFocus) {
+    if (widget.content == oldWidget.content) return;
+    // A value edited elsewhere, arriving over the socket. It takes the field
+    // unless the user has changed the text — theirs is the edit about to be
+    // submitted, and moving the caret out from under them would lose it.
+    // Holding focus is not itself a change: a field tapped into and left alone
+    // must still show what the other client wrote, or leaving it would hand
+    // back a value nobody typed.
+    if (_controller.text == (oldWidget.content ?? '')) {
       _controller.text = widget.content ?? '';
     }
   }
@@ -106,6 +109,10 @@ class _CustomFieldValueFieldState extends State<_CustomFieldValueField> {
     // Leaving a field alone writes nothing, so opening a card and scrolling
     // past its custom fields costs no requests.
     if (content == (widget.content ?? '')) return;
+    // Hold exactly what was submitted, so the field reads as unchanged again:
+    // whitespace the user typed around the value is not a change the next
+    // edit from elsewhere has to defer to.
+    _controller.text = content;
     widget.onSubmit(content);
   }
 

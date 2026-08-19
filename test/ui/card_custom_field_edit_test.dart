@@ -73,11 +73,21 @@ void main() {
 
   Finder fieldOf(String fieldId) => find.byKey(ValueKey('custom-field-$fieldId'));
 
-  String textOf(WidgetTester tester, String fieldId) => tester
-      .widget<EditableText>(
-          find.descendant(of: fieldOf(fieldId), matching: find.byType(EditableText)))
-      .controller
-      .text;
+  TextEditingController controllerOf(WidgetTester tester, String fieldId) =>
+      tester
+          .widget<EditableText>(find.descendant(
+              of: fieldOf(fieldId), matching: find.byType(EditableText)))
+          .controller;
+
+  String textOf(WidgetTester tester, String fieldId) =>
+      controllerOf(tester, fieldId).text;
+
+  /// Puts the caret in the field without typing into it, the way tapping in
+  /// does.
+  Future<void> focusField(WidgetTester tester, String fieldId) async {
+    await tester.tap(fieldOf(fieldId));
+    await tester.pumpAndSettle();
+  }
 
   /// Hands the field over the way pressing enter does.
   Future<void> submit(WidgetTester tester) async {
@@ -171,11 +181,55 @@ void main() {
     expect(textOf(tester, _fieldId), '');
   });
 
+  testWidgets('a focused field nobody has typed in takes an edit from '
+      'elsewhere', (tester) async {
+    await pumpSheet(tester);
+
+    // Tapped into and left alone: holding the caret is not an edit, so the
+    // value another client just wrote is the one that belongs here.
+    await focusField(tester, _fieldId);
+    await deliver(tester, 'customFieldValueUpdate', {
+      'id': _valueId,
+      'cardId': _cardId,
+      'customFieldGroupId': _groupId,
+      'customFieldId': _fieldId,
+      'content': 'from the web',
+    });
+
+    expect(textOf(tester, _fieldId), 'from the web');
+    // And leaving it hands nothing back — least of all the value it held
+    // before, which nobody typed.
+    await submit(tester);
+    expect(notifier.edits, isEmpty);
+  });
+
+  testWidgets('a focused field nobody has typed in takes a delete from '
+      'elsewhere', (tester) async {
+    await pumpSheet(tester);
+
+    await focusField(tester, _fieldId);
+    await deliver(tester, 'customFieldValueDelete', {
+      'id': _valueId,
+      'cardId': _cardId,
+      'customFieldGroupId': _groupId,
+      'customFieldId': _fieldId,
+      'content': 'hello',
+    });
+
+    expect(textOf(tester, _fieldId), '');
+    // Leaving the field must not write the deleted value back.
+    await submit(tester);
+    expect(notifier.edits, isEmpty);
+  });
+
   testWidgets('an edit in progress is not overwritten by one from elsewhere',
       (tester) async {
     await pumpSheet(tester);
 
     await tester.enterText(fieldOf(_fieldId), 'half typed');
+    // Caret mid-word, where a rebuild that reset the text would move it.
+    controllerOf(tester, _fieldId).selection =
+        const TextSelection.collapsed(offset: 4);
     await deliver(tester, 'customFieldValueUpdate', {
       'id': _valueId,
       'cardId': _cardId,
@@ -185,6 +239,7 @@ void main() {
     });
 
     expect(textOf(tester, _fieldId), 'half typed');
+    expect(controllerOf(tester, _fieldId).selection.baseOffset, 4);
     // And submitting still hands over what was typed.
     await submit(tester);
     expect(notifier.edits, [(_groupId, _fieldId, 'half typed')]);

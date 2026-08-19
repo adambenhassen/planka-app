@@ -42,8 +42,18 @@ class _FakeApi extends PlankaApi {
   /// method, path, body — in call order.
   final List<(String, String, Object?)> calls = [];
 
-  /// Held open while set, so a request can be observed mid-flight.
+  /// Held open while set, so a request can be observed mid-flight. Only the
+  /// first write waits on it, so a write queued behind that one runs as soon
+  /// as the first is released.
   Completer<void>? gate;
+  bool _gateSpent = false;
+
+  Future<void> _waitAtGate() async {
+    final open = gate;
+    if (open == null || _gateSpent) return;
+    _gateSpent = true;
+    await open.future;
+  }
 
   Iterable<(String, String, Object?)> get writes =>
       calls.where((c) => c.$1 != 'GET');
@@ -59,7 +69,7 @@ class _FakeApi extends PlankaApi {
   @override
   Future<Envelope> patch(String path, Object? body) async {
     calls.add(('PATCH', path, body));
-    await gate?.future;
+    await _waitAtGate();
     if (failWrite) throw ApiException(403, 'not enough rights');
     return Envelope.parse({
       'item': {
@@ -75,7 +85,7 @@ class _FakeApi extends PlankaApi {
   @override
   Future<Envelope> delete(String path) async {
     calls.add(('DELETE', path, null));
-    await gate?.future;
+    await _waitAtGate();
     if (failWrite) throw ApiException(403, 'not enough rights');
     return Envelope.parse(const {'item': {}});
   }
@@ -111,6 +121,10 @@ Future<(ProviderContainer, BoardNotifier, _FakeApi)> _boot(
 
 BoardState _stateOf(ProviderContainer c, [String boardId = _boardId]) =>
     c.read(boardProvider(boardId)).value!;
+
+/// The content each write carried, in the order the requests went out.
+List<Object?> _contents(Iterable<(String, String, Object?)> writes) =>
+    [for (final w in writes) (w.$3 as Map)['content']];
 
 void main() {
   test('setting a value writes to the (group, field) pair and shows it at once',
@@ -177,6 +191,52 @@ void main() {
             .where((v) => v.customFieldId == empty)
             .map((v) => v.id),
         ['srv-value']);
+  });
+
+  test('two edits to one field settle on the last one made', () async {
+    final (container, notifier, api) = await _boot();
+    addTearDown(container.dispose);
+    final f = _fieldIdOf('F');
+    api.gate = Completer<void>();
+
+    final first = notifier.setCustomFieldValue(_cardId,
+        groupId: _groupId, fieldId: f, content: 'first');
+    await pumpEventQueue();
+    final second = notifier.setCustomFieldValue(_cardId,
+        groupId: _groupId, fieldId: f, content: 'second');
+    await pumpEventQueue();
+
+    // The second edit waits for the first: raced, the server could apply them
+    // in either order and the app could fold either response last.
+    expect(_contents(api.writes), ['first']);
+    api.gate!.complete();
+    await first;
+    await second;
+
+    expect(_contents(api.writes), ['first', 'second']);
+    expect(_stateOf(container).customFieldValueOf(_cardId, _groupId, f)?.content,
+        'second');
+  });
+
+  test('a clear made while an edit is in flight is what settles', () async {
+    final (container, notifier, api) = await _boot();
+    addTearDown(container.dispose);
+    final f = _fieldIdOf('F');
+    api.gate = Completer<void>();
+
+    final set = notifier.setCustomFieldValue(_cardId,
+        groupId: _groupId, fieldId: f, content: 'world');
+    await pumpEventQueue();
+    final clear = notifier
+        .clearCustomFieldValue(_cardId, groupId: _groupId, fieldId: f);
+    await pumpEventQueue();
+    api.gate!.complete();
+    await set;
+    await clear;
+
+    expect(api.writes.map((c) => c.$1), ['PATCH', 'DELETE']);
+    // The response to the edit lands first and must not put the row back.
+    expect(_stateOf(container).customFieldValueOf(_cardId, _groupId, f), isNull);
   });
 
   test('an empty value clears the row rather than storing it', () async {
