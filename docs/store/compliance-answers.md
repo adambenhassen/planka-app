@@ -89,14 +89,29 @@ data reaches the user's own server and never the developer changes the
   code; and the `pendingToken` that carries a half-finished sign-in to that
   request and to `POST /access-tokens/accept-terms`.
 
+  The `signature` in that accept-terms body declares nothing and is not user
+  data: it is read out of the `GET /terms` response and echoed straight back.
+  Noted for the same reason as the credentials — a field sitting unmentioned in
+  a body the walk visited reads as an oversight, and nothing else tells a reader
+  that it was considered.
+
   **How this list was produced, and how to redo it.** By walking every request
-  body the app can send, field by field, against Play's type list — not by
-  adding types as they are noticed. The write surface is every `api.post`,
-  `api.patch` and `api.delete` in `lib/api/repositories.dart`, plus `login`,
-  `acceptTerms` and `verifyTotp` in `lib/api/planka_api.dart`. The untyped
-  `patch` and `body` maps are the part a reader cannot check from the
-  repository layer alone: their fields are set in
-  `lib/state/board_state.dart` (card, list, label, task and board patches),
+  body *and query parameter* the app can send, field by field, against Play's
+  type list — not by adding types as they are noticed. Bodies alone are not the
+  whole surface: a walk defined over them would report a completeness it never
+  checked, since a query parameter carries data off the device just as a body
+  does. Today `beforeId` on `GET /cards/:id/actions` is the only one, and it is
+  an opaque server id, so it declares nothing. The board's search text is the
+  case to watch: `BoardFilter.query` filters cards already on the device and
+  never reaches the API layer, so *App activity → Search history* is correctly
+  absent — and would stop being absent the day search moves server-side.
+
+  The surface to walk is every `api.post`, `api.patch` and `api.delete` in
+  `lib/api/repositories.dart`, every `api.get` there that passes `query:`, and
+  `login`, `acceptTerms` and `verifyTotp` in `lib/api/planka_api.dart`. The
+  untyped `patch` and `body` maps are the part a reader cannot check from the
+  repository layer alone: their fields are set in `lib/state/board_state.dart`
+  (card, list, label, task and board patches),
   `lib/state/projects_state.dart` (project patches),
   `lib/ui/widgets/profile_dialog.dart` (`name`, `phone`, `organization`,
   `avatar`) and `lib/ui/widgets/user_management_dialog.dart` (`role`,
