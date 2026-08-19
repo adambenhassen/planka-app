@@ -30,11 +30,11 @@ make it.
 - Server addresses, and the session credentials for each account you add, held
   in the operating system's encrypted credential store (Keychain on iOS,
   Keystore-backed storage on Android).
-- A cache of board content and images, so the app works while offline and
-  loads faster.
+- A cache of images already downloaded from your server — avatars, card covers
+  and attachments — so they do not have to be fetched again.
 
-All of it stays on the device. Signing out of an account, or uninstalling the
-app, removes it.
+All of it stays on the device. Signing out removes that account and its stored
+credentials; the image cache is cleared by uninstalling the app.
 
 ## Permissions
 

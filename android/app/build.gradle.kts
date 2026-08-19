@@ -1,3 +1,4 @@
+import java.util.Base64
 import java.util.Properties
 
 plugins {
@@ -37,8 +38,9 @@ android {
     // `github` is the sideloaded build (in-app updater, APK on the GitHub
     // release); `store` is what Google Play and F-Droid get — same
     // applicationId, but without the self-install permission, since both
-    // stores forbid an app that updates itself. Build the Dart side of the
-    // store flavor with `--dart-define=ENABLE_IN_APP_UPDATER=false`.
+    // stores forbid an app that updates itself. The store manifest strips the
+    // permission; the Dart side is compiled out by the define the check below
+    // enforces.
     flavorDimensions += "distribution"
     productFlavors {
         create("github") { dimension = "distribution" }
@@ -66,6 +68,33 @@ android {
                 signingConfigs.getByName("debug")
             }
         }
+    }
+}
+
+// No artifact bound for a store may contain a reachable self-update path.
+// Stripping REQUEST_INSTALL_PACKAGES in the store manifest only removes the
+// permission — without the define, the Dart updater is still compiled in and
+// still downloads an APK, and the runtime `com.android.vending` guard covers
+// Play installs but not F-Droid. Holding that invariant must not depend on a
+// build command remembering a flag, so a store build without the define fails
+// here rather than shipping quietly.
+//
+// `flutter build --dart-define=K=V` reaches Gradle as `-Pdart-defines=`, a
+// comma-separated list of base64-encoded `K=V` pairs.
+val buildsStoreFlavor = gradle.startParameter.taskNames.any { it.contains("Store") }
+if (buildsStoreFlavor) {
+    val defines = (project.findProperty("dart-defines") as String?)
+        ?.split(",")
+        ?.filter { it.isNotBlank() }
+        ?.map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
+        ?: emptyList()
+    if (!defines.contains("ENABLE_IN_APP_UPDATER=false")) {
+        throw GradleException(
+            "The store flavor must be built with " +
+                "--dart-define=ENABLE_IN_APP_UPDATER=false. Google Play and " +
+                "F-Droid both reject an app that installs its own updates, and " +
+                "without this the updater is compiled into the bundle."
+        )
     }
 }
 

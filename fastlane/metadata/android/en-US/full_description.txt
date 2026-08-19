@@ -31,5 +31,9 @@ REQUIREMENTS
 A self-hosted Planka 2.x server that this device can reach. If you do not run
 one yet, Planka is free and open source: https://github.com/plankanban/planka
 
+This is an unofficial, independently developed client. It is not affiliated
+with, endorsed by, or supported by the Planka project or its maintainers.
+"Planka" is used only to say which server the app talks to.
+
 The app is open source under the MIT license. Source, issue tracker and
 releases: https://github.com/adambenhassen/planka-app

@@ -50,6 +50,15 @@ The app uses only the platform's standard HTTPS/TLS. That is exempt, and
 Store Connect stops asking per build. On Play, answer the US export-law
 declaration as "does not use encryption beyond what is exempt".
 
+## Third-party client disclaimer
+
+The listing title leads with a name the developer does not own. App Store
+Review Guideline 4.1 and Play's impersonation policy both routinely hold
+third-party clients on exactly that, so both descriptions carry an explicit
+"unofficial, not affiliated with the Planka project" line. It is the accepted
+mitigation; the title does not have to change. Do not drop that paragraph when
+editing listing copy.
+
 ## App Store review notes (paste into App Store Connect)
 
 > This app is a client for Planka, an open-source kanban board that users host

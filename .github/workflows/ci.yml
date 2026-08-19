@@ -18,6 +18,12 @@ jobs:
       - run: flutter pub get
       - run: dart analyze
       - run: flutter test
+      # The updater kill switch is compile-time, so the store build's
+      # behaviour needs its own run with the define set.
+      - name: Test store flavor updater kill switch
+        run: |
+          flutter test --dart-define=ENABLE_IN_APP_UPDATER=false \
+            test/update/store_flavor_updater_test.dart
 
   # Analysis and widget tests never compile the real app, so a breakage that
   # only shows up at build time (assets, manifest, platform config, codegen)
@@ -40,6 +46,17 @@ jobs:
         run: |
           flutter build apk --debug --target-platform android-arm64 \
             --flavor github
+      # Positive control for the Gradle guard: a store build that forgets the
+      # define must fail, so a future edit to a release lane cannot silently
+      # ship the updater.
+      - name: Assert store build refuses to build without the kill switch
+        run: |
+          if flutter build apk --debug --target-platform android-arm64 \
+              --flavor store; then
+            echo "store flavor built without ENABLE_IN_APP_UPDATER=false"
+            exit 1
+          fi
+          echo "ok: store build fails when the define is missing"
       - name: Build Android APK (debug, store flavor)
         run: |
           flutter build apk --debug --target-platform android-arm64 \

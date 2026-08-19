@@ -37,10 +37,24 @@ Tagging `v*` runs `.github/workflows/release.yml`:
   `.xcarchive`. It proves the iOS build is green; it cannot be exported to an
   `.ipa` or uploaded until signing certificates exist.
 
+## Store graphics
+
+None of these exist yet, and all three are mandatory to submit — tracked in
+MAIN-475 along with the screenshots:
+
+- **Play hi-res icon** — 512x512 PNG, 32-bit, no alpha.
+- **Play feature graphic** — 1024x500 PNG or JPEG, no alpha. Shown at the top
+  of the listing; the listing cannot be published without it.
+- **App Store marketing icon** — 1024x1024 PNG, no alpha and no rounded
+  corners. Taken from the app icon in the archive, so it follows
+  `assets/icon/icon.png`.
+
 ## Screenshots
 
 Not committed yet — the ones in `.github/assets/screenshots/` are 1206x2436
-(iPhone 16 Pro) and are the wrong size for the App Store.
+(iPhone 16 Pro) and are the wrong size for the App Store. The destination
+directories exist (each with a `.gitkeep`) so the captures have somewhere to
+land.
 
 - **Play:** 2–8 phone screenshots, 16:9 or 9:16, each side 320–3840 px. Capture
   on an Android emulator. Drop them in

@@ -111,8 +111,10 @@ Future<String?> _skippedVersion() async {
 }
 
 /// Compiled out of store builds: Google Play and F-Droid both forbid an app
-/// that installs its own updates. Set by the `store` Android flavor via
-/// `--dart-define=ENABLE_IN_APP_UPDATER=false`; sideload builds keep it on.
+/// that installs its own updates. Store builds must pass
+/// `--dart-define=ENABLE_IN_APP_UPDATER=false`; `android/app/build.gradle.kts`
+/// fails the build of the `store` flavor when they do not, so the two cannot
+/// drift apart. Sideloaded builds keep it on.
 const kInAppUpdaterEnabled = bool.fromEnvironment(
   'ENABLE_IN_APP_UPDATER',
   defaultValue: true,
