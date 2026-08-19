@@ -68,12 +68,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  /// Bumped every time the code step is torn down, so a verification already
+  /// in flight can tell that the step it belongs to is gone. A captured client
+  /// and pending token outlive the state they came from, and without this a
+  /// cancel racing an in-flight submit still ends in a signed-in session.
+  int _pendingEpoch = 0;
+
   /// Drops the pending token and everything that could still spend it. Called
   /// on every exit from the code step — success, expiry, cancel and dispose.
   void _clearPending() {
     _pendingToken = null;
     _pendingApi = null;
     _pendingServerUrl = null;
+    _pendingEpoch++;
   }
 
   /// Logs in, handling a fresh server's Terms-of-Service step and a
@@ -116,12 +123,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final pendingToken = _pendingToken;
     final serverUrl = _pendingServerUrl;
     if (api == null || pendingToken == null || serverUrl == null) return;
+    final epoch = _pendingEpoch;
     setState(() {
       _loading = true;
       _message = null;
     });
     try {
       await api.verifyTotp(pendingToken, _codeCtrl.text.trim());
+      // The step may have been torn down while this was in flight — a cancel
+      // dispatched in the same frame as the submit gets here. The request
+      // cannot be unsent, but a cancelled step must not sign anyone in.
+      if (!mounted || _pendingEpoch != epoch) return;
       // Spent: drop it before signIn can persist anything, then finish exactly
       // as a password-only login does.
       _clearPending();

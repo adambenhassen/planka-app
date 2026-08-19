@@ -18,9 +18,16 @@ void main() {
   Map<String, dynamic>? sentBody;
   String? sentAuthHeader;
 
+  // Per-test knobs for an arbitrary authenticated endpoint, used to check what
+  // a `step` field on a non-403 error does to the shared request path.
+  late int protectedStatus;
+  late String protectedBodyJson;
+
   setUp(() async {
     verifyStatus = 200;
     verifyBodyJson = '{"item":"realtok"}';
+    protectedStatus = 200;
+    protectedBodyJson = '{"item":{}}';
     sentBody = null;
     sentAuthHeader = null;
     server = await HttpServer.bind('127.0.0.1', 0);
@@ -39,6 +46,9 @@ void main() {
         sentAuthHeader = req.headers.value('authorization');
         req.response.statusCode = verifyStatus;
         req.response.write(verifyBodyJson);
+      } else if (path == '/api/protected') {
+        req.response.statusCode = protectedStatus;
+        req.response.write(protectedBodyJson);
       } else {
         req.response.statusCode = 404;
         req.response.write('{"message":"not found"}');
@@ -135,6 +145,31 @@ void main() {
     await expectLater(
         api.verifyTotp('pt1', '123456'), throwsA(isA<ApiException>()));
     expect(api.token, isNull);
+  });
+
+  test('a 200 echoing the pending token back is refused', () async {
+    // A hostile or broken server that answers with the pending token as the
+    // access token would otherwise have signIn persist it as the account
+    // credential — the one thing ruling 1 says no response may cause.
+    verifyBodyJson = '{"item":"pt1"}';
+    await expectLater(
+        api.verifyTotp('pt1', '123456'), throwsA(isA<ApiException>()));
+    expect(api.token, isNull);
+  });
+
+  test('a non-403 error carrying a verify-totp step is not a code prompt',
+      () async {
+    // Only a 403 answer to login means "second factor required". Reading the
+    // step off any status would let a 401 that really means the session
+    // expired skip onUnauthorized below.
+    var expired = false;
+    final authed = PlankaApi('http://127.0.0.1:${server.port}', 'sometoken',
+        onUnauthorized: () => expired = true);
+    protectedStatus = 401;
+    protectedBodyJson =
+        '{"step":"verify-totp","pendingToken":"pt1","message":"nope"}';
+    await expectLater(authed.get('/protected'), throwsA(isA<ApiException>()));
+    expect(expired, isTrue);
   });
 
   test('an unexpected verify-totp response does not leak the token', () async {

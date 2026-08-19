@@ -149,7 +149,10 @@ class PlankaApi {
       throw ApiException(e.response?.statusCode, e.message ?? 'Request failed');
     }
     final item = (res.data ?? const {})['item'];
-    if (item is! String) {
+    // Refusing an item equal to the pending token is what makes ruling 1 total:
+    // a server that echoes it back would otherwise have signIn persist the
+    // pending token itself as the account credential.
+    if (item is! String || item == pendingToken) {
       throw ApiException(null, 'Unexpected verify-totp response');
     }
     token = item;
@@ -197,20 +200,24 @@ class PlankaApi {
       return res.data ?? const {};
     } on DioException catch (e) {
       final data = e.response?.data;
-      // Fresh server rejects login with 403 {step:accept-terms, pendingToken};
-      // not a failure — the caller must accept terms then continue.
-      if (data is Map &&
-          data['step'] == 'accept-terms' &&
-          data['pendingToken'] is String) {
-        throw TermsRequiredException(data['pendingToken'] as String);
-      }
-      // A server with 2FA on rejects login with 403 {step:verify-totp,
-      // pendingToken}. Like accept-terms this is a continuation of the login,
-      // not a failure — the caller collects a code and calls verifyTotp.
-      if (data is Map &&
-          data['step'] == 'verify-totp' &&
-          data['pendingToken'] is String) {
-        throw TotpRequiredException(data['pendingToken'] as String);
+      // Login answers 403 {step, pendingToken} when it needs one more thing
+      // before issuing a token: a fresh server wants its terms accepted, a 2FA
+      // account wants a code. Neither is a failure — the caller continues.
+      //
+      // The status gate matters: without it any error carrying a `step` field
+      // is read as a continuation, so a 401 that really means the session
+      // expired would raise one of these instead of reaching onUnauthorized
+      // below, and the session-expiry landing would never fire.
+      if (e.response?.statusCode == 403 && data is Map) {
+        final pendingToken = data['pendingToken'];
+        if (pendingToken is String) {
+          switch (data['step']) {
+            case 'accept-terms':
+              throw TermsRequiredException(pendingToken);
+            case 'verify-totp':
+              throw TotpRequiredException(pendingToken);
+          }
+        }
       }
       final message = data is Map && data['message'] is String
           ? data['message'] as String

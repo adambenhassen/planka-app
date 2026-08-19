@@ -276,6 +276,33 @@ void main() {
     expect(find.text('Two-factor authentication'), findsOneWidget);
   });
 
+  testWidgets('cancelling during an in-flight verification never signs in',
+      (tester) async {
+    await reachCodeStep(tester, ['realtok']);
+    final gate = Completer<void>();
+    api.gate = gate;
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Authentication code'), '123456');
+
+    await tester.tap(find.text('Verify'));
+    // Deliberately no pump: Cancel is still enabled in this frame, so the
+    // cancel lands while the verification is in flight. The submit captured
+    // its own client and pending token and would otherwise carry them past
+    // the cancel and sign the user in anyway.
+    await tester.tap(find.text('Cancel'));
+    await tester.pump();
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    // The request went out and cannot be unsent, but nothing may come of it.
+    expect(api.verifyCalls, hasLength(1));
+    expect(find.text('PROJECTS'), findsNothing);
+    expect(find.widgetWithText(TextFormField, 'Password'), findsOneWidget);
+    expect(storage.data['accounts'], isNull);
+    expectNoPendingTokenStored();
+  });
+
   testWidgets('an unexpected verify-totp response stores no pending token',
       (tester) async {
     await reachCodeStep(
