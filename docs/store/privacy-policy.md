@@ -51,7 +51,8 @@ credentials; the image cache is cleared by uninstalling the app.
 
 ## Children
 
-The app is not directed at children and collects no data from anyone.
+The app is not directed at children, and the developer receives no data from
+anyone.
 
 ## Changes
 

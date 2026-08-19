@@ -15,14 +15,33 @@ data reaches the user's own server and never the developer changes the
 *sharing* answer, not the *collection* one.
 
 - **Does your app collect or share any of the required user data types?**
-  Collected, not shared. Every type below is *required* (not optional) and used
-  only for **App functionality**; none is processed ephemerally:
-  - *Personal info → Email address, User IDs, Name* — sign-in and the profile
-    the server returns.
-  - *Photos and videos*, *Files and docs* — attachments the user uploads to a
-    card.
-  - *Messages → Other in-app messages* — card comments.
-  - *App activity → Other actions* — board, list and card edits.
+  Collected, not shared. Every type is used only for **App functionality**, and
+  none is processed ephemerally. *Required* means the app does not work without
+  it; everything reached only by using a particular feature is *optional*,
+  because a read-only user never transmits it.
+  - *Personal info → Email address* — **required**. Sent to `POST
+    /access-tokens` at sign-in, and nothing in the app works before that.
+  - *Personal info → User IDs* — **required**. Carried by every authenticated
+    request once signed in.
+  - *Personal info → Name* — **optional**. Not sent at sign-in; the login
+    request is `emailOrUsername` and password only. A name leaves the device
+    only when the user edits their profile (`PATCH /users/:id`) or an admin
+    creates a user (`POST /users`).
+  - *Photos and videos* — **optional**. Image attachments on a card, and the
+    profile avatar (`POST /users/:id/avatar`).
+  - *Files and docs* — **optional**. Non-image attachments on a card.
+  - *Messages → Other in-app messages* — **optional**. Card comments.
+  - *App activity → Other user-generated content* — **optional**. The free-form
+    text the app sends that is neither a comment nor an attachment: card names
+    and descriptions, list names, checklist and task text, project and board
+    names, label names.
+  - *App activity → Other actions* — **optional**. The edit actions themselves
+    — moving, duplicating, archiving, assigning.
+  Checked and deliberately **not** declared, because the app transmits none of
+  them: location, contacts, calendar, device or other IDs, installed apps,
+  audio, web browsing history, and app info and performance (there is no crash
+  or diagnostics reporting). `package_info_plus` reads the local install source
+  and never sends it.
 - **Is all of the user data collected by your app encrypted in transit?** No.
   Explanation for the form: the app connects only to a server address the user
   supplies, and a self-hosted Planka on a local network commonly has no TLS
