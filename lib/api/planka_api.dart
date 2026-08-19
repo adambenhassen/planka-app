@@ -22,6 +22,38 @@ class TermsRequiredException implements Exception {
   String toString() => 'TermsRequiredException';
 }
 
+/// A server with two-factor authentication enabled rejects login with 403
+/// {step: verify-totp, pendingToken}. [login] throws this instead of returning;
+/// the caller collects a code and calls [PlankaApi.verifyTotp].
+///
+/// For the ten minutes it lives, the pending token converts into a full access
+/// token on six digits, so it is worth what the password is worth: hold it in
+/// memory for the length of the step, never persist it, and never render it —
+/// hence the constant [toString], since `showApiError` prints '$error' for
+/// anything it does not recognise.
+class TotpRequiredException implements Exception {
+  final String pendingToken;
+  TotpRequiredException(this.pendingToken);
+
+  @override
+  String toString() => 'TotpRequiredException';
+}
+
+/// The server rejected the submitted code (403). The pending token is still
+/// valid, so the caller stays on the code step and can try again.
+class TotpCodeRejectedException implements Exception {
+  @override
+  String toString() => 'TotpCodeRejectedException';
+}
+
+/// The pending token was invalid, or its ten-minute window closed (401). The
+/// caller must start again from credentials. This is *not* session expiry —
+/// no session exists yet.
+class TotpPendingTokenExpiredException implements Exception {
+  @override
+  String toString() => 'TotpPendingTokenExpiredException';
+}
+
 /// Planka serves attachment and cover images behind session-cookie auth rather
 /// than the Bearer header the REST API uses. Both image widgets send exactly
 /// these headers — the single source of truth for the download-auth scheme.
@@ -80,8 +112,51 @@ class PlankaApi {
         '/access-tokens/accept-terms',
         data: {'pendingToken': pendingToken, 'signature': signature}));
     final item = res['item'];
-    if (item is! String) {
+    // Same rule as verifyTotp: a server echoing the pending token back as the
+    // access token would have signIn persist the pending token as the account
+    // credential. Both continuation steps refuse it.
+    if (item is! String || item == pendingToken) {
       throw ApiException(null, 'Unexpected accept-terms response');
+    }
+    token = item;
+    return item;
+  }
+
+  /// Completes a two-factor login. [code] is a TOTP code or a recovery code —
+  /// the server decides which it accepted, so nothing here may judge its shape.
+  ///
+  /// [pendingToken] is passed per call and is never assigned to [token]: only
+  /// the real access token this returns is, so no response shape can leave the
+  /// pending token sitting in the field that [CurrentAccountNotifier.signIn]
+  /// persists.
+  ///
+  /// Deliberately bypasses [_request]: the server's 401/403 distinction has to
+  /// survive to the caller, and neither the server's `message` nor the pending
+  /// token may reach a user-visible string.
+  Future<String> verifyTotp(String pendingToken, String code) async {
+    final Response<Map<String, dynamic>> res;
+    try {
+      res = await dio.post<Map<String, dynamic>>('/access-tokens/verify-totp',
+          data: {'pendingToken': pendingToken, 'code': code});
+    } on DioException catch (e) {
+      switch (e.response?.statusCode) {
+        case 403:
+          throw TotpCodeRejectedException();
+        case 401:
+          // Not onUnauthorized: there is no session to expire yet, so this must
+          // never be mistaken for the signed-in session dying.
+          throw TotpPendingTokenExpiredException();
+      }
+      // e.message describes the transport, never the response body — the body
+      // could echo the pending token straight into a snackbar.
+      throw ApiException(e.response?.statusCode, e.message ?? 'Request failed');
+    }
+    final item = (res.data ?? const {})['item'];
+    // Refusing an item equal to the pending token is what makes ruling 1 total:
+    // a server that echoes it back would otherwise have signIn persist the
+    // pending token itself as the account credential.
+    if (item is! String || item == pendingToken) {
+      throw ApiException(null, 'Unexpected verify-totp response');
     }
     token = item;
     return item;
@@ -128,12 +203,24 @@ class PlankaApi {
       return res.data ?? const {};
     } on DioException catch (e) {
       final data = e.response?.data;
-      // Fresh server rejects login with 403 {step:accept-terms, pendingToken};
-      // not a failure — the caller must accept terms then continue.
-      if (data is Map &&
-          data['step'] == 'accept-terms' &&
-          data['pendingToken'] is String) {
-        throw TermsRequiredException(data['pendingToken'] as String);
+      // Login answers 403 {step, pendingToken} when it needs one more thing
+      // before issuing a token: a fresh server wants its terms accepted, a 2FA
+      // account wants a code. Neither is a failure — the caller continues.
+      //
+      // The status gate matters: without it any error carrying a `step` field
+      // is read as a continuation, so a 401 that really means the session
+      // expired would raise one of these instead of reaching onUnauthorized
+      // below, and the session-expiry landing would never fire.
+      if (e.response?.statusCode == 403 && data is Map) {
+        final pendingToken = data['pendingToken'];
+        if (pendingToken is String) {
+          switch (data['step']) {
+            case 'accept-terms':
+              throw TermsRequiredException(pendingToken);
+            case 'verify-totp':
+              throw TotpRequiredException(pendingToken);
+          }
+        }
       }
       final message = data is Map && data['message'] is String
           ? data['message'] as String
