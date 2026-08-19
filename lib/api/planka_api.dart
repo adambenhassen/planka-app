@@ -112,7 +112,10 @@ class PlankaApi {
         '/access-tokens/accept-terms',
         data: {'pendingToken': pendingToken, 'signature': signature}));
     final item = res['item'];
-    if (item is! String) {
+    // Same rule as verifyTotp: a server echoing the pending token back as the
+    // access token would have signIn persist the pending token as the account
+    // credential. Both continuation steps refuse it.
+    if (item is! String || item == pendingToken) {
       throw ApiException(null, 'Unexpected accept-terms response');
     }
     token = item;

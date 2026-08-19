@@ -12,8 +12,10 @@ void main() {
   late PlankaApi api;
   String? termsAuthHeader;
   Map<String, dynamic>? acceptBody;
+  late String acceptBodyJson;
 
   setUp(() async {
+    acceptBodyJson = '{"item":"realtok"}';
     server = await HttpServer.bind('127.0.0.1', 0);
     server.listen((req) async {
       final path = req.uri.path;
@@ -30,7 +32,7 @@ void main() {
       } else if (path == '/api/access-tokens/accept-terms' &&
           req.method == 'POST') {
         acceptBody = jsonDecode(raw) as Map<String, dynamic>;
-        req.response.write('{"item":"realtok"}');
+        req.response.write(acceptBodyJson);
       } else {
         req.response.statusCode = 404;
         req.response.write('{"message":"not found"}');
@@ -57,5 +59,14 @@ void main() {
     expect(acceptBody, {'pendingToken': 'pt1', 'signature': 'sig1'});
     expect(token, 'realtok');
     expect(api.token, 'realtok');
+  });
+
+  test('a 200 echoing the pending token back is refused', () async {
+    // The accept-terms twin of the verify-totp rule: a server that answers with
+    // the pending token as the access token would otherwise have signIn persist
+    // that pending token as the account credential.
+    acceptBodyJson = '{"item":"pt1"}';
+    await expectLater(api.acceptTerms('pt1'), throwsA(isA<ApiException>()));
+    expect(api.token, isNull);
   });
 }

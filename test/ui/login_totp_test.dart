@@ -303,6 +303,76 @@ void main() {
     expectNoPendingTokenStored();
   });
 
+  testWidgets('a cancelled step shows no rejected-code message afterwards',
+      (tester) async {
+    await reachCodeStep(tester, [TotpCodeRejectedException()]);
+    final gate = Completer<void>();
+    api.gate = gate;
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Authentication code'), '000000');
+
+    await tester.tap(find.text('Verify'));
+    await tester.tap(find.text('Cancel')); // same frame, while in flight
+    await tester.pump();
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    // The step the rejection belonged to is gone, so its message must not
+    // land on the credentials step the user is now looking at.
+    expect(find.text('That code was rejected. Try again.'), findsNothing);
+    expect(find.widgetWithText(TextFormField, 'Password'), findsOneWidget);
+  });
+
+  testWidgets('a cancelled step does not clear a password typed after it',
+      (tester) async {
+    await reachCodeStep(tester, [TotpPendingTokenExpiredException()]);
+    final gate = Completer<void>();
+    api.gate = gate;
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Authentication code'), '123456');
+
+    await tester.tap(find.text('Verify'));
+    await tester.tap(find.text('Cancel')); // same frame, while in flight
+    await tester.pump();
+
+    // Back on credentials, the user starts over and types a password.
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Password'), 'newpw');
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    // The expiry belongs to a step that was already cancelled; it must not
+    // wipe what the user has typed since.
+    expect(fieldTexts(tester), ['http://x', 'demo@d.d', 'newpw']);
+    expect(find.text('Sign-in timed out. Enter your password again.'),
+        findsNothing);
+  });
+
+  testWidgets('a cancelled step raises no error snackbar afterwards',
+      (tester) async {
+    await reachCodeStep(
+        tester, [ApiException(null, 'Unexpected verify-totp response')]);
+    final gate = Completer<void>();
+    api.gate = gate;
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Authentication code'), '123456');
+
+    await tester.tap(find.text('Verify'));
+    await tester.tap(find.text('Cancel')); // same frame, while in flight
+    await tester.pump();
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    // Third branch of the same rule: a step the user cancelled produces no
+    // effect on screen, errors included.
+    expect(find.text('Unexpected verify-totp response'), findsNothing);
+    expect(find.widgetWithText(TextFormField, 'Password'), findsOneWidget);
+    expectNoPendingTokenStored();
+  });
+
   testWidgets('an unexpected verify-totp response stores no pending token',
       (tester) async {
     await reachCodeStep(

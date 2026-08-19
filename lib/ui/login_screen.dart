@@ -130,9 +130,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
     try {
       await api.verifyTotp(pendingToken, _codeCtrl.text.trim());
-      // The step may have been torn down while this was in flight — a cancel
-      // dispatched in the same frame as the submit gets here. The request
-      // cannot be unsent, but a cancelled step must not sign anyone in.
+      // A cancel dispatched in the same frame as the submit gets here. The
+      // request cannot be unsent, but a cancelled step must not sign anyone in.
       if (!mounted || _pendingEpoch != epoch) return;
       // Spent: drop it before signIn can persist anything, then finish exactly
       // as a password-only login does.
@@ -142,14 +141,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (mounted) context.go('/projects');
     } on TotpCodeRejectedException {
       // The pending token survives a rejected code, so stay on the step and
-      // let the user try again.
-      if (mounted) {
-        setState(() => _message = AppLocalizations.of(context).loginTotpRejected);
-      }
+      // let the user try again — unless that step is already gone, in which
+      // case this message would land on the credentials screen.
+      if (!mounted || _pendingEpoch != epoch) return;
+      setState(() => _message = AppLocalizations.of(context).loginTotpRejected);
     } on TotpPendingTokenExpiredException {
       // The ten-minute window closed. Back to credentials — the password is
-      // never cached, so it is typed again rather than replayed.
-      if (!mounted) return;
+      // never cached, so it is typed again rather than replayed. If the step
+      // was cancelled first, clearing the field would wipe whatever the user
+      // has typed since.
+      if (!mounted || _pendingEpoch != epoch) return;
       setState(() {
         _clearPending();
         _codeCtrl.clear();
@@ -157,7 +158,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         _message = AppLocalizations.of(context).loginTotpExpired;
       });
     } catch (e) {
-      if (mounted) showApiError(context, e);
+      if (!mounted || _pendingEpoch != epoch) return;
+      showApiError(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
