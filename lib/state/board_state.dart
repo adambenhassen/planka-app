@@ -919,6 +919,201 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
+  // --------------- Custom field group mutations ---------------
+
+  List<PlankaCustomFieldGroup> _boardGroups(BoardState s) =>
+      s.customFieldGroups.where((g) => g.boardId == s.board.id).toList()
+        ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
+
+  List<PlankaCustomFieldGroup> _cardGroups(BoardState s, String cardId) =>
+      s.customFieldGroups.where((g) => g.cardId == cardId).toList()
+        ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
+
+  Future<void> createBoardCustomFieldGroup(String name) async {
+    final s = state.value;
+    if (s == null) return;
+    final groups = _boardGroups(s);
+    final position = positionBetween(groups.lastOrNull?.position, null);
+    await _createInto(
+      _repo.createBoardCustomFieldGroup(boardId,
+          name: name, position: position),
+      PlankaCustomFieldGroup.fromJson,
+      (b, g) => b.copyWith(
+          customFieldGroups: _upsert(b.customFieldGroups, g, (x) => x.id)),
+    );
+  }
+
+  Future<void> createCardCustomFieldGroup(String cardId, String name) async {
+    final s = state.value;
+    if (s == null) return;
+    final groups = _cardGroups(s, cardId);
+    final position = positionBetween(groups.lastOrNull?.position, null);
+    await _createInto(
+      _repo.createCardCustomFieldGroup(cardId,
+          name: name, position: position),
+      PlankaCustomFieldGroup.fromJson,
+      (b, g) => b.copyWith(
+          customFieldGroups: _upsert(b.customFieldGroups, g, (x) => x.id)),
+    );
+  }
+
+  Future<void> renameCustomFieldGroup(String id, String name) async {
+    final s = state.value;
+    final group = s?.customFieldGroups.where((g) => g.id == id).firstOrNull;
+    if (s == null || group == null) return;
+    final updated = PlankaCustomFieldGroup.fromJson(
+        {...group.toJson(), 'name': name});
+    await _optimistic(
+      s.copyWith(
+          customFieldGroups: _upsert(s.customFieldGroups, updated, (g) => g.id)),
+      () => _repo.updateCustomFieldGroup(id, {'name': name}),
+    );
+  }
+
+  Future<void> moveCustomFieldGroupUp(String id) =>
+      _moveCustomFieldGroup(id, up: true);
+
+  Future<void> moveCustomFieldGroupDown(String id) =>
+      _moveCustomFieldGroup(id, up: false);
+
+  Future<void> _moveCustomFieldGroup(String id, {required bool up}) async {
+    final s = state.value;
+    final group = s?.customFieldGroups.where((g) => g.id == id).firstOrNull;
+    if (s == null || group == null) return;
+    final peers = group.boardId != null
+        ? _boardGroups(s)
+        : group.cardId != null
+            ? _cardGroups(s, group.cardId!)
+            : <PlankaCustomFieldGroup>[];
+    final idx = peers.indexWhere((g) => g.id == id);
+    if (idx < 0) return;
+    final double position;
+    if (up) {
+      if (idx == 0) return;
+      final before = idx > 1 ? peers[idx - 2].position : null;
+      final after = peers[idx - 1].position;
+      position = positionBetween(before, after);
+    } else {
+      if (idx >= peers.length - 1) return;
+      final before = peers[idx + 1].position;
+      final after = idx + 2 < peers.length ? peers[idx + 2].position : null;
+      position = positionBetween(before, after);
+    }
+    final updated = PlankaCustomFieldGroup.fromJson(
+        {...group.toJson(), 'position': position});
+    await _optimistic(
+      s.copyWith(
+          customFieldGroups: _upsert(s.customFieldGroups, updated, (g) => g.id)),
+      () => _repo.updateCustomFieldGroup(id, {'position': position}),
+    );
+  }
+
+  Future<void> deleteCustomFieldGroup(String id) async {
+    final s = state.value;
+    if (s == null) return;
+    await _optimistic(
+      s.copyWith(
+        customFieldGroups:
+            s.customFieldGroups.where((g) => g.id != id).toList(),
+        customFields:
+            s.customFields.where((f) => f.customFieldGroupId != id).toList(),
+        customFieldValues:
+            s.customFieldValues.where((v) => v.customFieldGroupId != id).toList(),
+      ),
+      () => _repo.deleteCustomFieldGroup(id),
+    );
+  }
+
+  // --------------- Custom field mutations ---------------
+
+  List<PlankaCustomField> _groupFields(BoardState s, String groupId) =>
+      s.customFields.where((f) => f.customFieldGroupId == groupId).toList()
+        ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
+
+  Future<void> createCustomField(String groupId, String name) async {
+    final s = state.value;
+    if (s == null) return;
+    final fields = _groupFields(s, groupId);
+    final position = positionBetween(fields.lastOrNull?.position, null);
+    await _createInto(
+      _repo.createCustomField(groupId, name: name, position: position),
+      PlankaCustomField.fromJson,
+      (b, f) => b.copyWith(
+          customFields: _upsert(b.customFields, f, (x) => x.id)),
+    );
+  }
+
+  Future<void> renameCustomField(String id, String name) async {
+    final s = state.value;
+    final field = s?.customFields.where((f) => f.id == id).firstOrNull;
+    if (s == null || field == null) return;
+    final updated =
+        PlankaCustomField.fromJson({...field.toJson(), 'name': name});
+    await _optimistic(
+      s.copyWith(customFields: _upsert(s.customFields, updated, (f) => f.id)),
+      () => _repo.updateCustomField(id, {'name': name}),
+    );
+  }
+
+  Future<void> toggleCustomFieldFrontOfCard(String id, bool show) async {
+    final s = state.value;
+    final field = s?.customFields.where((f) => f.id == id).firstOrNull;
+    if (s == null || field == null) return;
+    final updated = PlankaCustomField.fromJson(
+        {...field.toJson(), 'showOnFrontOfCard': show});
+    await _optimistic(
+      s.copyWith(customFields: _upsert(s.customFields, updated, (f) => f.id)),
+      () => _repo.updateCustomField(id, {'showOnFrontOfCard': show}),
+    );
+  }
+
+  Future<void> moveCustomFieldUp(String id) => _moveCustomField(id, up: true);
+
+  Future<void> moveCustomFieldDown(String id) =>
+      _moveCustomField(id, up: false);
+
+  Future<void> _moveCustomField(String id, {required bool up}) async {
+    final s = state.value;
+    final field = s?.customFields.where((f) => f.id == id).firstOrNull;
+    if (s == null || field == null) return;
+    final groupId = field.customFieldGroupId;
+    if (groupId == null) return;
+    final peers = _groupFields(s, groupId);
+    final idx = peers.indexWhere((f) => f.id == id);
+    if (idx < 0) return;
+    final double position;
+    if (up) {
+      if (idx == 0) return;
+      final before = idx > 1 ? peers[idx - 2].position : null;
+      final after = peers[idx - 1].position;
+      position = positionBetween(before, after);
+    } else {
+      if (idx >= peers.length - 1) return;
+      final before = peers[idx + 1].position;
+      final after = idx + 2 < peers.length ? peers[idx + 2].position : null;
+      position = positionBetween(before, after);
+    }
+    final updated =
+        PlankaCustomField.fromJson({...field.toJson(), 'position': position});
+    await _optimistic(
+      s.copyWith(customFields: _upsert(s.customFields, updated, (f) => f.id)),
+      () => _repo.updateCustomField(id, {'position': position}),
+    );
+  }
+
+  Future<void> deleteCustomField(String id) async {
+    final s = state.value;
+    if (s == null) return;
+    await _optimistic(
+      s.copyWith(
+        customFields: s.customFields.where((f) => f.id != id).toList(),
+        customFieldValues:
+            s.customFieldValues.where((v) => v.customFieldId != id).toList(),
+      ),
+      () => _repo.deleteCustomField(id),
+    );
+  }
+
   Future<void> renameBoard(String name) async {
     final s = state.value;
     if (s == null) return;
