@@ -140,9 +140,11 @@ jobs:
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath planka-windows-x64.zip
           gh release upload $env:GITHUB_REF_NAME planka-windows-x64.zip --clobber
 
-  # Publish only once every platform artifact is attached.
+  # Publish only once every platform artifact is attached. `ios` is included
+  # even though its archive is a workflow artifact rather than a release asset:
+  # a release must not go public on a head whose iOS build is broken.
   publish-release:
-    needs: [android, macos, windows]
+    needs: [android, ios, macos, windows]
     runs-on: ubuntu-latest
     steps:
       - name: Publish release

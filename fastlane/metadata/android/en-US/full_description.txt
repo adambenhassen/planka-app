@@ -2,9 +2,9 @@ A native client for Planka, the open-source kanban board. Point it at your own
 self-hosted Planka 2.x server and work your boards from your phone, with every
 change synced live over a websocket in both directions.
 
-This app is not a service. There is no account to create, no backend of ours in
-the middle, and nothing is collected: it talks only to the server address you
-type in.
+This app is not a service. There is no account to create and no backend of ours
+in the middle: your sign-in details and your board content go to the server
+address you type in, and nowhere else. The developer receives none of it.
 
 FEATURES
 

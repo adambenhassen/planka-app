@@ -6,7 +6,7 @@ Planka - Kanban Client ("the app") is an open-source client for
 [Planka](https://github.com/plankanban/planka), a kanban board you host
 yourself. This policy covers the app only.
 
-## What the developer collects
+## What the developer receives
 
 Nothing. The app has no analytics, no crash reporting, no advertising, no
 tracking identifiers, and no backend operated by the developer. No data about
@@ -19,6 +19,12 @@ sign in. Your email or username, your password, and everything you read or
 write in the app travel between your device and that server and nowhere else.
 That server is operated by you or by whoever you chose to host it — how it
 handles your data is governed by that operator, not by this app.
+
+Whether that traffic is encrypted is determined by the address you enter. An
+`https://` address is encrypted in transit by the operating system. The app
+also accepts `http://`, because a self-hosted server on a local network often
+has no certificate, and over `http://` your credentials and board content are
+sent unencrypted. Use `https://` wherever your server supports it.
 
 The one exception is the sideloaded Android build downloaded from GitHub, which
 asks GitHub's public releases API whether a newer version exists. That request

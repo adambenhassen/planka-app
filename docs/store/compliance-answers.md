@@ -9,22 +9,35 @@ the sideloaded Android build only — `api.github.com` for the update check
 
 ## Google Play — Data safety form
 
-- **Does your app collect or share any of the required user data types?** No.
-- **Is all of the user data collected by your app encrypted in transit?** Yes
-  (when the user's server is HTTPS; the app supports plain HTTP because a
-  self-hosted server on a LAN may not have a certificate).
-- **Do you provide a way for users to request that their data is deleted?** Not
-  applicable — no data reaches the developer. Account data lives on the user's
-  own server and is deleted there.
+**Declare collection.** Google defines collection as transmitting data off the
+device, and there is no carve-out for an endpoint the user controls. That the
+data reaches the user's own server and never the developer changes the
+*sharing* answer, not the *collection* one.
 
-The judgement call: the app does transmit credentials and board content off the
-device, but only to an endpoint the user names and controls, and never to the
-developer or a third party. Play's data-safety scope is data the developer or
-its partners collect, so the answer is "no collection". If a reviewer pushes
-back, the fallback is to declare "Personal info → Email address" and "App
-activity" as *collected, not shared, required for app functionality, encrypted
-in transit* and explain the self-hosted model in the review notes — this is the
-same shape other self-hosted clients (Nextcloud, Home Assistant) declare.
+- **Does your app collect or share any of the required user data types?**
+  Collected, not shared. Every type below is *required* (not optional) and used
+  only for **App functionality**; none is processed ephemerally:
+  - *Personal info → Email address, User IDs, Name* — sign-in and the profile
+    the server returns.
+  - *Photos and videos*, *Files and docs* — attachments the user uploads to a
+    card.
+  - *Messages → Other in-app messages* — card comments.
+  - *App activity → Other actions* — board, list and card edits.
+- **Is all of the user data collected by your app encrypted in transit?** No.
+  Explanation for the form: the app connects only to a server address the user
+  supplies, and a self-hosted Planka on a local network commonly has no TLS
+  certificate, so plain HTTP has to keep working. HTTPS is used whenever the
+  user's server offers it, and the address field defaults to `https://`.
+- **Do you provide a way for users to request that their data is deleted?** The
+  app creates no account on any developer-operated service and holds no
+  server-side data to delete. Data lives on the user's own Planka server and is
+  deleted there; signing out removes the account and its stored credentials
+  from the device.
+
+Do not soften the two answers above into "No collection" or "encrypted in
+transit: Yes" because the developer receives nothing — that reasoning was
+tried and is wrong. Nextcloud, the closest precedent, declares
+collected-not-shared on its own Play listing.
 
 - **Ads:** none. **Content rating questionnaire:** no objectionable content;
   expect Everyone / PEGI 3. **Target audience:** 18+, not directed at children.
@@ -32,7 +45,13 @@ same shape other self-hosted clients (Nextcloud, Home Assistant) declare.
 
 ## Apple — App privacy ("nutrition labels")
 
-- **Data collection:** "Data Not Collected" for every category.
+- **Data collection:** currently drafted as "Data Not Collected" for every
+  category. **Unresolved — do not submit on this answer without MAIN-478.**
+  Apple's definition turns on data the developer or its partners access or
+  store, which is a different test from Google's "transmitted off the device",
+  so the two forms can legitimately disagree. But this file already stated one
+  Play answer confidently and wrongly, so the same reasoning does not get a
+  second pass unreviewed.
 - **Third-party SDKs:** none that collect data. All dependencies
   (`dio`, `socket_io_client`, `flutter_secure_storage`, `go_router`,
   `cached_network_image`, `url_launcher`, `path_provider`, `open_filex`,
