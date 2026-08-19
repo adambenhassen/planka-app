@@ -153,6 +153,57 @@ void main() {
     expect(notifier.edits, isEmpty);
   });
 
+  testWidgets('a blur that writes nothing still leaves the field taking edits '
+      'from elsewhere', (tester) async {
+    await pumpSheet(tester);
+
+    // A phone keyboard adds the trailing space; trimmed it is the value the
+    // field already holds, so leaving writes nothing — and the field must
+    // read as unchanged afterwards, not as carrying an edit.
+    await tester.enterText(fieldOf(_fieldId), 'hello ');
+    await submit(tester);
+    expect(notifier.edits, isEmpty);
+    expect(textOf(tester, _fieldId), 'hello');
+
+    await deliver(tester, 'customFieldValueUpdate', {
+      'id': _valueId,
+      'cardId': _cardId,
+      'customFieldGroupId': _groupId,
+      'customFieldId': _fieldId,
+      'content': 'from the web',
+    });
+    expect(textOf(tester, _fieldId), 'from the web');
+
+    // Tapping in and straight back out sends nothing — least of all the value
+    // the field held before the other client wrote.
+    await focusField(tester, _fieldId);
+    await submit(tester);
+    expect(notifier.edits, isEmpty);
+  });
+
+  testWidgets('the same holds for whitespace typed into an empty field',
+      (tester) async {
+    await pumpSheet(tester);
+
+    await tester.enterText(fieldOf(_emptyFieldId), '   ');
+    await submit(tester);
+    expect(notifier.edits, isEmpty);
+    expect(textOf(tester, _emptyFieldId), '');
+
+    await deliver(tester, 'customFieldValueUpdate', {
+      'id': 'v-new',
+      'cardId': _cardId,
+      'customFieldGroupId': _groupId,
+      'customFieldId': _emptyFieldId,
+      'content': 'from the web',
+    });
+    expect(textOf(tester, _emptyFieldId), 'from the web');
+
+    await focusField(tester, _emptyFieldId);
+    await submit(tester);
+    expect(notifier.edits, isEmpty);
+  });
+
   testWidgets('a value edited elsewhere replaces the text', (tester) async {
     await pumpSheet(tester);
 

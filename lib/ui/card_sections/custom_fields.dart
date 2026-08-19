@@ -106,13 +106,16 @@ class _CustomFieldValueFieldState extends State<_CustomFieldValueField> {
   void _onFocusChanged() {
     if (_focus.hasFocus) return;
     final content = _controller.text.trim();
+    // What the field shows on the way out is what it would send. Whitespace
+    // around a value is not an edit, so normalising has to happen on the path
+    // that writes nothing too: leave it un-normalised there and the dirty test
+    // in didUpdateWidget reads the field as modified for the life of the
+    // sheet, ignores every later edit from elsewhere, and hands the stale text
+    // back on the next blur.
+    if (_controller.text != content) _controller.text = content;
     // Leaving a field alone writes nothing, so opening a card and scrolling
     // past its custom fields costs no requests.
     if (content == (widget.content ?? '')) return;
-    // Hold exactly what was submitted, so the field reads as unchanged again:
-    // whitespace the user typed around the value is not a change the next
-    // edit from elsewhere has to defer to.
-    _controller.text = content;
     widget.onSubmit(content);
   }
 
