@@ -86,8 +86,11 @@ data reaches the user's own server and never the developer changes the
   omission. What goes out is the password at sign-in, on a password change and
   when an admin creates a user; the two-factor `code` on
   `POST /access-tokens/verify-totp`, which is either a TOTP code or a recovery
-  code; and the `pendingToken` that carries a half-finished sign-in to that
-  request and to `POST /access-tokens/accept-terms`.
+  code; the `pendingToken` that carries a half-finished sign-in to that request
+  and to `POST /access-tokens/accept-terms`; and the access token, which goes
+  out on both channels — as the `Authorization: Bearer` header on REST requests
+  and inside every socket frame, and as an `accessToken` cookie on image and
+  attachment downloads.
 
   The `signature` in that accept-terms body declares nothing and is not user
   data: it is read out of the `GET /terms` response and echoed straight back.
@@ -95,35 +98,59 @@ data reaches the user's own server and never the developer changes the
   a body the walk visited reads as an oversight, and nothing else tells a reader
   that it was considered.
 
-  **How this list was produced, and how to redo it.** By walking every request
-  body *and query parameter* the app can send, field by field, against Play's
-  type list — not by adding types as they are noticed. Bodies alone are not the
-  whole surface: a walk defined over them would report a completeness it never
-  checked, since a query parameter carries data off the device just as a body
-  does. Today `beforeId` on `GET /cards/:id/actions` is the only one, and it is
-  an opaque server id, so it declares nothing. The board's search text is the
-  case to watch: `BoardFilter.query` filters cards already on the device and
-  never reaches the API layer, so *App activity → Search history* is correctly
-  absent — and would stop being absent the day search moves server-side.
+  **How this list was produced, and how to redo it.** By walking every channel
+  the app transmits on, field by field, against Play's type list — not by adding
+  types as they are noticed. A completeness claim is only as wide as its stated
+  scope, so the scope is written here: **two channels**, HTTP and the websocket.
+  Both are listed below whether or not they contribute a type today, so that a
+  reader can tell a channel that was considered from one that was never visited.
 
-  The surface to walk is every `api.post`, `api.patch` and `api.delete` in
-  `lib/api/repositories.dart`, every `api.get` there that passes `query:`, and
-  `login`, `acceptTerms` and `verifyTotp` in `lib/api/planka_api.dart`. The
-  untyped `patch` and `body` maps are the part a reader cannot check from the
-  repository layer alone: their fields are set in `lib/state/board_state.dart`
-  (card, list, label, task and board patches),
+  *HTTP, to the server address the user entered.* Every `api.post`,
+  `api.patch` and `api.delete` in `lib/api/repositories.dart`, every `api.get`
+  there that passes `query:`, and `login`, `acceptTerms` and `verifyTotp` in
+  `lib/api/planka_api.dart`. Two kinds of request do not go through the
+  repository layer and are easy to miss: `PlankaApi.download`, and the
+  `CachedNetworkImage` widgets in `card_tile.dart`, `board_background.dart` and
+  `card_sections/attachments.dart`. Both authenticate with the access token as a
+  cookie and send no other user data. The untyped `patch` and `body` maps are
+  the part a reader cannot check from the repository layer alone: their fields
+  are set in
+  `lib/state/board_state.dart` (card, list, label, task and board patches),
   `lib/state/projects_state.dart` (project patches),
   `lib/ui/widgets/profile_dialog.dart` (`name`, `phone`, `organization`,
   `avatar`) and `lib/ui/widgets/user_management_dialog.dart` (`role`,
   `isDeactivated`, and the `POST /users` body). Custom fields are read-only and
-  send nothing. Re-walk those files when the API surface changes; do not patch
-  this list one type at a time.
+  send nothing.
+
+  *Websocket, to the same server.* `lib/api/planka_socket.dart`. It contributes
+  no data type today and is in the surface anyway, because it can: the handshake
+  sends the three constant `__sails_io_sdk_*` parameters, and the one emission
+  in the file — `subscribeBoard` — sends `/api/boards/:id?subscribe=true` with
+  the access token in the frame headers and an empty `data`. `sailsRequestFrame`
+  takes a `data` payload, so the day anything is emitted through it with a
+  body, this channel starts carrying user data and must be re-walked.
+
+  Query parameters count as much as bodies, on either channel — they carry data
+  off the device the same way. On HTTP, `beforeId` on `GET /cards/:id/actions`
+  is the only query parameter that carries anything user-supplied, and it is an
+  opaque server id, so it declares nothing; the socket's are constants and a
+  board id. The board's search text is the case to watch: `BoardFilter.query`
+  filters cards already on the device and never reaches either channel, so
+  *App activity → Search history* is correctly absent — and would stop being
+  absent the day search moves server-side.
+
+  A third destination exists but is not a third channel: the sideloaded Android
+  build's update check calls `api.github.com` over HTTP and sends no user data
+  (see the top of this file).
+
+  Re-walk both channels when the API surface changes; do not patch this list one
+  type at a time.
 
   This file shares no file with the code it describes, so it can go stale
   without anything conflicting, failing or otherwise saying so — the two-factor
   sign-in flow landed after the first walk and made the credentials note wrong
-  while every check stayed green. A change to the API layer or the auth flow is
-  the trigger to re-walk; nothing will remind you.
+  while every check stayed green. A change to either channel or to the auth flow
+  is the trigger to re-walk; nothing will remind you.
 - **Is all of the user data collected by your app encrypted in transit?** No.
   Explanation for the form: the app connects only to a server address the user
   supplies, and a self-hosted Planka on a local network commonly has no TLS
