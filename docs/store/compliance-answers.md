@@ -81,16 +81,21 @@ data reaches the user's own server and never the developer changes the
   performance (there is no crash or diagnostics reporting). `package_info_plus`
   reads the local install source and never sends it.
 
-  Passwords are transmitted — sign-in, password change, and an admin creating a
-  user — but Play's taxonomy has no data type for authentication credentials,
-  so there is nothing to declare. That absence is deliberate, not an omission.
+  Authentication credentials are transmitted and none of them is declarable:
+  Play's taxonomy has no data type for them. That absence is deliberate, not an
+  omission. What goes out is the password at sign-in, on a password change and
+  when an admin creates a user; the two-factor `code` on
+  `POST /access-tokens/verify-totp`, which is either a TOTP code or a recovery
+  code; and the `pendingToken` that carries a half-finished sign-in to that
+  request and to `POST /access-tokens/accept-terms`.
 
   **How this list was produced, and how to redo it.** By walking every request
   body the app can send, field by field, against Play's type list — not by
   adding types as they are noticed. The write surface is every `api.post`,
-  `api.patch` and `api.delete` in `lib/api/repositories.dart`, plus `login` and
-  `acceptTerms` in `lib/api/planka_api.dart`. The untyped `patch` and `body` maps are the part a
-  reader cannot check from the repository layer alone: their fields are set in
+  `api.patch` and `api.delete` in `lib/api/repositories.dart`, plus `login`,
+  `acceptTerms` and `verifyTotp` in `lib/api/planka_api.dart`. The untyped
+  `patch` and `body` maps are the part a reader cannot check from the
+  repository layer alone: their fields are set in
   `lib/state/board_state.dart` (card, list, label, task and board patches),
   `lib/state/projects_state.dart` (project patches),
   `lib/ui/widgets/profile_dialog.dart` (`name`, `phone`, `organization`,
@@ -98,6 +103,12 @@ data reaches the user's own server and never the developer changes the
   `isDeactivated`, and the `POST /users` body). Custom fields are read-only and
   send nothing. Re-walk those files when the API surface changes; do not patch
   this list one type at a time.
+
+  This file shares no file with the code it describes, so it can go stale
+  without anything conflicting, failing or otherwise saying so — the two-factor
+  sign-in flow landed after the first walk and made the credentials note wrong
+  while every check stayed green. A change to the API layer or the auth flow is
+  the trigger to re-walk; nothing will remind you.
 - **Is all of the user data collected by your app encrypted in transit?** No.
   Explanation for the form: the app connects only to a server address the user
   supplies, and a self-hosted Planka on a local network commonly has no TLS
