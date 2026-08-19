@@ -72,6 +72,21 @@ void main() {
       (() => repo.removeCardLabel('c1', 'lb1'), 'DELETE', '/api/cards/c1/card-labels/labelId:lb1', null),
       (() => repo.addCardMember('c1', 'u1'), 'POST', '/api/cards/c1/card-memberships', {'userId': 'u1'}),
       (() => repo.removeCardMember('c1', 'u1'), 'DELETE', '/api/cards/c1/card-memberships/userId:u1', null),
+      // A custom field value is addressed by its (group, field) pair; the same
+      // endpoint creates and updates it.
+      (
+        () => repo.setCustomFieldValue('c1',
+            groupId: 'g1', fieldId: 'f1', content: 'v'),
+        'PATCH',
+        '/api/cards/c1/custom-field-values/customFieldGroupId:g1:customFieldId:f1',
+        {'content': 'v'}
+      ),
+      (
+        () => repo.deleteCustomFieldValue('c1', groupId: 'g1', fieldId: 'f1'),
+        'DELETE',
+        '/api/cards/c1/custom-field-values/customFieldGroupId:g1:customFieldId:f1',
+        null
+      ),
       (
         () => repo.createTaskList('c1', name: 'TL', position: 16384),
         'POST',

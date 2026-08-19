@@ -149,10 +149,18 @@ void main() {
     final s = _customFieldBoard();
     await pumpTall(tester, sheet(s, _cardIdOf('board_show_custom_fields')));
 
-    // The web client renders an unset value as U+00A0: the name is shown, the
-    // value line is blank — no placeholder text and no dash.
+    // Like the web client: the name is shown and the value line is blank — no
+    // placeholder text and no dash.
     expect(find.text('Empty'), findsOneWidget);
-    expect(find.text(' '), findsOneWidget);
+    expect(
+        tester
+            .widget<EditableText>(find.descendant(
+                of: find.byKey(
+                    const ValueKey('custom-field-1844338684858467358')),
+                matching: find.byType(EditableText)))
+            .controller
+            .text,
+        isEmpty);
     expect(find.text('—'), findsNothing);
   });
 

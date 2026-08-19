@@ -36,4 +36,17 @@ void main() {
     expect(kPlankaSocketEvents, contains('cardsUpdate'));
     expect(kPlankaSocketEvents, contains('listClear'));
   });
+
+  test('event name list covers the custom field surface', () {
+    for (final family in ['customFieldGroup', 'customField']) {
+      expect(kPlankaSocketEvents, contains('${family}Create'));
+      expect(kPlankaSocketEvents, contains('${family}Update'));
+      expect(kPlankaSocketEvents, contains('${family}Delete'));
+    }
+    // A value has no create event of its own: one endpoint creates and updates
+    // it, and the server broadcasts customFieldValueUpdate for both.
+    expect(kPlankaSocketEvents, contains('customFieldValueUpdate'));
+    expect(kPlankaSocketEvents, contains('customFieldValueDelete'));
+    expect(kPlankaSocketEvents, isNot(contains('customFieldValueCreate')));
+  });
 }
