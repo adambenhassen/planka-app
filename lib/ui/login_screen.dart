@@ -23,6 +23,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _loading = false;
   bool _obscurePassword = true;
 
+  final _codeFormKey = GlobalKey<FormState>();
+  final _codeCtrl = TextEditingController();
+
+  /// Second-factor step. The pending token is a bearer credential that buys a
+  /// full access token for six digits, so it lives here and nowhere else:
+  /// never on [PlankaApi.token], never in the account store, never rendered.
+  /// Non-null is what puts the screen on the code step.
+  String? _pendingToken;
+  PlankaApi? _pendingApi;
+  String? _pendingServerUrl;
+
+  /// Step message, always authored here — the server's own `message` is never
+  /// shown for a rejected code or an expired pending token.
+  String? _message;
+
   @override
   void initState() {
     super.initState();
@@ -48,21 +63,99 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     _serverCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
+    _codeCtrl.dispose();
+    _clearPending();
     super.dispose();
   }
 
-  /// Logs in, handling a fresh server's Terms-of-Service step. Returns false
-  /// when the terms step cannot complete (user declined, or the widget was
-  /// disposed mid-flow) — a clean cancel, not an error.
-  Future<bool> _authenticate(PlankaApi api) async {
+  /// Drops the pending token and everything that could still spend it. Called
+  /// on every exit from the code step — success, expiry, cancel and dispose.
+  void _clearPending() {
+    _pendingToken = null;
+    _pendingApi = null;
+    _pendingServerUrl = null;
+  }
+
+  /// Logs in, handling a fresh server's Terms-of-Service step and a
+  /// two-factor-enabled account's code step. Returns false when login did not
+  /// finish here — the user declined the terms, the widget was disposed
+  /// mid-flow, or the code step has taken over. None of those is an error.
+  Future<bool> _authenticate(PlankaApi api, String serverUrl) async {
     final email = _emailCtrl.text.trim();
     try {
-      await api.login(email, _passwordCtrl.text);
-    } on TermsRequiredException catch (e) {
-      if (!mounted || !await _confirmTerms()) return false;
-      await api.acceptTerms(e.pendingToken); // returns & stores the token
+      try {
+        await api.login(email, _passwordCtrl.text);
+      } on TermsRequiredException catch (e) {
+        if (!mounted || !await _confirmTerms()) return false;
+        await api.acceptTerms(e.pendingToken); // returns & stores the token
+      }
+    } on TotpRequiredException catch (e) {
+      // Hand the pending token to the code step, in memory only. The login is
+      // not finished and not failed — it continues there.
+      if (!mounted) return false;
+      setState(() {
+        _pendingApi = api;
+        _pendingServerUrl = serverUrl;
+        _pendingToken = e.pendingToken;
+        _codeCtrl.clear();
+      });
+      return false;
     }
     return true;
+  }
+
+  /// Submits one code per user action — never retried automatically, so the
+  /// app cannot amplify a guess rate against a six-digit secret.
+  Future<void> _submitCode() async {
+    if (!_codeFormKey.currentState!.validate()) return;
+    final api = _pendingApi;
+    final pendingToken = _pendingToken;
+    final serverUrl = _pendingServerUrl;
+    if (api == null || pendingToken == null || serverUrl == null) return;
+    setState(() {
+      _loading = true;
+      _message = null;
+    });
+    try {
+      await api.verifyTotp(pendingToken, _codeCtrl.text.trim());
+      // Spent: drop it before signIn can persist anything, then finish exactly
+      // as a password-only login does.
+      _clearPending();
+      _codeCtrl.clear();
+      await ref.read(currentAccountProvider.notifier).signIn(api, serverUrl);
+      if (mounted) context.go('/projects');
+    } on TotpCodeRejectedException {
+      // The pending token survives a rejected code, so stay on the step and
+      // let the user try again.
+      if (mounted) {
+        setState(() => _message = AppLocalizations.of(context).loginTotpRejected);
+      }
+    } on TotpPendingTokenExpiredException {
+      // The ten-minute window closed. Back to credentials — the password is
+      // never cached, so it is typed again rather than replayed.
+      if (!mounted) return;
+      setState(() {
+        _clearPending();
+        _codeCtrl.clear();
+        _passwordCtrl.clear();
+        _message = AppLocalizations.of(context).loginTotpExpired;
+      });
+    } catch (e) {
+      if (mounted) showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// Abandons the second factor and returns to credentials, keeping nothing
+  /// from the attempt.
+  void _cancelCode() {
+    setState(() {
+      _clearPending();
+      _codeCtrl.clear();
+      _passwordCtrl.clear();
+      _message = null;
+    });
   }
 
   Future<bool> _confirmTerms() {
@@ -77,11 +170,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _message = null;
+    });
     final serverUrl = _serverCtrl.text.trim().replaceAll(RegExp(r'/+$'), '');
     try {
       final api = ref.read(apiFactoryProvider)(serverUrl);
-      if (!await _authenticate(api)) return; // user declined the terms
+      // False: terms declined, or the second-factor step has taken over.
+      if (!await _authenticate(api, serverUrl)) return;
       await ref.read(currentAccountProvider.notifier).signIn(api, serverUrl);
       if (mounted) context.go('/projects');
     } catch (e) {
@@ -122,124 +219,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   child: Card(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-                      child: Form(
-                        key: _formKey,
-                        child: AutofillGroup(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Center(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Image.asset(
-                                    'assets/icon/icon.png',
-                                    height: 64,
-                                    width: 64,
-                                    fit: BoxFit.contain,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                l10n.appTitle,
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.headlineMedium,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                l10n.loginSubtitle,
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
-                              const SizedBox(height: 32),
-                              TextFormField(
-                                controller: _serverCtrl,
-                                decoration: InputDecoration(
-                                  labelText: l10n.loginServerUrl,
-                                  prefixIcon: const Icon(Icons.dns_outlined),
-                                  border: const OutlineInputBorder(),
-                                ),
-                                keyboardType: TextInputType.url,
-                                autocorrect: false,
-                                textInputAction: TextInputAction.next,
-                                autofillHints: const [AutofillHints.url],
-                                validator: (v) =>
-                                    (v == null ||
-                                        v.trim().isEmpty ||
-                                        v.trim() == 'https://')
-                                    ? l10n.fieldRequired
-                                    : null,
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _emailCtrl,
-                                decoration: InputDecoration(
-                                  labelText: l10n.loginEmailOrUsername,
-                                  prefixIcon: const Icon(Icons.person_outline),
-                                  border: const OutlineInputBorder(),
-                                ),
-                                keyboardType: TextInputType.emailAddress,
-                                autocorrect: false,
-                                textInputAction: TextInputAction.next,
-                                autofillHints: const [AutofillHints.username],
-                                validator: (v) =>
-                                    (v == null || v.trim().isEmpty)
-                                    ? l10n.fieldRequired
-                                    : null,
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _passwordCtrl,
-                                decoration: InputDecoration(
-                                  labelText: l10n.fieldPassword,
-                                  prefixIcon: const Icon(Icons.lock_outline),
-                                  border: const OutlineInputBorder(),
-                                  suffixIcon: IconButton(
-                                    tooltip: _obscurePassword
-                                        ? l10n.loginShowPassword
-                                        : l10n.loginHidePassword,
-                                    icon: Icon(
-                                      _obscurePassword
-                                          ? Icons.visibility_outlined
-                                          : Icons.visibility_off_outlined,
-                                    ),
-                                    onPressed: () => setState(
-                                      () =>
-                                          _obscurePassword = !_obscurePassword,
-                                    ),
-                                  ),
-                                ),
-                                obscureText: _obscurePassword,
-                                textInputAction: TextInputAction.done,
-                                autofillHints: const [AutofillHints.password],
-                                validator: (v) => (v == null || v.isEmpty)
-                                    ? l10n.fieldRequired
-                                    : null,
-                                onFieldSubmitted: (_) => _submit(),
-                              ),
-                              const SizedBox(height: 24),
-                              FilledButton(
-                                style: FilledButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(48),
-                                ),
-                                onPressed: _loading ? null : _submit,
-                                child: _loading
-                                    ? const SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : Text(l10n.loginSubmit),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                      child: _pendingToken == null
+                          ? _credentialsStep(l10n, theme, scheme)
+                          : _codeStep(l10n, theme, scheme),
                     ),
                   ),
                 ),
@@ -249,6 +231,233 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ),
       ),
     );
+  }
+
+  /// Server, identity and password. Shape unchanged from before the second
+  /// factor existed — this is still the screen's first frame.
+  Widget _credentialsStep(
+      AppLocalizations l10n, ThemeData theme, ColorScheme scheme) {
+    return Form(
+      key: _formKey,
+      child: AutofillGroup(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.asset(
+                  'assets/icon/icon.png',
+                  height: 64,
+                  width: 64,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              l10n.appTitle,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l10n.loginSubtitle,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 32),
+            TextFormField(
+              controller: _serverCtrl,
+              decoration: InputDecoration(
+                labelText: l10n.loginServerUrl,
+                prefixIcon: const Icon(Icons.dns_outlined),
+                border: const OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.url],
+              validator: (v) =>
+                  (v == null ||
+                      v.trim().isEmpty ||
+                      v.trim() == 'https://')
+                  ? l10n.fieldRequired
+                  : null,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _emailCtrl,
+              decoration: InputDecoration(
+                labelText: l10n.loginEmailOrUsername,
+                prefixIcon: const Icon(Icons.person_outline),
+                border: const OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.emailAddress,
+              autocorrect: false,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.username],
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty)
+                  ? l10n.fieldRequired
+                  : null,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _passwordCtrl,
+              decoration: InputDecoration(
+                labelText: l10n.fieldPassword,
+                prefixIcon: const Icon(Icons.lock_outline),
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  tooltip: _obscurePassword
+                      ? l10n.loginShowPassword
+                      : l10n.loginHidePassword,
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                  onPressed: () => setState(
+                    () =>
+                        _obscurePassword = !_obscurePassword,
+                  ),
+                ),
+              ),
+              obscureText: _obscurePassword,
+              textInputAction: TextInputAction.done,
+              autofillHints: const [AutofillHints.password],
+              validator: (v) => (v == null || v.isEmpty)
+                  ? l10n.fieldRequired
+                  : null,
+              onFieldSubmitted: (_) => _submit(),
+            ),
+            ..._messageBlock(theme, scheme),
+            const SizedBox(height: 24),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed: _loading ? null : _submit,
+              child: _loading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Text(l10n.loginSubmit),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The second factor. Reached only once the password was already accepted,
+  /// so this replaces the credentials rather than appearing alongside them.
+  Widget _codeStep(
+      AppLocalizations l10n, ThemeData theme, ColorScheme scheme) {
+    return Form(
+      key: _codeFormKey,
+      child: AutofillGroup(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.asset(
+                  'assets/icon/icon.png',
+                  height: 64,
+                  width: 64,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              l10n.loginTotpTitle,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l10n.loginTotpSubtitle,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 32),
+            TextFormField(
+              controller: _codeCtrl,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: l10n.loginTotpCode,
+                prefixIcon: const Icon(Icons.shield_outlined),
+                border: const OutlineInputBorder(),
+              ),
+              // A recovery code is neither six digits nor numeric, so the field
+              // stays general and validation is non-empty only — a length or
+              // digits-only rule would reject a valid recovery code before it
+              // was ever sent. oneTimeCode with suggestions off also keeps a
+              // recovery code out of the keyboard's learned dictionary.
+              keyboardType: TextInputType.text,
+              autocorrect: false,
+              enableSuggestions: false,
+              autofillHints: const [AutofillHints.oneTimeCode],
+              textInputAction: TextInputAction.done,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? l10n.fieldRequired : null,
+              onFieldSubmitted: (_) => _submitCode(),
+            ),
+            ..._messageBlock(theme, scheme),
+            const SizedBox(height: 24),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed: _loading ? null : _submitCode,
+              child: _loading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Text(l10n.loginTotpVerify),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _loading ? null : _cancelCode,
+              child: Text(l10n.actionCancel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Client-authored step message, or nothing. Spread into a step's children so
+  /// that with no message the tree is byte-identical to having no message row.
+  List<Widget> _messageBlock(ThemeData theme, ColorScheme scheme) {
+    final message = _message;
+    if (message == null) return const [];
+    return [
+      const SizedBox(height: 16),
+      Text(
+        message,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodyMedium?.copyWith(color: scheme.error),
+      ),
+    ];
   }
 }
 

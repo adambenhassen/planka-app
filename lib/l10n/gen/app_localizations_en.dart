@@ -112,6 +112,26 @@ class AppLocalizationsEn extends AppLocalizations {
       'This server requires you to accept its Terms of Service to log in.';
 
   @override
+  String get loginTotpTitle => 'Two-factor authentication';
+
+  @override
+  String get loginTotpSubtitle =>
+      'Enter the code from your authenticator app, or one of your recovery codes.';
+
+  @override
+  String get loginTotpCode => 'Authentication code';
+
+  @override
+  String get loginTotpVerify => 'Verify';
+
+  @override
+  String get loginTotpRejected => 'That code was rejected. Try again.';
+
+  @override
+  String get loginTotpExpired =>
+      'Sign-in timed out. Enter your password again.';
+
+  @override
   String get projectsTitle => 'Projects';
 
   @override

@@ -298,6 +298,42 @@ abstract class AppLocalizations {
   /// **'This server requires you to accept its Terms of Service to log in.'**
   String get loginTermsMessage;
 
+  /// Title of the login step that asks for a two-factor code
+  ///
+  /// In en, this message translates to:
+  /// **'Two-factor authentication'**
+  String get loginTotpTitle;
+
+  /// Body text of the two-factor code step, explaining that a recovery code is also accepted
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the code from your authenticator app, or one of your recovery codes.'**
+  String get loginTotpSubtitle;
+
+  /// Label of the field that takes a two-factor or recovery code
+  ///
+  /// In en, this message translates to:
+  /// **'Authentication code'**
+  String get loginTotpCode;
+
+  /// Button that submits the two-factor code
+  ///
+  /// In en, this message translates to:
+  /// **'Verify'**
+  String get loginTotpVerify;
+
+  /// Message shown on the two-factor step when the server rejects the submitted code
+  ///
+  /// In en, this message translates to:
+  /// **'That code was rejected. Try again.'**
+  String get loginTotpRejected;
+
+  /// Message shown when the two-factor window closed and the user is back on the credentials step
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in timed out. Enter your password again.'**
+  String get loginTotpExpired;
+
   /// Title of the projects screen
   ///
   /// In en, this message translates to:
