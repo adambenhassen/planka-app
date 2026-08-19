@@ -21,50 +21,83 @@ data reaches the user's own server and never the developer changes the
   because a read-only user never transmits it.
   - *Personal info → Email address* — **required**. The email half of the login
     body's `emailOrUsername`, sent to `POST /access-tokens`. Nothing in the app
-    works before sign-in. See the note below on why both this and User IDs are
-    required when one field carries either.
+    works before sign-in. Also `PATCH /users/:id/email`, and an admin creating
+    someone else's account with `POST /users`.
   - *Personal info → User IDs* — **required**. The username half of the login
     body's `emailOrUsername` is a User ID under Play's taxonomy, and it is sent
-    at sign-in. Not the account id: that arrives from `GET /users/me`, is kept
-    on the device, and leaves it only on the optional paths listed under Name —
-    ordinary requests carry a bearer token, not an id.
-  - *Personal info → Name* — **optional**. Not sent at sign-in; the login
-    request is `emailOrUsername` and password only. A name leaves the device
-    only when the user edits their profile (`PATCH /users/:id`) or an admin
-    creates a user (`POST /users`).
+    at sign-in. Also `PATCH /users/:id/username`, and the `userId` of other
+    people when assigning project managers, board members and card members. Not
+    the account id: that arrives from `GET /users/me`, is kept on the device,
+    and leaves it only on the optional paths below — ordinary requests carry a
+    bearer token, not an id.
+  - *Personal info → Name* — **optional**. `name` on `PATCH /users/:id` when the
+    user edits their profile, and on `POST /users` when an admin creates
+    someone. Not sent at sign-in.
+  - *Personal info → Phone number* — **optional**. `phone` on
+    `PATCH /users/:id`, from the profile editor.
+  - *Personal info → Other info* — **optional**. `organization` on
+    `PATCH /users/:id`, from the same editor.
   - *Photos and videos* — **optional**. Image attachments on a card, the
-    profile avatar (`POST /users/:id/avatar`) and the project background.
-    Declared as a first-class type by intent, not because anything restricts
-    the file type: the avatar and background endpoints exist to receive images,
-    and image attachments get cover and thumbnail handling the other types do
-    not.
-  - *Files and docs* — **optional**. Attachments on a card, and anything else
-    the user picks. None of the three `openFile()` call sites — card
-    attachment, avatar, project background — passes `acceptedTypeGroups`, so
-    any file type at all can be sent through them. Whatever the file is, it
-    goes up as a file and is covered here.
-  - *Messages → Other in-app messages* — **optional**. Card comments.
-  - *App activity → Other user-generated content* — **optional**. The free-form
-    text the app sends that is neither a comment nor an attachment: card names
-    and descriptions, list names, checklist and task text, project and board
-    names, label names.
-  - *App activity → Other actions* — **optional**. The edit actions themselves
-    — moving, duplicating, archiving, assigning.
-  Email address and User IDs are both required even though a single sign-in
-  field carries one or the other, so exactly one of the two goes up at any given
-  sign-in and the app cannot know which in advance. Declaring both is the
-  conservative direction, and it is deliberate: making either one conditional
-  would be arguable on the facts and wrong in practice, because a form answer
-  that needs a paragraph to defend is one somebody later simplifies incorrectly.
+    profile avatar (`POST /users/:id/avatar`) and the project background
+    (`POST /projects/:id/background-images`). Note, not reason: image
+    attachments additionally get cover and thumbnail handling that other types
+    do not.
+  - *Audio files → Other audio files* — **optional**. An audio file sent through
+    any of the three pickers. The app records nothing and uses no microphone.
+  - *Files and docs* — **optional**. Everything else the user picks.
+
+  The three file types above all follow from one fact: none of the three
+  `openFile()` call sites — card attachment, avatar, project background — passes
+  `acceptedTypeGroups`, so each of them can yield any file type at all. Each
+  category Play names separately is therefore declared on its own, with *Files
+  and docs* as the catch-all rather than as a substitute for a named category.
+
+  - *Messages → Other in-app messages* — **optional**. Comment `text` on
+    `POST /cards/:id/comments` and `PATCH /comments/:id`.
+  - *App activity → Other user-generated content* — **optional**. The content
+    fields of the board: card `name`, `description`, `dueDate` and `stopwatch`;
+    list, task-list and task `name`; project and board `name`; label `name` and
+    `color`.
+  - *App activity → Other actions* — **optional**. The structural and status
+    changes: `position`, `listId` and `boardId` moves, duplication, archive and
+    trash, `isCompleted`, `isDueCompleted`, `isSubscribed`, `coverAttachmentId`,
+    list `sort`, notification `isRead`, label and member assignment, and the
+    admin `role` and `isDeactivated` changes — which are account permissions
+    rather than personal information about the person.
+
+  **Email address and User IDs are both required, and that is settled.** One
+  sign-in field carries either, so exactly one of the two goes up at any given
+  sign-in and the app cannot know which in advance. The test is not whether the
+  user had a choice between two fields but whether anyone can use the app having
+  supplied neither, and they cannot. Marking either *optional* would assert on
+  the form that the user can decline it, which is false. *Required* overstates
+  only which of the two a given user supplies, and the paragraph you are reading
+  states that on the same page. An answer whose imprecision is written down
+  beats one that is simply false; do not "correct" this to optional.
 
   Checked and deliberately **not** declared, because the app transmits none of
   them: location, contacts, calendar, device or other IDs, installed apps, web
-  browsing history, and app info and performance (there is no crash or
-  diagnostics reporting). `package_info_plus` reads the local install source and
-  never sends it. Audio is not on this list: nothing in the app records audio
-  and there is no microphone use, but since no picker restricts the file type,
-  an audio file the user chooses is transmitted as a file and is covered by
-  *Files and docs*.
+  browsing history, health and fitness, financial info, and app info and
+  performance (there is no crash or diagnostics reporting). `package_info_plus`
+  reads the local install source and never sends it.
+
+  Passwords are transmitted — sign-in, password change, and an admin creating a
+  user — but Play's taxonomy has no data type for authentication credentials,
+  so there is nothing to declare. That absence is deliberate, not an omission.
+
+  **How this list was produced, and how to redo it.** By walking every request
+  body the app can send, field by field, against Play's type list — not by
+  adding types as they are noticed. The write surface is every `api.post`,
+  `api.patch` and `api.delete` in `lib/api/repositories.dart`, plus `login` and
+  `acceptTerms` in `lib/api/planka_api.dart`. The untyped `patch` and `body` maps are the part a
+  reader cannot check from the repository layer alone: their fields are set in
+  `lib/state/board_state.dart` (card, list, label, task and board patches),
+  `lib/state/projects_state.dart` (project patches),
+  `lib/ui/widgets/profile_dialog.dart` (`name`, `phone`, `organization`,
+  `avatar`) and `lib/ui/widgets/user_management_dialog.dart` (`role`,
+  `isDeactivated`, and the `POST /users` body). Custom fields are read-only and
+  send nothing. Re-walk those files when the API surface changes; do not patch
+  this list one type at a time.
 - **Is all of the user data collected by your app encrypted in transit?** No.
   Explanation for the form: the app connects only to a server address the user
   supplies, and a self-hosted Planka on a local network commonly has no TLS
