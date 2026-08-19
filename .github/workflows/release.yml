@@ -49,13 +49,50 @@ jobs:
           echo "$KEYSTORE" | base64 -d > android/app/upload-keystore.jks
           echo "$KEY_PROPERTIES" > android/key.properties
       - run: flutter pub get
-      - run: flutter build apk --release
+      - run: flutter build apk --release --flavor github
       - name: Upload APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mv build/app/outputs/flutter-apk/app-release.apk planka-android.apk
+          mv build/app/outputs/flutter-apk/app-github-release.apk planka-android.apk
           gh release upload "$GITHUB_REF_NAME" planka-android.apk --clobber
+      # Play takes an AAB, not an APK, and rejects the self-install
+      # permission the sideloaded flavor carries. Kept off the public release
+      # page — it is an upload-signed artifact for the Play Console only.
+      - run: |
+          flutter build appbundle --release --flavor store \
+            --dart-define=ENABLE_IN_APP_UPDATER=false
+      - name: Upload Play bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: planka-play-appbundle
+          path: build/app/outputs/bundle/storeRelease/app-store-release.aab
+          if-no-files-found: error
+
+  # Unsigned archive: proves the iOS build is green and gives App Store
+  # Connect something to sign once Adam's certificates exist. Not
+  # distributable as-is — `flutter build ipa` cannot export without them.
+  ios:
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build ipa --release --no-codesign
+      - name: Package archive
+        run: |
+          ditto -c -k --keepParent \
+            build/ios/archive/Runner.xcarchive planka-ios-unsigned-xcarchive.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: planka-ios-unsigned-xcarchive
+          path: planka-ios-unsigned-xcarchive.zip
+          if-no-files-found: error
 
   # Universal (arm64 + x86_64) macOS app. Unsigned — Gatekeeper will warn;
   # right-click > Open, or remove the quarantine attribute to run.
@@ -103,9 +140,11 @@ jobs:
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath planka-windows-x64.zip
           gh release upload $env:GITHUB_REF_NAME planka-windows-x64.zip --clobber
 
-  # Publish only once every platform artifact is attached.
+  # Publish only once every platform artifact is attached. `ios` is included
+  # even though its archive is a workflow artifact rather than a release asset:
+  # a release must not go public on a head whose iOS build is broken.
   publish-release:
-    needs: [android, macos, windows]
+    needs: [android, ios, macos, windows]
     runs-on: ubuntu-latest
     steps:
       - name: Publish release

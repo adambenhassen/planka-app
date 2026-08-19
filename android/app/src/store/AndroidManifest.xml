@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Google Play and F-Droid both forbid an app that installs its own
+         updates, so the store build drops the permission the sideloaded
+         build uses to hand a downloaded APK to the system installer. The
+         matching Dart code path is compiled out by the build's
+         ENABLE_IN_APP_UPDATER=false dart-define. -->
+    <uses-permission
+        android:name="android.permission.REQUEST_INSTALL_PACKAGES"
+        tools:node="remove"/>
+</manifest>

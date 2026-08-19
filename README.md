@@ -38,7 +38,7 @@
 - 👤 **Profile & admin** — edit your profile and avatar; admins can manage server users
 - 🔔 **Notifications** — realtime unread badge, mark read / mark all read
 - ⚡ **Realtime everywhere** — changes from the web UI appear instantly, and vice versa
-- 🔄 **In-app updates** — sideloaded Android builds download and install new releases directly
+- 🔄 **In-app updates** — sideloaded Android builds download and install new releases directly (store builds leave updates to the store)
 
 > **Status:** actively maintained. Feature parity with the Planka web UI is largely complete across cards, boards, projects, and admin.
 
@@ -53,8 +53,12 @@
 git clone https://github.com/adambenhassen/planka-app.git
 cd planka-app
 flutter pub get
-flutter run
+flutter run --flavor github   # Android only; other platforms take plain `flutter run`
 ```
+
+Android builds in two flavors: `github` (the sideloaded APK, with the in-app
+updater) and `store` (Google Play and F-Droid, which forbid self-updating
+apps). See [docs/store/publishing.md](docs/store/publishing.md).
 
 Sign in with your server URL (e.g. `https://planka.example.com`), email or username, and password.
 

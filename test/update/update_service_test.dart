@@ -4,6 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/update/update_service.dart';
 
 void main() {
+  // Only the store flavor passes ENABLE_IN_APP_UPDATER=false; flipping the
+  // default would silently stop sideloaded builds from offering updates.
+  test('in-app updater defaults to on', () {
+    expect(kInAppUpdaterEnabled, isTrue);
+  });
+
   group('isNewerVersion', () {
     test('greater major/minor/patch', () {
       expect(isNewerVersion('1.1.0', '1.0.0'), isTrue);

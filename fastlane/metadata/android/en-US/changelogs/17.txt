@@ -1,0 +1,2 @@
+First store release. Full Planka 2.x client: boards, cards, checklists,
+attachments, comments, notifications and admin, all synced in realtime.
