@@ -8,6 +8,10 @@ class PlankaRepo {
   final PlankaApi api;
 
   Future<Envelope> projects() => api.get('/projects');
+
+  /// One project. Unlike the board response this carries the project's base
+  /// custom field groups and their fields.
+  Future<Envelope> project(String id) => api.get('/projects/$id');
   Future<Envelope> createProject(String name) =>
       api.post('/projects', {'type': 'private', 'name': name});
   Future<Envelope> updateProject(String id, Map<String, dynamic> patch) =>

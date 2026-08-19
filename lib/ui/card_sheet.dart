@@ -14,6 +14,7 @@ import '../state/board_state.dart';
 import 'card_sections/activity.dart';
 import 'card_sections/attachments.dart';
 import 'card_sections/comments.dart';
+import 'card_sections/custom_fields.dart';
 import 'card_sections/due_date.dart';
 import 'card_sections/header.dart';
 import 'card_sections/labels.dart';
@@ -244,6 +245,18 @@ class CardSheet extends ConsumerWidget {
                 guardMutation(context, notifier.toggleMember(cardId, userId)),
           ),
         ),
+        // Immediately before the checklists, where the web client puts them.
+        // A board with no custom fields adds no section at all.
+        for (final group in state.customFieldGroupsOf(cardId))
+          section(
+            state.customFieldGroupName(group),
+            CardCustomFieldsSection(
+              entries: [
+                for (final field in state.customFieldsOf(group))
+                  (field, state.customFieldValueOf(cardId, group.id, field.id)),
+              ],
+            ),
+          ),
         section(
           l10n.sectionChecklists,
           CardTaskListsSection(

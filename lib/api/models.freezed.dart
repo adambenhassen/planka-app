@@ -4461,6 +4461,1106 @@ as DateTime?,
 
 
 /// @nodoc
+mixin _$PlankaCustomFieldGroup {
+
+ String get id; String? get name; String? get boardId; String? get cardId; String? get baseCustomFieldGroupId;@JsonKey(fromJson: _toDouble) double? get position;
+/// Create a copy of PlankaCustomFieldGroup
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$PlankaCustomFieldGroupCopyWith<PlankaCustomFieldGroup> get copyWith => _$PlankaCustomFieldGroupCopyWithImpl<PlankaCustomFieldGroup>(this as PlankaCustomFieldGroup, _$identity);
+
+  /// Serializes this PlankaCustomFieldGroup to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaCustomFieldGroup&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.baseCustomFieldGroupId, baseCustomFieldGroupId) || other.baseCustomFieldGroupId == baseCustomFieldGroupId)&&(identical(other.position, position) || other.position == position));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,name,boardId,cardId,baseCustomFieldGroupId,position);
+
+@override
+String toString() {
+  return 'PlankaCustomFieldGroup(id: $id, name: $name, boardId: $boardId, cardId: $cardId, baseCustomFieldGroupId: $baseCustomFieldGroupId, position: $position)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $PlankaCustomFieldGroupCopyWith<$Res>  {
+  factory $PlankaCustomFieldGroupCopyWith(PlankaCustomFieldGroup value, $Res Function(PlankaCustomFieldGroup) _then) = _$PlankaCustomFieldGroupCopyWithImpl;
+@useResult
+$Res call({
+ String id, String? name, String? boardId, String? cardId, String? baseCustomFieldGroupId,@JsonKey(fromJson: _toDouble) double? position
+});
+
+
+
+
+}
+/// @nodoc
+class _$PlankaCustomFieldGroupCopyWithImpl<$Res>
+    implements $PlankaCustomFieldGroupCopyWith<$Res> {
+  _$PlankaCustomFieldGroupCopyWithImpl(this._self, this._then);
+
+  final PlankaCustomFieldGroup _self;
+  final $Res Function(PlankaCustomFieldGroup) _then;
+
+/// Create a copy of PlankaCustomFieldGroup
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = freezed,Object? boardId = freezed,Object? cardId = freezed,Object? baseCustomFieldGroupId = freezed,Object? position = freezed,}) {
+  return _then(_self.copyWith(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String?,boardId: freezed == boardId ? _self.boardId : boardId // ignore: cast_nullable_to_non_nullable
+as String?,cardId: freezed == cardId ? _self.cardId : cardId // ignore: cast_nullable_to_non_nullable
+as String?,baseCustomFieldGroupId: freezed == baseCustomFieldGroupId ? _self.baseCustomFieldGroupId : baseCustomFieldGroupId // ignore: cast_nullable_to_non_nullable
+as String?,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
+as double?,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [PlankaCustomFieldGroup].
+extension PlankaCustomFieldGroupPatterns on PlankaCustomFieldGroup {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _PlankaCustomFieldGroup value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _PlankaCustomFieldGroup() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _PlankaCustomFieldGroup value)  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaCustomFieldGroup():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _PlankaCustomFieldGroup value)?  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaCustomFieldGroup() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String? name,  String? boardId,  String? cardId,  String? baseCustomFieldGroupId, @JsonKey(fromJson: _toDouble)  double? position)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _PlankaCustomFieldGroup() when $default != null:
+return $default(_that.id,_that.name,_that.boardId,_that.cardId,_that.baseCustomFieldGroupId,_that.position);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String? name,  String? boardId,  String? cardId,  String? baseCustomFieldGroupId, @JsonKey(fromJson: _toDouble)  double? position)  $default,) {final _that = this;
+switch (_that) {
+case _PlankaCustomFieldGroup():
+return $default(_that.id,_that.name,_that.boardId,_that.cardId,_that.baseCustomFieldGroupId,_that.position);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String? name,  String? boardId,  String? cardId,  String? baseCustomFieldGroupId, @JsonKey(fromJson: _toDouble)  double? position)?  $default,) {final _that = this;
+switch (_that) {
+case _PlankaCustomFieldGroup() when $default != null:
+return $default(_that.id,_that.name,_that.boardId,_that.cardId,_that.baseCustomFieldGroupId,_that.position);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _PlankaCustomFieldGroup implements PlankaCustomFieldGroup {
+  const _PlankaCustomFieldGroup({required this.id, this.name, this.boardId, this.cardId, this.baseCustomFieldGroupId, @JsonKey(fromJson: _toDouble) this.position});
+  factory _PlankaCustomFieldGroup.fromJson(Map<String, dynamic> json) => _$PlankaCustomFieldGroupFromJson(json);
+
+@override final  String id;
+@override final  String? name;
+@override final  String? boardId;
+@override final  String? cardId;
+@override final  String? baseCustomFieldGroupId;
+@override@JsonKey(fromJson: _toDouble) final  double? position;
+
+/// Create a copy of PlankaCustomFieldGroup
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$PlankaCustomFieldGroupCopyWith<_PlankaCustomFieldGroup> get copyWith => __$PlankaCustomFieldGroupCopyWithImpl<_PlankaCustomFieldGroup>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$PlankaCustomFieldGroupToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaCustomFieldGroup&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.baseCustomFieldGroupId, baseCustomFieldGroupId) || other.baseCustomFieldGroupId == baseCustomFieldGroupId)&&(identical(other.position, position) || other.position == position));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,name,boardId,cardId,baseCustomFieldGroupId,position);
+
+@override
+String toString() {
+  return 'PlankaCustomFieldGroup(id: $id, name: $name, boardId: $boardId, cardId: $cardId, baseCustomFieldGroupId: $baseCustomFieldGroupId, position: $position)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$PlankaCustomFieldGroupCopyWith<$Res> implements $PlankaCustomFieldGroupCopyWith<$Res> {
+  factory _$PlankaCustomFieldGroupCopyWith(_PlankaCustomFieldGroup value, $Res Function(_PlankaCustomFieldGroup) _then) = __$PlankaCustomFieldGroupCopyWithImpl;
+@override @useResult
+$Res call({
+ String id, String? name, String? boardId, String? cardId, String? baseCustomFieldGroupId,@JsonKey(fromJson: _toDouble) double? position
+});
+
+
+
+
+}
+/// @nodoc
+class __$PlankaCustomFieldGroupCopyWithImpl<$Res>
+    implements _$PlankaCustomFieldGroupCopyWith<$Res> {
+  __$PlankaCustomFieldGroupCopyWithImpl(this._self, this._then);
+
+  final _PlankaCustomFieldGroup _self;
+  final $Res Function(_PlankaCustomFieldGroup) _then;
+
+/// Create a copy of PlankaCustomFieldGroup
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = freezed,Object? boardId = freezed,Object? cardId = freezed,Object? baseCustomFieldGroupId = freezed,Object? position = freezed,}) {
+  return _then(_PlankaCustomFieldGroup(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String?,boardId: freezed == boardId ? _self.boardId : boardId // ignore: cast_nullable_to_non_nullable
+as String?,cardId: freezed == cardId ? _self.cardId : cardId // ignore: cast_nullable_to_non_nullable
+as String?,baseCustomFieldGroupId: freezed == baseCustomFieldGroupId ? _self.baseCustomFieldGroupId : baseCustomFieldGroupId // ignore: cast_nullable_to_non_nullable
+as String?,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
+as double?,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
+mixin _$PlankaBaseCustomFieldGroup {
+
+ String get id; String get projectId; String? get name;
+/// Create a copy of PlankaBaseCustomFieldGroup
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$PlankaBaseCustomFieldGroupCopyWith<PlankaBaseCustomFieldGroup> get copyWith => _$PlankaBaseCustomFieldGroupCopyWithImpl<PlankaBaseCustomFieldGroup>(this as PlankaBaseCustomFieldGroup, _$identity);
+
+  /// Serializes this PlankaBaseCustomFieldGroup to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaBaseCustomFieldGroup&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.name, name) || other.name == name));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,projectId,name);
+
+@override
+String toString() {
+  return 'PlankaBaseCustomFieldGroup(id: $id, projectId: $projectId, name: $name)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $PlankaBaseCustomFieldGroupCopyWith<$Res>  {
+  factory $PlankaBaseCustomFieldGroupCopyWith(PlankaBaseCustomFieldGroup value, $Res Function(PlankaBaseCustomFieldGroup) _then) = _$PlankaBaseCustomFieldGroupCopyWithImpl;
+@useResult
+$Res call({
+ String id, String projectId, String? name
+});
+
+
+
+
+}
+/// @nodoc
+class _$PlankaBaseCustomFieldGroupCopyWithImpl<$Res>
+    implements $PlankaBaseCustomFieldGroupCopyWith<$Res> {
+  _$PlankaBaseCustomFieldGroupCopyWithImpl(this._self, this._then);
+
+  final PlankaBaseCustomFieldGroup _self;
+  final $Res Function(PlankaBaseCustomFieldGroup) _then;
+
+/// Create a copy of PlankaBaseCustomFieldGroup
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? projectId = null,Object? name = freezed,}) {
+  return _then(_self.copyWith(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
+as String,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [PlankaBaseCustomFieldGroup].
+extension PlankaBaseCustomFieldGroupPatterns on PlankaBaseCustomFieldGroup {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _PlankaBaseCustomFieldGroup value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _PlankaBaseCustomFieldGroup() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _PlankaBaseCustomFieldGroup value)  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaBaseCustomFieldGroup():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _PlankaBaseCustomFieldGroup value)?  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaBaseCustomFieldGroup() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String? name)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _PlankaBaseCustomFieldGroup() when $default != null:
+return $default(_that.id,_that.projectId,_that.name);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String? name)  $default,) {final _that = this;
+switch (_that) {
+case _PlankaBaseCustomFieldGroup():
+return $default(_that.id,_that.projectId,_that.name);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String? name)?  $default,) {final _that = this;
+switch (_that) {
+case _PlankaBaseCustomFieldGroup() when $default != null:
+return $default(_that.id,_that.projectId,_that.name);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _PlankaBaseCustomFieldGroup implements PlankaBaseCustomFieldGroup {
+  const _PlankaBaseCustomFieldGroup({required this.id, required this.projectId, this.name});
+  factory _PlankaBaseCustomFieldGroup.fromJson(Map<String, dynamic> json) => _$PlankaBaseCustomFieldGroupFromJson(json);
+
+@override final  String id;
+@override final  String projectId;
+@override final  String? name;
+
+/// Create a copy of PlankaBaseCustomFieldGroup
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$PlankaBaseCustomFieldGroupCopyWith<_PlankaBaseCustomFieldGroup> get copyWith => __$PlankaBaseCustomFieldGroupCopyWithImpl<_PlankaBaseCustomFieldGroup>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$PlankaBaseCustomFieldGroupToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaBaseCustomFieldGroup&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.name, name) || other.name == name));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,projectId,name);
+
+@override
+String toString() {
+  return 'PlankaBaseCustomFieldGroup(id: $id, projectId: $projectId, name: $name)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$PlankaBaseCustomFieldGroupCopyWith<$Res> implements $PlankaBaseCustomFieldGroupCopyWith<$Res> {
+  factory _$PlankaBaseCustomFieldGroupCopyWith(_PlankaBaseCustomFieldGroup value, $Res Function(_PlankaBaseCustomFieldGroup) _then) = __$PlankaBaseCustomFieldGroupCopyWithImpl;
+@override @useResult
+$Res call({
+ String id, String projectId, String? name
+});
+
+
+
+
+}
+/// @nodoc
+class __$PlankaBaseCustomFieldGroupCopyWithImpl<$Res>
+    implements _$PlankaBaseCustomFieldGroupCopyWith<$Res> {
+  __$PlankaBaseCustomFieldGroupCopyWithImpl(this._self, this._then);
+
+  final _PlankaBaseCustomFieldGroup _self;
+  final $Res Function(_PlankaBaseCustomFieldGroup) _then;
+
+/// Create a copy of PlankaBaseCustomFieldGroup
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? projectId = null,Object? name = freezed,}) {
+  return _then(_PlankaBaseCustomFieldGroup(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
+as String,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
+mixin _$PlankaCustomField {
+
+ String get id; String get name; String? get customFieldGroupId; String? get baseCustomFieldGroupId; bool? get showOnFrontOfCard;@JsonKey(fromJson: _toDouble) double? get position;
+/// Create a copy of PlankaCustomField
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$PlankaCustomFieldCopyWith<PlankaCustomField> get copyWith => _$PlankaCustomFieldCopyWithImpl<PlankaCustomField>(this as PlankaCustomField, _$identity);
+
+  /// Serializes this PlankaCustomField to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaCustomField&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.customFieldGroupId, customFieldGroupId) || other.customFieldGroupId == customFieldGroupId)&&(identical(other.baseCustomFieldGroupId, baseCustomFieldGroupId) || other.baseCustomFieldGroupId == baseCustomFieldGroupId)&&(identical(other.showOnFrontOfCard, showOnFrontOfCard) || other.showOnFrontOfCard == showOnFrontOfCard)&&(identical(other.position, position) || other.position == position));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,name,customFieldGroupId,baseCustomFieldGroupId,showOnFrontOfCard,position);
+
+@override
+String toString() {
+  return 'PlankaCustomField(id: $id, name: $name, customFieldGroupId: $customFieldGroupId, baseCustomFieldGroupId: $baseCustomFieldGroupId, showOnFrontOfCard: $showOnFrontOfCard, position: $position)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $PlankaCustomFieldCopyWith<$Res>  {
+  factory $PlankaCustomFieldCopyWith(PlankaCustomField value, $Res Function(PlankaCustomField) _then) = _$PlankaCustomFieldCopyWithImpl;
+@useResult
+$Res call({
+ String id, String name, String? customFieldGroupId, String? baseCustomFieldGroupId, bool? showOnFrontOfCard,@JsonKey(fromJson: _toDouble) double? position
+});
+
+
+
+
+}
+/// @nodoc
+class _$PlankaCustomFieldCopyWithImpl<$Res>
+    implements $PlankaCustomFieldCopyWith<$Res> {
+  _$PlankaCustomFieldCopyWithImpl(this._self, this._then);
+
+  final PlankaCustomField _self;
+  final $Res Function(PlankaCustomField) _then;
+
+/// Create a copy of PlankaCustomField
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? customFieldGroupId = freezed,Object? baseCustomFieldGroupId = freezed,Object? showOnFrontOfCard = freezed,Object? position = freezed,}) {
+  return _then(_self.copyWith(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,customFieldGroupId: freezed == customFieldGroupId ? _self.customFieldGroupId : customFieldGroupId // ignore: cast_nullable_to_non_nullable
+as String?,baseCustomFieldGroupId: freezed == baseCustomFieldGroupId ? _self.baseCustomFieldGroupId : baseCustomFieldGroupId // ignore: cast_nullable_to_non_nullable
+as String?,showOnFrontOfCard: freezed == showOnFrontOfCard ? _self.showOnFrontOfCard : showOnFrontOfCard // ignore: cast_nullable_to_non_nullable
+as bool?,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
+as double?,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [PlankaCustomField].
+extension PlankaCustomFieldPatterns on PlankaCustomField {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _PlankaCustomField value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _PlankaCustomField() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _PlankaCustomField value)  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaCustomField():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _PlankaCustomField value)?  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaCustomField() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String? customFieldGroupId,  String? baseCustomFieldGroupId,  bool? showOnFrontOfCard, @JsonKey(fromJson: _toDouble)  double? position)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _PlankaCustomField() when $default != null:
+return $default(_that.id,_that.name,_that.customFieldGroupId,_that.baseCustomFieldGroupId,_that.showOnFrontOfCard,_that.position);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String? customFieldGroupId,  String? baseCustomFieldGroupId,  bool? showOnFrontOfCard, @JsonKey(fromJson: _toDouble)  double? position)  $default,) {final _that = this;
+switch (_that) {
+case _PlankaCustomField():
+return $default(_that.id,_that.name,_that.customFieldGroupId,_that.baseCustomFieldGroupId,_that.showOnFrontOfCard,_that.position);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String? customFieldGroupId,  String? baseCustomFieldGroupId,  bool? showOnFrontOfCard, @JsonKey(fromJson: _toDouble)  double? position)?  $default,) {final _that = this;
+switch (_that) {
+case _PlankaCustomField() when $default != null:
+return $default(_that.id,_that.name,_that.customFieldGroupId,_that.baseCustomFieldGroupId,_that.showOnFrontOfCard,_that.position);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _PlankaCustomField implements PlankaCustomField {
+  const _PlankaCustomField({required this.id, required this.name, this.customFieldGroupId, this.baseCustomFieldGroupId, this.showOnFrontOfCard, @JsonKey(fromJson: _toDouble) this.position});
+  factory _PlankaCustomField.fromJson(Map<String, dynamic> json) => _$PlankaCustomFieldFromJson(json);
+
+@override final  String id;
+@override final  String name;
+@override final  String? customFieldGroupId;
+@override final  String? baseCustomFieldGroupId;
+@override final  bool? showOnFrontOfCard;
+@override@JsonKey(fromJson: _toDouble) final  double? position;
+
+/// Create a copy of PlankaCustomField
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$PlankaCustomFieldCopyWith<_PlankaCustomField> get copyWith => __$PlankaCustomFieldCopyWithImpl<_PlankaCustomField>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$PlankaCustomFieldToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaCustomField&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.customFieldGroupId, customFieldGroupId) || other.customFieldGroupId == customFieldGroupId)&&(identical(other.baseCustomFieldGroupId, baseCustomFieldGroupId) || other.baseCustomFieldGroupId == baseCustomFieldGroupId)&&(identical(other.showOnFrontOfCard, showOnFrontOfCard) || other.showOnFrontOfCard == showOnFrontOfCard)&&(identical(other.position, position) || other.position == position));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,name,customFieldGroupId,baseCustomFieldGroupId,showOnFrontOfCard,position);
+
+@override
+String toString() {
+  return 'PlankaCustomField(id: $id, name: $name, customFieldGroupId: $customFieldGroupId, baseCustomFieldGroupId: $baseCustomFieldGroupId, showOnFrontOfCard: $showOnFrontOfCard, position: $position)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$PlankaCustomFieldCopyWith<$Res> implements $PlankaCustomFieldCopyWith<$Res> {
+  factory _$PlankaCustomFieldCopyWith(_PlankaCustomField value, $Res Function(_PlankaCustomField) _then) = __$PlankaCustomFieldCopyWithImpl;
+@override @useResult
+$Res call({
+ String id, String name, String? customFieldGroupId, String? baseCustomFieldGroupId, bool? showOnFrontOfCard,@JsonKey(fromJson: _toDouble) double? position
+});
+
+
+
+
+}
+/// @nodoc
+class __$PlankaCustomFieldCopyWithImpl<$Res>
+    implements _$PlankaCustomFieldCopyWith<$Res> {
+  __$PlankaCustomFieldCopyWithImpl(this._self, this._then);
+
+  final _PlankaCustomField _self;
+  final $Res Function(_PlankaCustomField) _then;
+
+/// Create a copy of PlankaCustomField
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? customFieldGroupId = freezed,Object? baseCustomFieldGroupId = freezed,Object? showOnFrontOfCard = freezed,Object? position = freezed,}) {
+  return _then(_PlankaCustomField(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,customFieldGroupId: freezed == customFieldGroupId ? _self.customFieldGroupId : customFieldGroupId // ignore: cast_nullable_to_non_nullable
+as String?,baseCustomFieldGroupId: freezed == baseCustomFieldGroupId ? _self.baseCustomFieldGroupId : baseCustomFieldGroupId // ignore: cast_nullable_to_non_nullable
+as String?,showOnFrontOfCard: freezed == showOnFrontOfCard ? _self.showOnFrontOfCard : showOnFrontOfCard // ignore: cast_nullable_to_non_nullable
+as bool?,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
+as double?,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
+mixin _$PlankaCustomFieldValue {
+
+ String get id; String get cardId; String get customFieldGroupId; String get customFieldId; String get content;
+/// Create a copy of PlankaCustomFieldValue
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$PlankaCustomFieldValueCopyWith<PlankaCustomFieldValue> get copyWith => _$PlankaCustomFieldValueCopyWithImpl<PlankaCustomFieldValue>(this as PlankaCustomFieldValue, _$identity);
+
+  /// Serializes this PlankaCustomFieldValue to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaCustomFieldValue&&(identical(other.id, id) || other.id == id)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.customFieldGroupId, customFieldGroupId) || other.customFieldGroupId == customFieldGroupId)&&(identical(other.customFieldId, customFieldId) || other.customFieldId == customFieldId)&&(identical(other.content, content) || other.content == content));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,cardId,customFieldGroupId,customFieldId,content);
+
+@override
+String toString() {
+  return 'PlankaCustomFieldValue(id: $id, cardId: $cardId, customFieldGroupId: $customFieldGroupId, customFieldId: $customFieldId, content: $content)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $PlankaCustomFieldValueCopyWith<$Res>  {
+  factory $PlankaCustomFieldValueCopyWith(PlankaCustomFieldValue value, $Res Function(PlankaCustomFieldValue) _then) = _$PlankaCustomFieldValueCopyWithImpl;
+@useResult
+$Res call({
+ String id, String cardId, String customFieldGroupId, String customFieldId, String content
+});
+
+
+
+
+}
+/// @nodoc
+class _$PlankaCustomFieldValueCopyWithImpl<$Res>
+    implements $PlankaCustomFieldValueCopyWith<$Res> {
+  _$PlankaCustomFieldValueCopyWithImpl(this._self, this._then);
+
+  final PlankaCustomFieldValue _self;
+  final $Res Function(PlankaCustomFieldValue) _then;
+
+/// Create a copy of PlankaCustomFieldValue
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? cardId = null,Object? customFieldGroupId = null,Object? customFieldId = null,Object? content = null,}) {
+  return _then(_self.copyWith(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,cardId: null == cardId ? _self.cardId : cardId // ignore: cast_nullable_to_non_nullable
+as String,customFieldGroupId: null == customFieldGroupId ? _self.customFieldGroupId : customFieldGroupId // ignore: cast_nullable_to_non_nullable
+as String,customFieldId: null == customFieldId ? _self.customFieldId : customFieldId // ignore: cast_nullable_to_non_nullable
+as String,content: null == content ? _self.content : content // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [PlankaCustomFieldValue].
+extension PlankaCustomFieldValuePatterns on PlankaCustomFieldValue {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _PlankaCustomFieldValue value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _PlankaCustomFieldValue() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _PlankaCustomFieldValue value)  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaCustomFieldValue():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _PlankaCustomFieldValue value)?  $default,){
+final _that = this;
+switch (_that) {
+case _PlankaCustomFieldValue() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String cardId,  String customFieldGroupId,  String customFieldId,  String content)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _PlankaCustomFieldValue() when $default != null:
+return $default(_that.id,_that.cardId,_that.customFieldGroupId,_that.customFieldId,_that.content);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String cardId,  String customFieldGroupId,  String customFieldId,  String content)  $default,) {final _that = this;
+switch (_that) {
+case _PlankaCustomFieldValue():
+return $default(_that.id,_that.cardId,_that.customFieldGroupId,_that.customFieldId,_that.content);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String cardId,  String customFieldGroupId,  String customFieldId,  String content)?  $default,) {final _that = this;
+switch (_that) {
+case _PlankaCustomFieldValue() when $default != null:
+return $default(_that.id,_that.cardId,_that.customFieldGroupId,_that.customFieldId,_that.content);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _PlankaCustomFieldValue implements PlankaCustomFieldValue {
+  const _PlankaCustomFieldValue({required this.id, required this.cardId, required this.customFieldGroupId, required this.customFieldId, required this.content});
+  factory _PlankaCustomFieldValue.fromJson(Map<String, dynamic> json) => _$PlankaCustomFieldValueFromJson(json);
+
+@override final  String id;
+@override final  String cardId;
+@override final  String customFieldGroupId;
+@override final  String customFieldId;
+@override final  String content;
+
+/// Create a copy of PlankaCustomFieldValue
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$PlankaCustomFieldValueCopyWith<_PlankaCustomFieldValue> get copyWith => __$PlankaCustomFieldValueCopyWithImpl<_PlankaCustomFieldValue>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$PlankaCustomFieldValueToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaCustomFieldValue&&(identical(other.id, id) || other.id == id)&&(identical(other.cardId, cardId) || other.cardId == cardId)&&(identical(other.customFieldGroupId, customFieldGroupId) || other.customFieldGroupId == customFieldGroupId)&&(identical(other.customFieldId, customFieldId) || other.customFieldId == customFieldId)&&(identical(other.content, content) || other.content == content));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,cardId,customFieldGroupId,customFieldId,content);
+
+@override
+String toString() {
+  return 'PlankaCustomFieldValue(id: $id, cardId: $cardId, customFieldGroupId: $customFieldGroupId, customFieldId: $customFieldId, content: $content)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$PlankaCustomFieldValueCopyWith<$Res> implements $PlankaCustomFieldValueCopyWith<$Res> {
+  factory _$PlankaCustomFieldValueCopyWith(_PlankaCustomFieldValue value, $Res Function(_PlankaCustomFieldValue) _then) = __$PlankaCustomFieldValueCopyWithImpl;
+@override @useResult
+$Res call({
+ String id, String cardId, String customFieldGroupId, String customFieldId, String content
+});
+
+
+
+
+}
+/// @nodoc
+class __$PlankaCustomFieldValueCopyWithImpl<$Res>
+    implements _$PlankaCustomFieldValueCopyWith<$Res> {
+  __$PlankaCustomFieldValueCopyWithImpl(this._self, this._then);
+
+  final _PlankaCustomFieldValue _self;
+  final $Res Function(_PlankaCustomFieldValue) _then;
+
+/// Create a copy of PlankaCustomFieldValue
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? cardId = null,Object? customFieldGroupId = null,Object? customFieldId = null,Object? content = null,}) {
+  return _then(_PlankaCustomFieldValue(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,cardId: null == cardId ? _self.cardId : cardId // ignore: cast_nullable_to_non_nullable
+as String,customFieldGroupId: null == customFieldGroupId ? _self.customFieldGroupId : customFieldGroupId // ignore: cast_nullable_to_non_nullable
+as String,customFieldId: null == customFieldId ? _self.customFieldId : customFieldId // ignore: cast_nullable_to_non_nullable
+as String,content: null == content ? _self.content : content // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
 mixin _$PlankaAction {
 
  String get id; String get cardId;@JsonKey(unknownEnumValue: PlankaActionType.unknown) PlankaActionType get type; String? get userId; Map<String, dynamic>? get data; DateTime? get createdAt;

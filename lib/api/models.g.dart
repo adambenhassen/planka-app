@@ -320,6 +320,84 @@ Map<String, dynamic> _$PlankaAttachmentToJson(_PlankaAttachment instance) =>
       'createdAt': instance.createdAt?.toIso8601String(),
     };
 
+_PlankaCustomFieldGroup _$PlankaCustomFieldGroupFromJson(
+  Map<String, dynamic> json,
+) => _PlankaCustomFieldGroup(
+  id: json['id'] as String,
+  name: json['name'] as String?,
+  boardId: json['boardId'] as String?,
+  cardId: json['cardId'] as String?,
+  baseCustomFieldGroupId: json['baseCustomFieldGroupId'] as String?,
+  position: _toDouble(json['position']),
+);
+
+Map<String, dynamic> _$PlankaCustomFieldGroupToJson(
+  _PlankaCustomFieldGroup instance,
+) => <String, dynamic>{
+  'id': instance.id,
+  'name': instance.name,
+  'boardId': instance.boardId,
+  'cardId': instance.cardId,
+  'baseCustomFieldGroupId': instance.baseCustomFieldGroupId,
+  'position': instance.position,
+};
+
+_PlankaBaseCustomFieldGroup _$PlankaBaseCustomFieldGroupFromJson(
+  Map<String, dynamic> json,
+) => _PlankaBaseCustomFieldGroup(
+  id: json['id'] as String,
+  projectId: json['projectId'] as String,
+  name: json['name'] as String?,
+);
+
+Map<String, dynamic> _$PlankaBaseCustomFieldGroupToJson(
+  _PlankaBaseCustomFieldGroup instance,
+) => <String, dynamic>{
+  'id': instance.id,
+  'projectId': instance.projectId,
+  'name': instance.name,
+};
+
+_PlankaCustomField _$PlankaCustomFieldFromJson(Map<String, dynamic> json) =>
+    _PlankaCustomField(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      customFieldGroupId: json['customFieldGroupId'] as String?,
+      baseCustomFieldGroupId: json['baseCustomFieldGroupId'] as String?,
+      showOnFrontOfCard: json['showOnFrontOfCard'] as bool?,
+      position: _toDouble(json['position']),
+    );
+
+Map<String, dynamic> _$PlankaCustomFieldToJson(_PlankaCustomField instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'name': instance.name,
+      'customFieldGroupId': instance.customFieldGroupId,
+      'baseCustomFieldGroupId': instance.baseCustomFieldGroupId,
+      'showOnFrontOfCard': instance.showOnFrontOfCard,
+      'position': instance.position,
+    };
+
+_PlankaCustomFieldValue _$PlankaCustomFieldValueFromJson(
+  Map<String, dynamic> json,
+) => _PlankaCustomFieldValue(
+  id: json['id'] as String,
+  cardId: json['cardId'] as String,
+  customFieldGroupId: json['customFieldGroupId'] as String,
+  customFieldId: json['customFieldId'] as String,
+  content: json['content'] as String,
+);
+
+Map<String, dynamic> _$PlankaCustomFieldValueToJson(
+  _PlankaCustomFieldValue instance,
+) => <String, dynamic>{
+  'id': instance.id,
+  'cardId': instance.cardId,
+  'customFieldGroupId': instance.customFieldGroupId,
+  'customFieldId': instance.customFieldId,
+  'content': instance.content,
+};
+
 _PlankaAction _$PlankaActionFromJson(Map<String, dynamic> json) =>
     _PlankaAction(
       id: json['id'] as String,

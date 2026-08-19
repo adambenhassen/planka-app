@@ -37,6 +37,14 @@ class Included {
   late final List<PlankaAction> actions = _list('actions', PlankaAction.fromJson);
   late final List<PlankaProjectManager> projectManagers =
       _list('projectManagers', PlankaProjectManager.fromJson);
+  late final List<PlankaCustomFieldGroup> customFieldGroups =
+      _list('customFieldGroups', PlankaCustomFieldGroup.fromJson);
+  late final List<PlankaCustomField> customFields =
+      _list('customFields', PlankaCustomField.fromJson);
+  late final List<PlankaCustomFieldValue> customFieldValues =
+      _list('customFieldValues', PlankaCustomFieldValue.fromJson);
+  late final List<PlankaBaseCustomFieldGroup> baseCustomFieldGroups =
+      _list('baseCustomFieldGroups', PlankaBaseCustomFieldGroup.fromJson);
 }
 
 class Envelope {
