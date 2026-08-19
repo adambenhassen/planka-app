@@ -1372,6 +1372,10 @@ abstract class AppLocalizations {
   /// **'You have view-only access to this board.'**
   String get customFieldsViewerReadOnly;
 
+  /// In en, this message translates to:
+  /// **'Only board editors can change custom fields.'**
+  String get customFieldsEditorRequired;
+
   /// Title of the rename-group dialog
   ///
   /// In en, this message translates to:

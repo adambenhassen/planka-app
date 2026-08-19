@@ -696,6 +696,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'You have view-only access to this board.';
 
   @override
+  String get customFieldsEditorRequired =>
+      'Only board editors can change custom fields.';
+
+  @override
   String get customFieldsRenameGroupTitle => 'Rename group';
 
   @override

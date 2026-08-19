@@ -980,6 +980,9 @@
   "customFieldsViewerReadOnly": "You have view-only access to this board.",
   "@customFieldsViewerReadOnly": { "description": "Banner shown to board viewers at the top of the sheet" },
 
+  "customFieldsEditorRequired": "Only board editors can change custom fields.",
+  "@customFieldsEditorRequired": { "description": "Snackbar shown when a viewer or guest gets a 403 trying to write a custom field" },
+
   "customFieldsRenameGroupTitle": "Rename group",
   "@customFieldsRenameGroupTitle": { "description": "Title of the rename-group dialog" },
 

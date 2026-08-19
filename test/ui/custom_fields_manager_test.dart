@@ -8,6 +8,7 @@ import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/ui/custom_fields_manager_sheet.dart';
 import 'package:planka_app/ui/widgets/confirm_dialog.dart';
+import 'package:planka_app/ui/widgets/inline_add_field.dart';
 
 // ── Shared board factories ────────────────────────────────────────────────
 
@@ -74,7 +75,10 @@ BoardState _cardGroupState() => _makeState(
       ],
     );
 
-BoardState _instantiatedGroupState() => _makeState(
+BoardState _instantiatedGroupState({
+  List<PlankaCustomField> fields = const [],
+}) =>
+    _makeState(
       groups: const [
         PlankaCustomFieldGroup(
             id: 'ig1',
@@ -82,14 +86,14 @@ BoardState _instantiatedGroupState() => _makeState(
             baseCustomFieldGroupId: 'bg1',
             position: 16384),
       ],
-      // No base groups loaded — the group renders with an empty name.
+      fields: fields,
     );
 
 // ── Fake notifier ─────────────────────────────────────────────────────────
 
 class _FakeNotifier extends BoardNotifier {
   _FakeNotifier(super.boardId, this._state);
-  BoardState _state;
+  final BoardState _state;
 
   final calls = <(String, Object?)>[];
 
@@ -324,6 +328,22 @@ void main() {
       expect(find.text('Delete'), findsNothing);
     });
 
+    testWidgets('instantiated group renders template fields without edit menu',
+        (tester) async {
+      await tester.pumpWidget(_app(_instantiatedGroupState(fields: const [
+        PlankaCustomField(
+            id: 'tf1',
+            name: 'Story points',
+            customFieldGroupId: 'ig1',
+            baseCustomFieldGroupId: 'bg1',
+            position: 16384),
+      ])));
+      await tester.pumpAndSettle();
+      expect(find.text('Story points'), findsOneWidget);
+      // Only the group has a menu icon; the read-only field row has none
+      expect(find.byIcon(Icons.more_vert), findsOneWidget);
+    });
+
     group('delete confirmations', () {
       testWidgets('board group delete confirmation names the group and fields',
           (tester) async {
@@ -390,6 +410,23 @@ void main() {
         expect(find.textContaining('every card on this board'), findsOneWidget);
       });
 
+      testWidgets('confirming field delete fires deleteField', (tester) async {
+        await tester.pumpWidget(_app(_boardGroupState()));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.more_vert).at(1));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+
+        // Tap the confirm button (last 'Delete' in the dialog)
+        await tester.tap(find.text('Delete').last);
+        await tester.pumpAndSettle();
+
+        expect(
+            _notifier.calls.where((c) => c.$1 == 'deleteField'), hasLength(1));
+      });
+
       testWidgets('card group delete confirmation names the group',
           (tester) async {
         await tester.pumpWidget(_app(_cardGroupState(), cardId: _cardId));
@@ -437,6 +474,73 @@ void main() {
       });
     });
 
+    group('rename', () {
+      testWidgets('rename group fires renameCustomFieldGroup', (tester) async {
+        await tester.pumpWidget(_app(_boardGroupState()));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Rename'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), 'Renamed group');
+        await tester.tap(find.text('Save'));
+        await tester.pumpAndSettle();
+
+        expect(
+            _notifier.calls.where((c) => c.$1 == 'renameGroup'), hasLength(1));
+      });
+
+      testWidgets('rename field fires renameCustomField', (tester) async {
+        await tester.pumpWidget(_app(_boardGroupState()));
+        await tester.pumpAndSettle();
+
+        // Field f1 is at icon index 1 (after g1's menu at 0)
+        await tester.tap(find.byIcon(Icons.more_vert).at(1));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Rename'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), 'Renamed field');
+        await tester.tap(find.text('Save'));
+        await tester.pumpAndSettle();
+
+        expect(
+            _notifier.calls.where((c) => c.$1 == 'renameField'), hasLength(1));
+      });
+    });
+
+    group('reorder', () {
+      testWidgets('move group down fires moveCustomFieldGroupDown',
+          (tester) async {
+        await tester.pumpWidget(_app(_boardGroupState()));
+        await tester.pumpAndSettle();
+
+        // g1's menu (icon 0); g1 is not the last group so Move down is enabled
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Move down'));
+        await tester.pumpAndSettle();
+
+        expect(
+            _notifier.calls.where((c) => c.$1 == 'groupDown'), hasLength(1));
+      });
+
+      testWidgets('move field down fires moveCustomFieldDown', (tester) async {
+        await tester.pumpWidget(_app(_boardGroupState()));
+        await tester.pumpAndSettle();
+
+        // f1's menu is at icon index 1; f1 is not the last field so Move down is enabled
+        await tester.tap(find.byIcon(Icons.more_vert).at(1));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Move down'));
+        await tester.pumpAndSettle();
+
+        expect(_notifier.calls.where((c) => c.$1 == 'fieldDown'), hasLength(1));
+      });
+    });
+
     group('reorder menu items enabled/disabled at ends', () {
       testWidgets('Move up disabled for first group', (tester) async {
         await tester.pumpWidget(_app(_boardGroupState()));
@@ -479,6 +583,25 @@ void main() {
 
       expect(_notifier.calls.where((c) => c.$1 == 'frontToggle'), hasLength(1));
     });
+
+    group('InlineAddField maxLength', () {
+      testWidgets('group name is capped at 128 characters', (tester) async {
+        await tester.pumpWidget(_app(_makeState()));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.widgetWithText(InlineAddField, 'Add group'));
+        await tester.pumpAndSettle();
+
+        final over = 'x' * 200;
+        await tester.enterText(find.byType(TextField).last, over);
+        await tester.pumpAndSettle();
+
+        final controller = tester
+            .widget<EditableText>(find.byType(EditableText).last)
+            .controller;
+        expect(controller.text.length, 128);
+      });
+    });
   });
 
   group('confirmDialog destructive styling', () {
@@ -519,6 +642,34 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Delete'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
+    });
+
+    testWidgets('destructive confirm button uses error colorScheme color',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Builder(builder: (ctx) {
+          return ElevatedButton(
+            onPressed: () => confirmDialog(ctx,
+                title: 'Delete?',
+                confirmLabel: 'Delete',
+                destructive: true),
+            child: const Text('Show'),
+          );
+        }),
+      ));
+      await tester.tap(find.text('Show'));
+      await tester.pumpAndSettle();
+
+      // The confirm FilledButton is the one that wraps the 'Delete' label
+      final btnFinder = find.ancestor(
+          of: find.text('Delete'), matching: find.byType(FilledButton));
+      final button = tester.widget<FilledButton>(btnFinder);
+      final cs = Theme.of(tester.element(btnFinder)).colorScheme;
+
+      final resolvedBg = button.style?.backgroundColor?.resolve({});
+      expect(resolvedBg, cs.error);
     });
   });
 }

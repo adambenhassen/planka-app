@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
+import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../state/board_state.dart';
 import 'error_handling.dart';
+import 'widgets/async_retry.dart';
 import 'widgets/confirm_dialog.dart';
 import 'widgets/inline_add_field.dart';
 import 'widgets/prompt_dialog.dart';
@@ -37,6 +38,25 @@ Future<void> showCustomFieldsManagerSheet(
   );
 }
 
+/// Like [guardMutation] but maps HTTP 403 to the board-editor-only copy.
+void _guardCfMutation(
+    BuildContext context, AppLocalizations l10n, Future<void> future) {
+  future.catchError((Object e) {
+    if (!context.mounted) {
+      debugPrint('_guardCfMutation: failed after context unmounted: $e');
+      return;
+    }
+    if (e is ApiException && e.statusCode == 403) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(l10n.customFieldsEditorRequired),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ));
+    } else {
+      showApiError(context, e);
+    }
+  });
+}
+
 class CustomFieldsManagerSheet extends ConsumerWidget {
   const CustomFieldsManagerSheet({
     super.key,
@@ -53,73 +73,11 @@ class CustomFieldsManagerSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final boardAsync = ref.watch(boardProvider(boardId));
-    final state = boardAsync.value;
-    if (state == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final notifier = ref.read(boardProvider(boardId).notifier);
+    final boardName = boardAsync.value?.board.name ?? '';
     final currentUserId = ref.watch(currentAccountProvider)?.userId ?? '';
-
-    // True only when the app positively knows the user is a viewer — hide write
-    // affordances in that case and let the server gate everything else.
-    final isViewer = state.boardMemberships.any(
-        (m) => m.userId == currentUserId && m.role == 'viewer');
-
-    return _ManagerBody(
-      boardId: boardId,
-      cardId: cardId,
-      state: state,
-      notifier: notifier,
-      scrollController: scrollController,
-      isViewer: isViewer,
-      l10n: l10n,
-    );
-  }
-}
-
-class _ManagerBody extends StatelessWidget {
-  const _ManagerBody({
-    required this.boardId,
-    required this.cardId,
-    required this.state,
-    required this.notifier,
-    required this.scrollController,
-    required this.isViewer,
-    required this.l10n,
-  });
-
-  final String boardId;
-  final String? cardId;
-  final BoardState state;
-  final BoardNotifier notifier;
-  final ScrollController? scrollController;
-  final bool isViewer;
-  final AppLocalizations l10n;
-
-  Widget _section(BuildContext context, String title, Widget child) => Padding(
-        padding: const EdgeInsets.only(top: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Semantics(
-              header: true,
-              child: Text(title,
-                  style: Theme.of(context).textTheme.labelLarge),
-            ),
-            const SizedBox(height: 8),
-            child,
-          ],
-        ),
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    final boardName = state.board.name;
-    final hasCard = cardId != null;
 
     return Column(
       children: [
-        // Header
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
           child: Column(
@@ -165,78 +123,137 @@ class _ManagerBody extends StatelessWidget {
           ),
         ),
         const Divider(height: 1),
-        // Body
         Expanded(
-          child: LayoutBuilder(builder: (context, constraints) {
-            final bodyWidth =
-                constraints.maxWidth > 640 ? 640.0 : constraints.maxWidth;
-            return Center(
-              child: SizedBox(
-                width: bodyWidth,
-                child: ListView(
-                  controller: scrollController,
-                  padding: EdgeInsets.fromLTRB(
-                      16,
-                      8,
-                      16,
-                      32 + MediaQuery.viewInsetsOf(context).bottom),
-                  children: [
-                    if (isViewer)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Text(
-                          l10n.customFieldsViewerReadOnly,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant),
-                        ),
-                      ),
-                    if (hasCard)
-                      _section(
-                        context,
-                        l10n.customFieldsCardSection,
-                        _GroupList(
-                          groups: state.customFieldGroups
-                              .where((g) => g.cardId == cardId)
-                              .toList()
-                            ..sort((a, b) =>
-                                (a.position ?? 0).compareTo(b.position ?? 0)),
-                          state: state,
-                          notifier: notifier,
-                          isViewer: isViewer,
-                          isCard: true,
-                          cardId: cardId!,
-                          emptyText: l10n.customFieldsCardEmpty,
-                          l10n: l10n,
-                        ),
-                      ),
-                    _section(
-                      context,
-                      l10n.customFieldsBoardSection,
-                      _GroupList(
-                        groups: state.customFieldGroups
-                            .where((g) => g.boardId == boardId)
-                            .toList()
-                          ..sort((a, b) =>
-                              (a.position ?? 0).compareTo(b.position ?? 0)),
-                        state: state,
-                        notifier: notifier,
-                        isViewer: isViewer,
-                        isCard: false,
-                        cardId: null,
-                        emptyText: l10n.customFieldsBoardEmpty,
-                        l10n: l10n,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
+          child: asyncRetry(
+            boardAsync,
+            () => ref.invalidate(boardProvider(boardId)),
+            (state) {
+              final notifier = ref.read(boardProvider(boardId).notifier);
+              final isViewer = state.boardMemberships.any(
+                  (m) => m.userId == currentUserId && m.role == 'viewer');
+              return _ManagerBody(
+                boardId: boardId,
+                cardId: cardId,
+                state: state,
+                notifier: notifier,
+                scrollController: scrollController,
+                isViewer: isViewer,
+                l10n: l10n,
+              );
+            },
+          ),
         ),
       ],
     );
+  }
+}
+
+class _ManagerBody extends StatelessWidget {
+  const _ManagerBody({
+    required this.boardId,
+    required this.cardId,
+    required this.state,
+    required this.notifier,
+    required this.scrollController,
+    required this.isViewer,
+    required this.l10n,
+  });
+
+  final String boardId;
+  final String? cardId;
+  final BoardState state;
+  final BoardNotifier notifier;
+  final ScrollController? scrollController;
+  final bool isViewer;
+  final AppLocalizations l10n;
+
+  Widget _section(BuildContext context, String title, Widget child) => Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              header: true,
+              child: Text(title,
+                  style: Theme.of(context).textTheme.labelLarge),
+            ),
+            const SizedBox(height: 8),
+            child,
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final hasCard = cardId != null;
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final bodyWidth =
+          constraints.maxWidth > 640 ? 640.0 : constraints.maxWidth;
+      return Center(
+        child: SizedBox(
+          width: bodyWidth,
+          child: ListView(
+            controller: scrollController,
+            padding: EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                32 + MediaQuery.viewInsetsOf(context).bottom),
+            children: [
+              if (isViewer)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    l10n.customFieldsViewerReadOnly,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant),
+                  ),
+                ),
+              if (hasCard)
+                _section(
+                  context,
+                  l10n.customFieldsCardSection,
+                  _GroupList(
+                    groups: state.customFieldGroups
+                        .where((g) => g.cardId == cardId)
+                        .toList()
+                      ..sort((a, b) =>
+                          (a.position ?? 0).compareTo(b.position ?? 0)),
+                    state: state,
+                    notifier: notifier,
+                    isViewer: isViewer,
+                    isCard: true,
+                    cardId: cardId!,
+                    emptyText: l10n.customFieldsCardEmpty,
+                    l10n: l10n,
+                  ),
+                ),
+              _section(
+                context,
+                l10n.customFieldsBoardSection,
+                _GroupList(
+                  groups: state.customFieldGroups
+                      .where((g) => g.boardId == boardId)
+                      .toList()
+                    ..sort((a, b) =>
+                        (a.position ?? 0).compareTo(b.position ?? 0)),
+                  state: state,
+                  notifier: notifier,
+                  isViewer: isViewer,
+                  isCard: false,
+                  cardId: null,
+                  emptyText: l10n.customFieldsBoardEmpty,
+                  l10n: l10n,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
   }
 }
 
@@ -292,8 +309,9 @@ class _GroupList extends StatelessWidget {
             child: InlineAddField(
               label: l10n.customFieldsAddGroup,
               maxLength: _kNameMaxLength,
-              onSubmit: (name) => guardMutation(
+              onSubmit: (name) => _guardCfMutation(
                 context,
+                l10n,
                 isCard
                     ? notifier.createCardCustomFieldGroup(cardId!, name)
                     : notifier.createBoardCustomFieldGroup(name),
@@ -339,7 +357,8 @@ class _GroupRow extends StatelessWidget {
       initialValue: group.name,
     );
     if (name == null || !context.mounted) return;
-    guardMutation(context, notifier.renameCustomFieldGroup(group.id, name));
+    _guardCfMutation(
+        context, l10n, notifier.renameCustomFieldGroup(group.id, name));
   }
 
   Future<void> _delete(BuildContext context) async {
@@ -363,7 +382,8 @@ class _GroupRow extends StatelessWidget {
           : l10n.actionDelete,
     );
     if (!confirmed || !context.mounted) return;
-    guardMutation(context, notifier.deleteCustomFieldGroup(group.id));
+    _guardCfMutation(
+        context, l10n, notifier.deleteCustomFieldGroup(group.id));
   }
 
   @override
@@ -399,25 +419,37 @@ class _GroupRow extends StatelessWidget {
                       case 'rename':
                         await _rename(context);
                       case 'up':
-                        guardMutation(context,
-                            notifier.moveCustomFieldGroupUp(group.id));
-                        SemanticsService.sendAnnouncement(
-                            View.of(context),
-                            l10n.customFieldsMovedToPosition(
-                                _displayName,
-                                groupIndex,
-                                groupCount),
-                            TextDirection.ltr);
+                        try {
+                          await notifier.moveCustomFieldGroupUp(group.id);
+                        } catch (e) {
+                          if (context.mounted) showApiError(context, e);
+                          return;
+                        }
+                        if (context.mounted) {
+                          SemanticsService.sendAnnouncement(
+                              View.of(context),
+                              l10n.customFieldsMovedToPosition(
+                                  _displayName,
+                                  groupIndex,
+                                  groupCount),
+                              TextDirection.ltr);
+                        }
                       case 'down':
-                        guardMutation(context,
-                            notifier.moveCustomFieldGroupDown(group.id));
-                        SemanticsService.sendAnnouncement(
-                            View.of(context),
-                            l10n.customFieldsMovedToPosition(
-                                _displayName,
-                                groupIndex + 2,
-                                groupCount),
-                            TextDirection.ltr);
+                        try {
+                          await notifier.moveCustomFieldGroupDown(group.id);
+                        } catch (e) {
+                          if (context.mounted) showApiError(context, e);
+                          return;
+                        }
+                        if (context.mounted) {
+                          SemanticsService.sendAnnouncement(
+                              View.of(context),
+                              l10n.customFieldsMovedToPosition(
+                                  _displayName,
+                                  groupIndex + 2,
+                                  groupCount),
+                              TextDirection.ltr);
+                        }
                       case 'delete':
                         await _delete(context);
                     }
@@ -442,8 +474,8 @@ class _GroupRow extends StatelessWidget {
                   ],
                 ),
         ),
-        if (_isInstantiated)
-          // Read-only: fields belong to the base group
+        if (_isInstantiated) ...[
+          // Template fields are displayed read-only; no edit menu or add row.
           Padding(
             padding: const EdgeInsets.only(left: 16, bottom: 4),
             child: Text(
@@ -451,8 +483,19 @@ class _GroupRow extends StatelessWidget {
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
-          )
-        else ...[
+          ),
+          for (int fi = 0; fi < fields.length; fi++)
+            _FieldRow(
+              field: fields[fi],
+              fieldIndex: fi,
+              fieldCount: fields.length,
+              notifier: notifier,
+              isViewer: true,
+              isCard: isCard,
+              groupName: _displayName,
+              l10n: l10n,
+            ),
+        ] else ...[
           for (int fi = 0; fi < fields.length; fi++)
             _FieldRow(
               field: fields[fi],
@@ -470,8 +513,8 @@ class _GroupRow extends StatelessWidget {
               child: InlineAddField(
                 label: l10n.customFieldsAddField,
                 maxLength: _kNameMaxLength,
-                onSubmit: (name) => guardMutation(
-                    context, notifier.createCustomField(group.id, name)),
+                onSubmit: (name) => _guardCfMutation(
+                    context, l10n, notifier.createCustomField(group.id, name)),
               ),
             ),
         ],
@@ -508,7 +551,8 @@ class _FieldRow extends StatelessWidget {
       initialValue: field.name,
     );
     if (name == null || !context.mounted) return;
-    guardMutation(context, notifier.renameCustomField(field.id, name));
+    _guardCfMutation(
+        context, l10n, notifier.renameCustomField(field.id, name));
   }
 
   Future<void> _delete(BuildContext context) async {
@@ -524,7 +568,7 @@ class _FieldRow extends StatelessWidget {
       confirmLabel: l10n.actionDelete,
     );
     if (!confirmed || !context.mounted) return;
-    guardMutation(context, notifier.deleteCustomField(field.id));
+    _guardCfMutation(context, l10n, notifier.deleteCustomField(field.id));
   }
 
   @override
@@ -556,27 +600,40 @@ class _FieldRow extends StatelessWidget {
                   case 'rename':
                     await _rename(context);
                   case 'front':
-                    guardMutation(
+                    _guardCfMutation(
                       context,
+                      l10n,
                       notifier.toggleCustomFieldFrontOfCard(
                           field.id, !showOnFront),
                     );
                   case 'up':
-                    guardMutation(
-                        context, notifier.moveCustomFieldUp(field.id));
-                    SemanticsService.sendAnnouncement(
-                        View.of(context),
-                        l10n.customFieldsMovedToPosition(
-                            field.name, fieldIndex, fieldCount),
-                        TextDirection.ltr);
+                    try {
+                      await notifier.moveCustomFieldUp(field.id);
+                    } catch (e) {
+                      if (context.mounted) showApiError(context, e);
+                      return;
+                    }
+                    if (context.mounted) {
+                      SemanticsService.sendAnnouncement(
+                          View.of(context),
+                          l10n.customFieldsMovedToPosition(
+                              field.name, fieldIndex, fieldCount),
+                          TextDirection.ltr);
+                    }
                   case 'down':
-                    guardMutation(
-                        context, notifier.moveCustomFieldDown(field.id));
-                    SemanticsService.sendAnnouncement(
-                        View.of(context),
-                        l10n.customFieldsMovedToPosition(
-                            field.name, fieldIndex + 2, fieldCount),
-                        TextDirection.ltr);
+                    try {
+                      await notifier.moveCustomFieldDown(field.id);
+                    } catch (e) {
+                      if (context.mounted) showApiError(context, e);
+                      return;
+                    }
+                    if (context.mounted) {
+                      SemanticsService.sendAnnouncement(
+                          View.of(context),
+                          l10n.customFieldsMovedToPosition(
+                              field.name, fieldIndex + 2, fieldCount),
+                          TextDirection.ltr);
+                    }
                   case 'delete':
                     await _delete(context);
                 }
