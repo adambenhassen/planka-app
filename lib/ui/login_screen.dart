@@ -123,7 +123,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final pendingToken = _pendingToken;
     final serverUrl = _pendingServerUrl;
     if (api == null || pendingToken == null || serverUrl == null) return;
-    final epoch = _pendingEpoch;
+    var epoch = _pendingEpoch;
     setState(() {
       _loading = true;
       _message = null;
@@ -136,6 +136,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Spent: drop it before signIn can persist anything, then finish exactly
       // as a password-only login does.
       _clearPending();
+      // Re-sample: that teardown was ours, not a cancel. Without this the
+      // generic catch below reads its own bump as "the step went away" and
+      // swallows anything signIn throws — a spent code, back on the
+      // credentials screen, and no word of why.
+      epoch = _pendingEpoch;
       _codeCtrl.clear();
       await ref.read(currentAccountProvider.notifier).signIn(api, serverUrl);
       if (mounted) context.go('/projects');

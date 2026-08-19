@@ -48,11 +48,18 @@ class TotpApi extends PlankaApi {
     return token!;
   }
 
+  /// Fails the profile fetch that `signIn` makes after a code is accepted —
+  /// the stand-in for anything that can throw between a spent code and the
+  /// projects screen (a 500, or a keychain write the store rejects).
+  bool failProfile = false;
+
   @override
-  Future<Envelope> get(String path, {Map<String, dynamic>? query}) async =>
-      Envelope.parse({
-        'item': {'id': 'u1', 'name': 'Demo', 'username': 'demo'}
-      });
+  Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
+    if (failProfile) throw ApiException(500, 'Profile fetch failed');
+    return Envelope.parse({
+      'item': {'id': 'u1', 'name': 'Demo', 'username': 'demo'}
+    });
+  }
 }
 
 class MemStorage implements SecureKeyValueStore {
@@ -348,6 +355,20 @@ void main() {
     expect(fieldTexts(tester), ['http://x', 'demo@d.d', 'newpw']);
     expect(find.text('Sign-in timed out. Enter your password again.'),
         findsNothing);
+  });
+
+  testWidgets('a failure after a valid code is still reported', (tester) async {
+    await reachCodeStep(tester, ['realtok']);
+    api.failProfile = true;
+    await submitCode(tester, '123456');
+
+    // The code is spent and the user is back on credentials, so being told
+    // nothing is the worst outcome. This is the one branch reachable after
+    // our own _clearPending(), which is what made it easy to suppress.
+    expect(find.text('Profile fetch failed'), findsOneWidget);
+    expect(find.text('PROJECTS'), findsNothing);
+    expect(storage.data['accounts'], isNull);
+    await tester.pumpAndSettle(const Duration(seconds: 5));
   });
 
   testWidgets('a cancelled step raises no error snackbar afterwards',
