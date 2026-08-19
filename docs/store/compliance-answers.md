@@ -19,17 +19,30 @@ data reaches the user's own server and never the developer changes the
   none is processed ephemerally. *Required* means the app does not work without
   it; everything reached only by using a particular feature is *optional*,
   because a read-only user never transmits it.
-  - *Personal info → Email address* — **required**. Sent to `POST
-    /access-tokens` at sign-in, and nothing in the app works before that.
-  - *Personal info → User IDs* — **required**. Carried by every authenticated
-    request once signed in.
+  - *Personal info → Email address* — **required**. The email half of the login
+    body's `emailOrUsername`, sent to `POST /access-tokens`. Nothing in the app
+    works before sign-in. See the note below on why both this and User IDs are
+    required when one field carries either.
+  - *Personal info → User IDs* — **required**. The username half of the login
+    body's `emailOrUsername` is a User ID under Play's taxonomy, and it is sent
+    at sign-in. Not the account id: that arrives from `GET /users/me`, is kept
+    on the device, and leaves it only on the optional paths listed under Name —
+    ordinary requests carry a bearer token, not an id.
   - *Personal info → Name* — **optional**. Not sent at sign-in; the login
     request is `emailOrUsername` and password only. A name leaves the device
     only when the user edits their profile (`PATCH /users/:id`) or an admin
     creates a user (`POST /users`).
-  - *Photos and videos* — **optional**. Image attachments on a card, and the
-    profile avatar (`POST /users/:id/avatar`).
-  - *Files and docs* — **optional**. Non-image attachments on a card.
+  - *Photos and videos* — **optional**. Image attachments on a card, the
+    profile avatar (`POST /users/:id/avatar`) and the project background.
+    Declared as a first-class type by intent, not because anything restricts
+    the file type: the avatar and background endpoints exist to receive images,
+    and image attachments get cover and thumbnail handling the other types do
+    not.
+  - *Files and docs* — **optional**. Attachments on a card, and anything else
+    the user picks. None of the three `openFile()` call sites — card
+    attachment, avatar, project background — passes `acceptedTypeGroups`, so
+    any file type at all can be sent through them. Whatever the file is, it
+    goes up as a file and is covered here.
   - *Messages → Other in-app messages* — **optional**. Card comments.
   - *App activity → Other user-generated content* — **optional**. The free-form
     text the app sends that is neither a comment nor an attachment: card names
@@ -37,11 +50,21 @@ data reaches the user's own server and never the developer changes the
     names, label names.
   - *App activity → Other actions* — **optional**. The edit actions themselves
     — moving, duplicating, archiving, assigning.
+  Email address and User IDs are both required even though a single sign-in
+  field carries one or the other, so exactly one of the two goes up at any given
+  sign-in and the app cannot know which in advance. Declaring both is the
+  conservative direction, and it is deliberate: making either one conditional
+  would be arguable on the facts and wrong in practice, because a form answer
+  that needs a paragraph to defend is one somebody later simplifies incorrectly.
+
   Checked and deliberately **not** declared, because the app transmits none of
-  them: location, contacts, calendar, device or other IDs, installed apps,
-  audio, web browsing history, and app info and performance (there is no crash
-  or diagnostics reporting). `package_info_plus` reads the local install source
-  and never sends it.
+  them: location, contacts, calendar, device or other IDs, installed apps, web
+  browsing history, and app info and performance (there is no crash or
+  diagnostics reporting). `package_info_plus` reads the local install source and
+  never sends it. Audio is not on this list: nothing in the app records audio
+  and there is no microphone use, but since no picker restricts the file type,
+  an audio file the user chooses is transmitted as a file and is covered by
+  *Files and docs*.
 - **Is all of the user data collected by your app encrypted in transit?** No.
   Explanation for the form: the app connects only to a server address the user
   supplies, and a self-hosted Planka on a local network commonly has no TLS
