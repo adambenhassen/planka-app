@@ -99,6 +99,24 @@ class PlankaRepo {
   Future<Envelope> removeCardMember(String cardId, String userId) =>
       api.delete('/cards/$cardId/card-memberships/userId:$userId');
 
+  /// A card's value for one custom field is addressed by the (group, field)
+  /// pair rather than by an id of its own — it may not exist yet.
+  String _customFieldValuePath(String cardId, String groupId, String fieldId) =>
+      '/cards/$cardId/custom-field-values'
+      '/customFieldGroupId:$groupId:customFieldId:$fieldId';
+
+  /// Creates or updates the value — one endpoint for both. The server stores no
+  /// empty value, so clearing one goes through [deleteCustomFieldValue].
+  Future<Envelope> setCustomFieldValue(String cardId,
+          {required String groupId,
+          required String fieldId,
+          required String content}) =>
+      api.patch(
+          _customFieldValuePath(cardId, groupId, fieldId), {'content': content});
+  Future<Envelope> deleteCustomFieldValue(String cardId,
+          {required String groupId, required String fieldId}) =>
+      api.delete(_customFieldValuePath(cardId, groupId, fieldId));
+
   Future<Envelope> createTaskList(String cardId,
           {required String name, required double position}) =>
       api.post('/cards/$cardId/task-lists', {'name': name, 'position': position});

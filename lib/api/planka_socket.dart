@@ -21,6 +21,11 @@ const kPlankaSocketEvents = [
   'boardMembershipCreate', 'boardMembershipUpdate', 'boardMembershipDelete',
   'actionCreate',
   'userUpdate',
+  'customFieldGroupCreate', 'customFieldGroupUpdate', 'customFieldGroupDelete',
+  'customFieldCreate', 'customFieldUpdate', 'customFieldDelete',
+  // No create event: one endpoint creates and updates a value, and the server
+  // broadcasts customFieldValueUpdate for both.
+  'customFieldValueUpdate', 'customFieldValueDelete',
 ];
 
 class SocketEvent {

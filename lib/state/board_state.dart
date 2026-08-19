@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -180,13 +182,26 @@ class BoardState {
     );
   }
 
+  /// True while some group was instantiated from a base group this state holds
+  /// no template for — its name and fields still have to come from the project.
+  bool get needsBaseCustomFields => customFieldGroups.any((g) =>
+      g.baseCustomFieldGroupId != null &&
+      !baseCustomFieldGroups.any((b) => b.id == g.baseCustomFieldGroupId));
+
   /// Folds a project response in, supplying what the board response omits for
   /// groups instantiated from a base group: the base groups themselves (for
-  /// the display name) and their fields.
-  BoardState withBaseCustomFields(Envelope projectEnv) => copyWith(
-        customFields: [...customFields, ...projectEnv.included.customFields],
-        baseCustomFieldGroups: projectEnv.included.baseCustomFieldGroups,
-      );
+  /// the display name) and their fields. Idempotent — a group arriving over the
+  /// socket makes this run again on a state that already holds base fields.
+  BoardState withBaseCustomFields(Envelope projectEnv) {
+    var fields = customFields;
+    for (final f in projectEnv.included.customFields) {
+      fields = _upsert(fields, f, (x) => x.id);
+    }
+    return copyWith(
+      customFields: fields,
+      baseCustomFieldGroups: projectEnv.included.baseCustomFieldGroups,
+    );
+  }
 
   BoardState copyWith({
     PlankaBoard? board,
@@ -241,6 +256,31 @@ List<T> _upsert<T>(List<T> list, T item, String Function(T) idOf) {
   next[i] = item;
   return next;
 }
+
+/// Replaces the row holding the same card's value for the same field, matched
+/// on the (card, group, field) key the server addresses a value by rather than
+/// on its id — an optimistic write holds a placeholder id until the server
+/// answers, and the socket echo of that same write carries the real one.
+List<PlankaCustomFieldValue> upsertCustomFieldValue(
+    List<PlankaCustomFieldValue> list, PlankaCustomFieldValue value) {
+  final i = list.indexWhere((v) =>
+      v.id == value.id ||
+      (v.cardId == value.cardId &&
+          v.customFieldGroupId == value.customFieldGroupId &&
+          v.customFieldId == value.customFieldId));
+  if (i < 0) return [...list, value];
+  final next = [...list];
+  next[i] = value;
+  return next;
+}
+
+/// Merges a socket payload into the row it names, or parses it whole when that
+/// row is unknown. Repositioning a group or field broadcasts `{id, position}`
+/// for every sibling it shifted, so a partial payload must not blank the rest.
+T _mergeById<T>(T? existing, Map<String, dynamic> item,
+        Map<String, dynamic> Function(T) toJson,
+        T Function(Map<String, dynamic>) fromJson) =>
+    fromJson(existing == null ? item : {...toJson(existing), ...item});
 
 /// Fold one socket event into board state. Pure; exported for tests.
 BoardState applyEvent(BoardState s, SocketEvent event) {
@@ -344,6 +384,55 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
     case 'userUpdate':
       return s.copyWith(
           users: _upsert(s.users, PlankaUser.fromJson(item), (u) => u.id));
+    case 'customFieldGroupCreate' || 'customFieldGroupUpdate':
+      if (id == null) return s;
+      final group = _mergeById(
+          s.customFieldGroups.where((g) => g.id == id).firstOrNull,
+          item,
+          (PlankaCustomFieldGroup g) => g.toJson(),
+          PlankaCustomFieldGroup.fromJson);
+      return s.copyWith(
+          customFieldGroups: _upsert(s.customFieldGroups, group, (g) => g.id));
+    case 'customFieldGroupDelete':
+      return s.copyWith(
+        customFieldGroups:
+            s.customFieldGroups.where((g) => g.id != id).toList(),
+        customFields:
+            s.customFields.where((f) => f.customFieldGroupId != id).toList(),
+        customFieldValues: s.customFieldValues
+            .where((v) => v.customFieldGroupId != id)
+            .toList(),
+      );
+    case 'customFieldCreate' || 'customFieldUpdate':
+      if (id == null) return s;
+      final field = _mergeById(
+          s.customFields.where((f) => f.id == id).firstOrNull,
+          item,
+          (PlankaCustomField f) => f.toJson(),
+          PlankaCustomField.fromJson);
+      return s.copyWith(
+          customFields: _upsert(s.customFields, field, (f) => f.id));
+    case 'customFieldDelete':
+      return s.copyWith(
+        customFields: s.customFields.where((f) => f.id != id).toList(),
+        customFieldValues:
+            s.customFieldValues.where((v) => v.customFieldId != id).toList(),
+      );
+    case 'customFieldValueUpdate':
+      return s.copyWith(
+          customFieldValues: upsertCustomFieldValue(
+              s.customFieldValues, PlankaCustomFieldValue.fromJson(item)));
+    case 'customFieldValueDelete':
+      // Matched on the key as well as the id: a value the app created moments
+      // ago may still be held under its placeholder id.
+      return s.copyWith(
+          customFieldValues: s.customFieldValues
+              .where((v) =>
+                  v.id != id &&
+                  !(v.cardId == item['cardId'] &&
+                      v.customFieldGroupId == item['customFieldGroupId'] &&
+                      v.customFieldId == item['customFieldId']))
+              .toList());
     default:
       return s;
   }
@@ -392,15 +481,18 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   /// and fields from that template, which the board response omits — so fetch
   /// the project, but only for a board that actually has such a group.
   Future<BoardState> _withBaseCustomFields(BoardState s) async {
-    if (!s.customFieldGroups.any((g) => g.baseCustomFieldGroupId != null)) {
-      return s;
-    }
-    final account = ref.read(currentAccountProvider)!;
-    final projectId = s.board.projectId;
+    if (!s.needsBaseCustomFields) return s;
+    final env = await _projectEnvelope(s.board.projectId);
+    return env == null ? s : s.withBaseCustomFields(env);
+  }
+
+  /// The project response, or null when it cannot be read.
+  Future<Envelope?> _projectEnvelope(String projectId) async {
+    final account = ref.read(currentAccountProvider);
+    if (account == null) return null;
     try {
-      final env = await ref.read(envelopeCacheProvider).fetchOrCached(
+      return await ref.read(envelopeCacheProvider).fetchOrCached(
           '${account.id}-project-$projectId', () => _repo.project(projectId));
-      return s.withBaseCustomFields(env);
     } on ApiException catch (e) {
       // Reachable offline on the first open after an upgrade: the board
       // envelope is cached, the project one never was. The board still loads;
@@ -409,7 +501,31 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       // untitled empty block. Log it — otherwise "my base group shows nothing"
       // arrives with nothing to debug from.
       debugPrint('board $boardId: base custom fields unavailable: $e');
-      return s;
+      return null;
+    }
+  }
+
+  /// Holds the fetch below to one at a time, however many events arrive while
+  /// it is in flight — a group create is usually followed by its fields.
+  bool _fillingBaseCustomFields = false;
+
+  /// Same fetch as [_withBaseCustomFields], for a group instantiated while the
+  /// board is open — it arrives over the socket with neither its name nor its
+  /// fields. Folded into whatever state is current when the project answers, so
+  /// events landing meanwhile are not overwritten.
+  Future<void> _fillBaseCustomFields() async {
+    if (_fillingBaseCustomFields) return;
+    _fillingBaseCustomFields = true;
+    try {
+      final projectId = state.value?.board.projectId;
+      if (projectId == null) return;
+      final env = await _projectEnvelope(projectId);
+      final cur = state.value;
+      if (env != null && cur != null) {
+        state = AsyncData(cur.withBaseCustomFields(env));
+      }
+    } finally {
+      _fillingBaseCustomFields = false;
     }
   }
 
@@ -427,7 +543,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     // ponytail: a subscribe-ack failure without a disconnect leaves realtime
     // silently stale until the board is reopened; add a "live updates
     // unavailable" banner state if that proves user-visible.
-    socket.events.listen(_onEvent,
+    socket.events.listen(applySocketEvent,
         onError: (Object e) => debugPrint('board socket error: $e'));
     socket.connected.listen((c) {
       // On reconnect the socket re-subscribes itself; refetch to fill the gap.
@@ -438,7 +554,9 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     return loaded;
   }
 
-  void _onEvent(SocketEvent event) {
+  /// Applies one server-pushed event to the board. Public so tests can drive
+  /// realtime without a server behind the socket.
+  void applySocketEvent(SocketEvent event) {
     // Activity lives in its own provider; a new action just invalidates the
     // affected card's feed so an open sheet refreshes live.
     if (event.name == 'actionCreate') {
@@ -446,7 +564,12 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       if (cardId != null) ref.invalidate(cardActionsProvider(cardId));
     }
     final s = state.value;
-    if (s != null) state = AsyncData(applyEvent(s, event));
+    if (s == null) return;
+    final next = applyEvent(s, event);
+    state = AsyncData(next);
+    // A group instantiated from a base group is pushed without the name and
+    // fields it borrows, so it needs the project the board response omits.
+    if (next.needsBaseCustomFields) unawaited(_fillBaseCustomFields());
   }
 
   Stream<bool>? get socketConnected => _socket?.connected;
@@ -685,6 +808,67 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   Future<void> clearStopwatch(String cardId) =>
       _patchCard(cardId, {'stopwatch': null});
+
+  /// Sets this card's value for a (group, field) pair — the server addresses a
+  /// value by that pair and has one endpoint for creating and updating it.
+  /// [content] is trimmed, and blank content clears the value: the server
+  /// stores no empty string, so an unset field and a cleared one are the same
+  /// thing. Optimistic, so a rejected write heals back to the server's value.
+  Future<void> setCustomFieldValue(String cardId,
+      {required String groupId,
+      required String fieldId,
+      required String content}) async {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) {
+      return clearCustomFieldValue(cardId, groupId: groupId, fieldId: fieldId);
+    }
+    final s = state.value;
+    if (s == null) return;
+    final existing = s.customFieldValueOf(cardId, groupId, fieldId);
+    final optimistic = PlankaCustomFieldValue(
+      // No id to use when the value is new; the server's row replaces this one
+      // on response, matched on the (card, group, field) key.
+      id: existing?.id ?? 'tmp-$cardId-$groupId-$fieldId',
+      cardId: cardId,
+      customFieldGroupId: groupId,
+      customFieldId: fieldId,
+      content: trimmed,
+    );
+    await _optimistic(
+      s.copyWith(
+          customFieldValues:
+              upsertCustomFieldValue(s.customFieldValues, optimistic)),
+      () async {
+        final env = await _repo.setCustomFieldValue(cardId,
+            groupId: groupId, fieldId: fieldId, content: trimmed);
+        final cur = state.value;
+        if (cur != null) {
+          state = AsyncData(cur.copyWith(
+              customFieldValues: upsertCustomFieldValue(cur.customFieldValues,
+                  PlankaCustomFieldValue.fromJson(env.item))));
+        }
+        return env;
+      },
+    );
+  }
+
+  /// Removes the card's value for a (group, field) pair, leaving the field
+  /// exactly as one that was never set.
+  Future<void> clearCustomFieldValue(String cardId,
+      {required String groupId, required String fieldId}) async {
+    final s = state.value;
+    final existing = s?.customFieldValueOf(cardId, groupId, fieldId);
+    // Nothing to clear: the server answers a delete of a value it does not
+    // hold with a 404, which would surface to the user as a failed edit.
+    if (s == null || existing == null) return;
+    await _optimistic(
+      s.copyWith(
+          customFieldValues:
+              s.customFieldValues.where((v) => v.id != existing.id).toList()),
+      () => _repo.deleteCustomFieldValue(cardId,
+          groupId: groupId, fieldId: fieldId),
+    );
+  }
 
   Future<void> renameBoard(String name) async {
     final s = state.value;

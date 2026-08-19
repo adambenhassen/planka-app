@@ -255,6 +255,12 @@ class CardSheet extends ConsumerWidget {
                 for (final field in state.customFieldsOf(group))
                   (field, state.customFieldValueOf(cardId, group.id, field.id)),
               ],
+              onChanged: (field, content) => guardMutation(
+                  context,
+                  notifier.setCustomFieldValue(cardId,
+                      groupId: group.id,
+                      fieldId: field.id,
+                      content: content)),
             ),
           ),
         section(

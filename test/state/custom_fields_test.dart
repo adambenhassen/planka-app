@@ -116,6 +116,18 @@ void main() {
         'based');
   });
 
+  test('folding the project in twice does not duplicate its fields', () {
+    // A group instantiated while the board is open sends the app back to the
+    // project, on a state that already holds base fields.
+    final s = _seed()
+        .withBaseCustomFields(Envelope.parse(_json('project_show_custom_fields')));
+    final based =
+        s.customFieldGroups.firstWhere((g) => g.baseCustomFieldGroupId != null);
+
+    expect(s.customFieldsOf(based).map((f) => f.name), ['BF']);
+    expect(s.needsBaseCustomFields, isFalse);
+  });
+
   test('reads a value by (group, field), and null when none is set', () {
     final s = _seed();
     final cardId = _cardId();
