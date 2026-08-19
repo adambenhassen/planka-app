@@ -37,7 +37,9 @@ data reaches the user's own server and never the developer changes the
 Do not soften the two answers above into "No collection" or "encrypted in
 transit: Yes" because the developer receives nothing — that reasoning was
 tried and is wrong. Nextcloud, the closest precedent, declares
-collected-not-shared on its own Play listing.
+collected-not-shared on its own Play listing. Apple's answer is "Data Not
+Collected" and that is deliberate, not a contradiction to reconcile: see the
+App privacy section below for why the two tests differ.
 
 - **Ads:** none. **Content rating questionnaire:** no objectionable content;
   expect Everyone / PEGI 3. **Target audience:** 18+, not directed at children.
@@ -45,13 +47,22 @@ collected-not-shared on its own Play listing.
 
 ## Apple — App privacy ("nutrition labels")
 
-- **Data collection:** currently drafted as "Data Not Collected" for every
-  category. **Unresolved — do not submit on this answer without MAIN-478.**
-  Apple's definition turns on data the developer or its partners access or
-  store, which is a different test from Google's "transmitted off the device",
-  so the two forms can legitimately disagree. But this file already stated one
-  Play answer confidently and wrongly, so the same reasoning does not get a
-  second pass unreviewed.
+- **Data collection: "Data Not Collected" for every category.** Decided, not a
+  draft. Apple's test is data the developer or its partners access or store,
+  which is a different question from Google's "transmitted off the device" —
+  the two forms turn on different tests and disagreeing here is correct, not an
+  inconsistency. There is no developer-operated service, no analytics or
+  crash-reporting SDK, and on iOS the only network destination is the address
+  the user types: the GitHub update check is Android-only and returns at the
+  platform check in `updateCheckProvider` before any request is made
+  (`lib/update/update_service.dart`). Nothing is accessible to the developer
+  for any period, which is the whole of Apple's question. MAIN-478 confirms
+  this answer; it does not decide it.
+- **Do not "harmonise" this to match the Play declaration.** Making the two
+  forms agree by treating one store's test as the other's is exactly the
+  mistake this file already made once, in the other direction — see the note
+  under the Data Safety form against re-deriving the "No" there. Both answers
+  are right because the questions differ.
 - **Third-party SDKs:** none that collect data. All dependencies
   (`dio`, `socket_io_client`, `flutter_secure_storage`, `go_router`,
   `cached_network_image`, `url_launcher`, `path_provider`, `open_filex`,
