@@ -334,6 +334,24 @@ void main() {
     expect((api.writes.single.$3 as Map)['position'], 8192.0);
   });
 
+  test('moveCustomFieldDown on the first field PATCHes the midpoint position',
+      () async {
+    final (container, notifier, api) = await _boot();
+    addTearDown(container.dispose);
+
+    // Fields in group BG, sorted by position: F(16384), Front(32768), Empty(49152)
+    // Moving F down: before=Front(32768), after=Empty(49152) → 40960
+    // Corrupting peers[idx+1]/peers[idx+2] to peers[idx+1]/peers[idx+1] makes
+    // moveCustomFieldDown return Front's own position — a silent no-op — and
+    // leaves this test failing while all others stay green.
+    final fId = _fieldIdOf('F');
+    await notifier.moveCustomFieldDown(fId);
+
+    expect(api.writes.single.$1, 'PATCH');
+    expect(api.writes.single.$2, '/custom-fields/$fId');
+    expect((api.writes.single.$3 as Map)['position'], 40960.0);
+  });
+
   test('a group instantiated elsewhere is named from a single project read',
       () async {
     // A board that carried no custom fields at all, so nothing about the
