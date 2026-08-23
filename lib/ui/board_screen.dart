@@ -13,6 +13,7 @@ import 'card_sheet.dart';
 import 'widgets/async_retry.dart';
 import 'widgets/board_background.dart';
 import 'widgets/archive_trash_dialog.dart';
+import 'custom_fields_manager_sheet.dart';
 import 'widgets/board_members_dialog.dart';
 import 'card_tile.dart';
 import 'widgets/confirm_dialog.dart';
@@ -102,6 +103,8 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
             title: l10n.boardRenameTitle, initialValue: state.board.name);
         if (!mounted || name == null || name == state.board.name) return;
         guardMutation(context, notifier.renameBoard(name));
+      case 'customFields':
+        await showCustomFieldsManagerSheet(context, boardId: boardId);
       case 'members':
         await showBoardMembersDialog(context, boardId);
       case 'archive':
@@ -161,6 +164,9 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
                     value: 'rename', child: Text(l10n.boardMenuRename)),
                 PopupMenuItem(
                     value: 'members', child: Text(l10n.sectionMembers)),
+                PopupMenuItem(
+                    value: 'customFields',
+                    child: Text(l10n.customFieldsTitle)),
                 PopupMenuItem(
                     value: 'archive', child: Text(l10n.archiveTrashTitle)),
                 PopupMenuItem(

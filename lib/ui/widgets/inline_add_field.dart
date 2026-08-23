@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// A compact "+ [label]" button that swaps into an autofocused text field and
 /// submits the trimmed text ([onSubmit]); an empty value just cancels. When
 /// [columnWidth] is set it lays out as a fixed-width board column, otherwise it
-/// fills its parent. Error handling for [onSubmit] belongs to the caller.
+/// fills its parent. [maxLength] caps the input (no counter shown). Error
+/// handling for [onSubmit] belongs to the caller.
 class InlineAddField extends StatefulWidget {
   const InlineAddField({
     super.key,
@@ -11,12 +13,14 @@ class InlineAddField extends StatefulWidget {
     required this.onSubmit,
     String? hintText,
     this.columnWidth,
+    this.maxLength,
   }) : hintText = hintText ?? label;
 
   final String label;
   final String hintText;
   final ValueChanged<String> onSubmit;
   final double? columnWidth;
+  final int? maxLength;
 
   @override
   State<InlineAddField> createState() => _InlineAddFieldState();
@@ -48,6 +52,9 @@ class _InlineAddFieldState extends State<InlineAddField> {
             child: TextField(
               controller: _ctrl,
               autofocus: true,
+              inputFormatters: widget.maxLength == null
+                  ? null
+                  : [LengthLimitingTextInputFormatter(widget.maxLength)],
               decoration: InputDecoration(
                 hintText: widget.hintText,
                 border: const OutlineInputBorder(),

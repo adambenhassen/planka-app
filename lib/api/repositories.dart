@@ -99,6 +99,28 @@ class PlankaRepo {
   Future<Envelope> removeCardMember(String cardId, String userId) =>
       api.delete('/cards/$cardId/card-memberships/userId:$userId');
 
+  Future<Envelope> createBoardCustomFieldGroup(String boardId,
+          {required String name, required double position}) =>
+      api.post('/boards/$boardId/custom-field-groups',
+          {'name': name, 'position': position});
+  Future<Envelope> createCardCustomFieldGroup(String cardId,
+          {required String name, required double position}) =>
+      api.post('/cards/$cardId/custom-field-groups',
+          {'name': name, 'position': position});
+  Future<Envelope> updateCustomFieldGroup(String id, Map<String, dynamic> patch) =>
+      api.patch('/custom-field-groups/$id', patch);
+  Future<Envelope> deleteCustomFieldGroup(String id) =>
+      api.delete('/custom-field-groups/$id');
+
+  Future<Envelope> createCustomField(String groupId,
+          {required String name, required double position}) =>
+      api.post('/custom-field-groups/$groupId/custom-fields',
+          {'name': name, 'position': position});
+  Future<Envelope> updateCustomField(String id, Map<String, dynamic> patch) =>
+      api.patch('/custom-fields/$id', patch);
+  Future<Envelope> deleteCustomField(String id) =>
+      api.delete('/custom-fields/$id');
+
   /// A card's value for one custom field is addressed by the (group, field)
   /// pair rather than by an id of its own — it may not exist yet.
   String _customFieldValuePath(String cardId, String groupId, String fieldId) =>
