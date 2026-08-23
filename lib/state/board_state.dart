@@ -193,8 +193,14 @@ class BoardState {
   /// groups instantiated from a base group: the base groups themselves (for
   /// the display name) and their fields. Idempotent — a group arriving over the
   /// socket makes this run again on a state that already holds base fields.
+  /// The response is authoritative for what its base groups own: a field they
+  /// dropped while this socket was down is removed here, which an upsert alone
+  /// never does. Fields belonging to plain board or card groups are untouched.
   BoardState withBaseCustomFields(Envelope projectEnv) {
-    var fields = customFields;
+    final owned = projectEnv.included.customFields.map((f) => f.id).toSet();
+    var fields = customFields
+        .where((f) => f.baseCustomFieldGroupId == null || owned.contains(f.id))
+        .toList();
     for (final f in projectEnv.included.customFields) {
       fields = _upsert(fields, f, (x) => x.id);
     }
@@ -597,25 +603,65 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   }
 
   /// Folds the project-level custom field events off the shared user room into
-  /// this board, ignoring the rest of what that room carries. Called from
-  /// [build]; takes the stream as an argument so a test can drive it without a
-  /// live socket.
-  void listenToUserRoom(Stream<SocketEvent> events) {
-    final sub = events
+  /// this board, ignoring the rest of what that room carries. The room's socket
+  /// is already connected while the board builds, so changes landing during
+  /// [load] are buffered and folded into the snapshot by calling the returned
+  /// function with it; from then on events apply as they arrive. Folding into
+  /// the snapshot rather than replaying after it keeps an event that preceded
+  /// the fetch from resurrecting data the fetch saw past. Takes the stream as
+  /// an argument so a test can drive it without a live socket.
+  BoardState Function(BoardState snapshot) listenToUserRoom(
+      Stream<SocketEvent> events) {
+    final pending = <SocketEvent>[];
+    var live = false;
+    late final StreamSubscription<SocketEvent> sub;
+    sub = events
         .where((e) => kBoardUserRoomEvents.contains(e.name))
-        .listen(applySocketEvent,
+        .listen((e) => live ? applySocketEvent(e) : pending.add(e),
             onError: (Object e) => debugPrint('user room socket error: $e'));
     // The room outlives this board when another screen is watching it, so hand
     // the subscription back rather than relying on the socket being disposed.
     ref.onDispose(sub.cancel);
+    return (BoardState snapshot) {
+      live = true;
+      var s = snapshot;
+      for (final e in pending) {
+        s = applyEvent(s, e);
+      }
+      pending.clear();
+      // A template instantiated during the buffer needs the project fetch that
+      // [applySocketEvent] would have triggered.
+      if (s.needsBaseCustomFields) unawaited(_fillBaseCustomFields());
+      return s;
+    };
+  }
+
+  /// Watches the shared user room and returns the fold that turns the REST
+  /// snapshot into current state (see [listenToUserRoom]), plus a resync of
+  /// everything this board takes off that room whenever the room reconnects —
+  /// each event is sent once, to whoever is joined at that moment, so changes
+  /// emitted while the socket was down never arrive and only a refetch heals
+  /// them. Edges before the snapshot exists are covered by [load].
+  /// Protected so a test subclass can run the exact production wiring without
+  /// the board socket.
+  @protected
+  BoardState Function(BoardState snapshot) wireUserRoom() {
+    final userEvents = ref.watch(userEventsProvider);
+    final userConnected = ref.watch(userConnectedProvider);
+    final fold = listenToUserRoom(userEvents);
+    final connSub = userConnected.listen((c) {
+      if (c && state.value != null) unawaited(_fillBaseCustomFields());
+    });
+    ref.onDispose(connSub.cancel);
+    return fold;
   }
 
   @override
   Future<BoardState> build() async {
     final account = ref.read(currentAccountProvider)!;
-    // Watched before the first await: the shared room's lifecycle is this
-    // provider's, and an account switch rebuilds both together.
-    final userEvents = ref.watch(userEventsProvider);
+    // From here the room may deliver at any moment; buffer until the snapshot
+    // is folded (see [listenToUserRoom]).
+    final foldUserRoom = wireUserRoom();
     final loaded = await load();
     final socket = PlankaSocket(account.serverUrl, account.token);
     _socket = socket;
@@ -635,8 +681,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     });
     await socket.connect();
     await socket.subscribeBoard(boardId);
-    listenToUserRoom(userEvents);
-    return loaded;
+    return foldUserRoom(loaded);
   }
 
   /// Applies one server-pushed event to the board. Public so tests can drive

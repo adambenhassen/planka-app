@@ -137,20 +137,31 @@ class PlankaSocket {
 
   /// Issues one sails subscribe request. Does nothing while disconnected — the
   /// onConnect handler re-issues whatever was asked for.
+  ///
+  /// A rejected or timed-out ack leaves the room silently unjoined while the
+  /// transport stays up — no disconnect follows, so nothing re-issues the join
+  /// by itself. Retry with backoff before reporting failure on [events], so a
+  /// blip costs a second rather than the session's realtime.
   Future<void> _subscribe(String room, String url) async {
-    final socket = _socket;
-    if (socket == null || !socket.connected) return;
-    final ack = await socket
-        .emitWithAckAsync(
-          'get',
-          sailsRequestFrame(method: 'get', url: url, token: token),
-        )
-        .timeout(const Duration(seconds: 10),
-            onTimeout: () => {'statusCode': 'timeout'});
-    final status = ack is Map ? ack['statusCode'] : null;
-    if (status != 200) {
-      _events.addError(StateError('$room subscribe failed: $ack'));
+    Object? ack;
+    var delay = const Duration(seconds: 1);
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(delay);
+        delay *= 2;
+      }
+      final socket = _socket;
+      if (socket == null || !socket.connected) return;
+      ack = await socket
+          .emitWithAckAsync(
+            'get',
+            sailsRequestFrame(method: 'get', url: url, token: token),
+          )
+          .timeout(const Duration(seconds: 10),
+              onTimeout: () => {'statusCode': 'timeout'});
+      if (ack is Map && ack['statusCode'] == 200) return;
     }
+    _events.addError(StateError('$room subscribe failed: $ack'));
   }
 
   void dispose() {

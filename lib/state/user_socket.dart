@@ -33,3 +33,9 @@ final userSocketProvider = Provider<PlankaSocket?>((ref) {
 /// Events from the signed-in user's own room; empty while signed out.
 final userEventsProvider = Provider<Stream<SocketEvent>>(
     (ref) => ref.watch(userSocketProvider)?.events ?? const Stream.empty());
+
+/// Connection edges of that socket; empty while signed out. Nothing replays
+/// across a reconnect — the server sends each event once — so a rising edge
+/// means "whatever you took off this room may be stale, resync it".
+final userConnectedProvider = Provider<Stream<bool>>(
+    (ref) => ref.watch(userSocketProvider)?.connected ?? const Stream.empty());
