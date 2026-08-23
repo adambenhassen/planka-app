@@ -60,7 +60,14 @@ void _handleCfError(
 void _guardCfMutation(
     BuildContext context, AppLocalizations l10n, Future<void> future) {
   future.catchError((Object e) {
-    if (context.mounted) _handleCfError(context, l10n, e);
+    if (context.mounted) {
+      _handleCfError(context, l10n, e);
+    } else {
+      // The sheet is gone so the snackbar can't be shown, but the failure
+      // still happened. Log rather than swallow it silently.
+      debugPrint(
+          '_guardCfMutation: mutation failed after context unmounted: $e');
+    }
   });
 }
 
