@@ -194,10 +194,10 @@ class BoardState {
   /// the display name) and their fields. Idempotent — a group arriving over the
   /// socket makes this run again on a state that already holds base fields.
   /// The response is authoritative for everything the templates own: fields a
-  /// base group dropped while this socket was down are removed, and so are the
-  /// groups instantiated from a template it no longer holds — the server
-  /// cascaded those away, values under them included, exactly as the live
-  /// delete path does. Fields belonging to plain board or card groups, and the
+  /// base group dropped while this socket was down are removed — their stored
+  /// values with them, as the live delete path does — and so are the groups
+  /// instantiated from a template it no longer holds, which the server
+  /// cascaded away. Fields belonging to plain board or card groups, and the
   /// values under them, are untouched.
   BoardState withBaseCustomFields(Envelope projectEnv) {
     final bases = projectEnv.included.baseCustomFieldGroups;
@@ -209,6 +209,10 @@ class BoardState {
         .map((g) => g.id)
         .toSet();
     final owned = projectEnv.included.customFields.map((f) => f.id).toSet();
+    final droppedFields = customFields
+        .where((f) => f.baseCustomFieldGroupId != null && !owned.contains(f.id))
+        .map((f) => f.id)
+        .toSet();
     var fields = customFields
         .where((f) => f.baseCustomFieldGroupId == null || owned.contains(f.id))
         .toList();
@@ -221,7 +225,9 @@ class BoardState {
           .toList(),
       customFields: fields,
       customFieldValues: customFieldValues
-          .where((v) => !orphaned.contains(v.customFieldGroupId))
+          .where((v) =>
+              !orphaned.contains(v.customFieldGroupId) &&
+              !droppedFields.contains(v.customFieldId))
           .toList(),
       baseCustomFieldGroups: bases,
     );
@@ -581,8 +587,9 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     final account = ref.read(currentAccountProvider);
     if (account == null) return null;
     try {
-      return await ref.read(envelopeCacheProvider).fetchOrCached(
+      final env = await ref.read(envelopeCacheProvider).fetchOrCached(
           '${account.id}-project-$projectId', () => _repo.project(projectId));
+      return env;
     } on ApiException catch (e) {
       // Reachable offline on the first open after an upgrade: the board
       // envelope is cached, the project one never was. The board still loads;
@@ -595,15 +602,35 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     }
   }
 
+  /// Same fetch, but never answered from the offline cache. This is the
+  /// reconciliation path: the cache can predate a deletion made while our
+  /// socket was down, and treating it as authoritative would resurrect what
+  /// was deleted. A failure here leaves state as it stands — the next
+  /// reconnect edge or event retries.
+  Future<Envelope?> _freshProjectEnvelope(String projectId) async {
+    final account = ref.read(currentAccountProvider);
+    if (account == null) return null;
+    try {
+      final env = await _repo.project(projectId);
+      unawaited(
+          ref.read(envelopeCacheProvider).put('${account.id}-project-$projectId', env));
+      return env;
+    } on ApiException catch (e) {
+      debugPrint('board $boardId: base custom fields resync failed: $e');
+      return null;
+    }
+  }
+
   /// Holds the fetch below to one at a time, however many events arrive while
   /// it is in flight — a group create is usually followed by its fields.
   bool _fillingBaseCustomFields = false;
 
-  /// Bumped for every event applied off the user room. The reconciliation
-  /// fetch below compares counts across its await: an event landing mid-fetch
-  /// is newer than the response that just answered, and installing that
-  /// response would clobber or resurrect what the event changed — so it is
-  /// discarded and fetched again instead.
+  /// Bumped for every event off the user room that actually changed this
+  /// board's state — cross-project events pass through untouched and must not
+  /// count. The reconciliation fetch below compares counts across its await:
+  /// a state-changing event landing mid-fetch is newer than the response that
+  /// just answered, and installing that response would clobber or resurrect
+  /// what the event changed — so it is discarded and fetched again instead.
   int _userRoomEventsSeen = 0;
 
   /// Same fetch as [_withBaseCustomFields], for a group instantiated while the
@@ -619,7 +646,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
         final projectId = state.value?.board.projectId;
         if (projectId == null) return;
         final seenBeforeFetch = _userRoomEventsSeen;
-        final env = await _projectEnvelope(projectId);
+        final env = await _freshProjectEnvelope(projectId);
         final cur = state.value;
         if (env == null || cur == null) return;
         if (_userRoomEventsSeen != seenBeforeFetch) continue;
@@ -644,8 +671,13 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     final pending = <SocketEvent>[];
     var live = false;
     void apply(SocketEvent e) {
-      _userRoomEventsSeen++;
+      final before = state.value;
       applySocketEvent(e);
+      // Only an event that actually changed this board invalidates an
+      // in-flight reconciliation — the room carries every project the account
+      // can see, and a busy one must not starve this board's resync by
+      // discarding valid responses it had nothing to do with.
+      if (!identical(state.value, before)) _userRoomEventsSeen++;
     }
 
     late final StreamSubscription<SocketEvent> sub;
@@ -653,7 +685,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
         .where((e) => kBoardUserRoomEvents.contains(e.name))
         .listen((e) => live ? apply(e) : pending.add(e), onError: (Object e) {
       debugPrint('user room socket error: $e');
-      _recoverRealtime();
+      _recoverRealtime(userRoom: true);
     });
     // The room outlives this board when another screen is watching it, so hand
     // the subscription back rather than relying on the socket being disposed.
@@ -662,8 +694,9 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       live = true;
       var s = snapshot;
       for (final e in pending) {
-        _userRoomEventsSeen++;
+        final before = s;
         s = applyEvent(s, e);
+        if (!identical(s, before)) _userRoomEventsSeen++;
       }
       pending.clear();
       // A template instantiated during the buffer needs the project fetch that
@@ -717,8 +750,10 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   /// Realtime errors mean events are being missed while the transport may look
   /// healthy — a permanently refused subscribe leaves no disconnect to react
   /// to. Heal with a full refetch instead of trusting the log line alone,
-  /// coalesced so an error storm costs one reload.
-  void _recoverRealtime() {
+  /// coalesced so an error storm costs one reload — and re-issue the failed
+  /// join in the same stroke: data alone doesn't restore membership, and a
+  /// socket that stays unjoined keeps losing every later event.
+  void _recoverRealtime({bool userRoom = false}) {
     final now = DateTime.now();
     final last = _lastRealtimeRecovery;
     if (last != null && now.difference(last) < const Duration(seconds: 30)) {
@@ -726,6 +761,11 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     }
     _lastRealtimeRecovery = now;
     unawaited(_refetch());
+    if (userRoom) {
+      unawaited(ref.read(userSocketProvider)?.subscribeUser());
+    } else {
+      unawaited(_socket?.subscribeBoard(boardId));
+    }
   }
 
   @override

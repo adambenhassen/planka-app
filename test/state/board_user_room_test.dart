@@ -74,6 +74,9 @@ class _FakeApi extends PlankaApi {
   /// Holds every request while open, so events can land mid-load.
   Completer<void>? gate;
 
+  /// When set, project paths fail like an unreachable server.
+  bool projectError = false;
+
   int projectFetches = 0;
   int boardFetches = 0;
 
@@ -83,11 +86,12 @@ class _FakeApi extends PlankaApi {
     if (g != null && !g.isCompleted) await g.future;
     if (path.startsWith('/projects/')) {
       projectFetches++;
+      if (projectError) throw ApiException(503, 'resync target down');
       return Envelope.parse(
           projectOverride ?? _json('project_show_custom_fields'));
     }
     boardFetches++;
-    return Envelope.parse(_json('board_show_custom_fields')); 
+    return Envelope.parse(_json('board_show_custom_fields'));
   }
 }
 
@@ -213,8 +217,49 @@ void main() {
 
     final s = _stateOf(container);
     expect(s.customFields.map((f) => f.id), isNot(contains(_baseFieldId)));
+    // The value stored under the deleted field goes with it.
+    expect(s.customFieldValueOf(_cardId, _basedGroupId, _baseFieldId), isNull);
     // The group itself survives and still resolves its name from the template.
     expect(_groupNames(s), ['Base', 'BG', 'CG']);
+  });
+
+  test('a failed resync fetch leaves state as it stands and retries later',
+      () async {
+    // The offline cache predates the deletion; treating it as authoritative
+    // would resurrect what the server removed.
+    final api = _FakeApi();
+    final (container, _, connected) = await _boot(api);
+
+    api.projectError = true;
+    connected.add(true);
+    await pumpEventQueue();
+    expect(_stateOf(container).customFields.map((f) => f.id),
+        contains(_baseFieldId));
+
+    api.projectError = false;
+    api.projectOverride = _projectWithoutBaseField;
+    connected.add(true);
+    await pumpEventQueue();
+    expect(_stateOf(container).customFields.map((f) => f.id),
+        isNot(contains(_baseFieldId)));
+  });
+
+  test("another project's event does not starve an in-flight resync",
+      () async {
+    final api = _FakeApi();
+    final (container, room, connected) = await _boot(api);
+
+    api.gate = Completer<void>();
+    connected.add(true);
+    await pumpEventQueue();
+    // Names another project's template: this board ignores it, so the answer
+    // already in flight must still count as fresh and be installed.
+    await _push(room, 'baseCustomFieldGroupUpdate',
+        {'id': 'other-base', 'projectId': 'other-project', 'name': 'Theirs'});
+    api.gate!.complete();
+    await pumpEventQueue();
+
+    expect(api.projectFetches, 2); // load + resync, no discard-and-rerun
   });
 
   test('a base group deleted during the outage cascades on resync', () async {
