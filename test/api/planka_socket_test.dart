@@ -13,6 +13,13 @@ void main() {
     });
   });
 
+  test('sails frame for the user room subscribe', () {
+    final frame = sailsRequestFrame(
+        method: 'get', url: kUserSubscribeUrl, token: 'jwt');
+    expect(frame['url'], '/api/users/me?subscribe=true');
+    expect(frame['headers'], {'Authorization': 'Bearer jwt'});
+  });
+
   test('SocketEvent parses item payload into envelope', () {
     final e = SocketEvent.parse('cardUpdate', {
       'item': {'id': 'c1', 'position': 8192}
@@ -48,5 +55,16 @@ void main() {
     expect(kPlankaSocketEvents, contains('customFieldValueUpdate'));
     expect(kPlankaSocketEvents, contains('customFieldValueDelete'));
     expect(kPlankaSocketEvents, isNot(contains('customFieldValueCreate')));
+  });
+
+  test('event name list covers the project-level base group surface', () {
+    // Broadcast to the user's own room, not to the board room — a board built
+    // from a template hears about the template only there.
+    for (final suffix in ['Create', 'Update', 'Delete']) {
+      expect(kPlankaSocketEvents, contains('baseCustomFieldGroup$suffix'));
+    }
+    // Fields on a base group reuse the customField* names, so there is no
+    // baseCustomField* family of its own.
+    expect(kPlankaSocketEvents, isNot(contains('baseCustomFieldCreate')));
   });
 }

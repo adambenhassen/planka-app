@@ -11,6 +11,7 @@ import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
 import 'envelope_cache.dart';
 import 'positions.dart';
+import 'user_socket.dart';
 
 class BoardState {
   final PlankaBoard board;
@@ -282,6 +283,40 @@ T _mergeById<T>(T? existing, Map<String, dynamic> item,
         T Function(Map<String, dynamic>) fromJson) =>
     fromJson(existing == null ? item : {...toJson(existing), ...item});
 
+/// The events a board takes off the user's own room. Planka broadcasts changes
+/// to a project's base custom field groups — and to the fields on them — there
+/// rather than to the board room, so a board whose groups are instantiated from
+/// a template learns about them nowhere else. Everything else that room carries
+/// (notifications, the user list) belongs to whoever else listens to it.
+const kBoardUserRoomEvents = {
+  'baseCustomFieldGroupCreate',
+  'baseCustomFieldGroupUpdate',
+  'baseCustomFieldGroupDelete',
+  'customFieldCreate',
+  'customFieldUpdate',
+  'customFieldDelete',
+};
+
+/// Whether a base custom field group event names the project this board is in.
+/// The user room carries every project the account can see, so an event for
+/// another one must leave this board's state exactly as it was.
+bool _isThisProject(BoardState s, Map<String, dynamic> item) =>
+    item['projectId'] == null
+        ? s.baseCustomFieldGroups.any((b) => b.id == item['id'])
+        : item['projectId'] == s.board.projectId;
+
+/// Whether a custom field event is this board's. A field keyed to a board or
+/// card group came from the board room and always is; one keyed to a base group
+/// only if that template belongs to this project. A reposition carries neither
+/// key — just `{id, position}` — so there it comes down to already holding the
+/// field.
+bool _isThisBoardsField(BoardState s, Map<String, dynamic> item) {
+  final baseId = item['baseCustomFieldGroupId'] as String?;
+  if (baseId != null) return s.baseCustomFieldGroups.any((b) => b.id == baseId);
+  if (item['customFieldGroupId'] != null) return true;
+  return s.customFields.any((f) => f.id == item['id']);
+}
+
 /// Fold one socket event into board state. Pure; exported for tests.
 BoardState applyEvent(BoardState s, SocketEvent event) {
   final item = event.data.item;
@@ -404,7 +439,7 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
             .toList(),
       );
     case 'customFieldCreate' || 'customFieldUpdate':
-      if (id == null) return s;
+      if (id == null || !_isThisBoardsField(s, item)) return s;
       final field = _mergeById(
           s.customFields.where((f) => f.id == id).firstOrNull,
           item,
@@ -413,6 +448,7 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
       return s.copyWith(
           customFields: _upsert(s.customFields, field, (f) => f.id));
     case 'customFieldDelete':
+      if (!_isThisBoardsField(s, item)) return s;
       return s.copyWith(
         customFields: s.customFields.where((f) => f.id != id).toList(),
         customFieldValues:
@@ -433,6 +469,37 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
                       v.customFieldGroupId == item['customFieldGroupId'] &&
                       v.customFieldId == item['customFieldId']))
               .toList());
+    case 'baseCustomFieldGroupCreate' || 'baseCustomFieldGroupUpdate':
+      if (id == null || !_isThisProject(s, item)) return s;
+      final base = _mergeById(
+          s.baseCustomFieldGroups.where((b) => b.id == id).firstOrNull,
+          item,
+          (PlankaBaseCustomFieldGroup b) => b.toJson(),
+          PlankaBaseCustomFieldGroup.fromJson);
+      return s.copyWith(
+          baseCustomFieldGroups:
+              _upsert(s.baseCustomFieldGroups, base, (b) => b.id));
+    case 'baseCustomFieldGroupDelete':
+      if (id == null || !_isThisProject(s, item)) return s;
+      // The server deletes the groups instantiated from the template itself and
+      // broadcasts nothing for them on the board room, so the whole cascade
+      // happens here or they stay on screen pointing at a template that's gone.
+      final orphaned = s.customFieldGroups
+          .where((g) => g.baseCustomFieldGroupId == id)
+          .map((g) => g.id)
+          .toSet();
+      return s.copyWith(
+        baseCustomFieldGroups:
+            s.baseCustomFieldGroups.where((b) => b.id != id).toList(),
+        customFieldGroups: s.customFieldGroups
+            .where((g) => g.baseCustomFieldGroupId != id)
+            .toList(),
+        customFields:
+            s.customFields.where((f) => f.baseCustomFieldGroupId != id).toList(),
+        customFieldValues: s.customFieldValues
+            .where((v) => !orphaned.contains(v.customFieldGroupId))
+            .toList(),
+      );
     default:
       return s;
   }
@@ -529,9 +596,26 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     }
   }
 
+  /// Folds the project-level custom field events off the shared user room into
+  /// this board, ignoring the rest of what that room carries. Called from
+  /// [build]; takes the stream as an argument so a test can drive it without a
+  /// live socket.
+  void listenToUserRoom(Stream<SocketEvent> events) {
+    final sub = events
+        .where((e) => kBoardUserRoomEvents.contains(e.name))
+        .listen(applySocketEvent,
+            onError: (Object e) => debugPrint('user room socket error: $e'));
+    // The room outlives this board when another screen is watching it, so hand
+    // the subscription back rather than relying on the socket being disposed.
+    ref.onDispose(sub.cancel);
+  }
+
   @override
   Future<BoardState> build() async {
     final account = ref.read(currentAccountProvider)!;
+    // Watched before the first await: the shared room's lifecycle is this
+    // provider's, and an account switch rebuilds both together.
+    final userEvents = ref.watch(userEventsProvider);
     final loaded = await load();
     final socket = PlankaSocket(account.serverUrl, account.token);
     _socket = socket;
@@ -551,6 +635,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     });
     await socket.connect();
     await socket.subscribeBoard(boardId);
+    listenToUserRoom(userEvents);
     return loaded;
   }
 
