@@ -152,15 +152,23 @@ class PlankaSocket {
       }
       final socket = _socket;
       if (socket == null || !socket.connected) return;
-      ack = await socket
-          .emitWithAckAsync(
-            'get',
-            sailsRequestFrame(method: 'get', url: url, token: token),
-          )
-          .timeout(const Duration(seconds: 10),
-              onTimeout: () => {'statusCode': 'timeout'});
+      try {
+        ack = await socket
+            .emitWithAckAsync(
+              'get',
+              sailsRequestFrame(method: 'get', url: url, token: token),
+            )
+            .timeout(const Duration(seconds: 10),
+                onTimeout: () => {'statusCode': 'timeout'});
+      } catch (e) {
+        // A transport error (disconnect mid-request, disposed socket) counts
+        // as a failed attempt — it must not escape as an unhandled async
+        // error from the unawaited calls above.
+        ack = e;
+      }
       if (ack is Map && ack['statusCode'] == 200) return;
     }
+    if (_events.isClosed) return;
     _events.addError(StateError('$room subscribe failed: $ack'));
   }
 

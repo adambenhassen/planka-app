@@ -21,9 +21,10 @@ const _projectId = '1844338623806178322';
 const _cardId = '1844338625718780953';
 const _baseGroupId = '1844338733814383652';
 const _baseFieldId = '1844338751229133861';
+const _basedGroupId = '1844338760607597606'; // board group built from it
 
-/// The project response minus the base field — what the server returns after
-/// that field was deleted elsewhere while our socket was down.
+// The project responses the server would answer with after a change made
+// elsewhere while our socket was down.
 final Map<String, dynamic> _projectWithoutBaseField = () {
   final env = Map<String, dynamic>.from(_json('project_show_custom_fields'));
   final included =
@@ -35,6 +36,34 @@ final Map<String, dynamic> _projectWithoutBaseField = () {
   return env;
 }();
 
+final Map<String, dynamic> _projectWithoutBaseGroup = () {
+  final env = Map<String, dynamic>.from(_json('project_show_custom_fields'));
+  final included =
+      Map<String, dynamic>.from(env['included'] as Map<String, dynamic>);
+  included['customFields'] = (included['customFields'] as List)
+      .where((e) =>
+          (e as Map<String, dynamic>)['baseCustomFieldGroupId'] != _baseGroupId)
+      .toList();
+  included['baseCustomFieldGroups'] = [];
+  env['included'] = included;
+  return env;
+}();
+
+final Map<String, dynamic> _projectWithRenamedBase = () {
+  final env = Map<String, dynamic>.from(_json('project_show_custom_fields'));
+  final included =
+      Map<String, dynamic>.from(env['included'] as Map<String, dynamic>);
+  included['baseCustomFieldGroups'] = [
+    for (final e in (included['baseCustomFieldGroups'] as List))
+      if ((e as Map<String, dynamic>)['id'] == _baseGroupId)
+        {...e, 'name': 'Renamed base'}
+      else
+        e,
+  ];
+  env['included'] = included;
+  return env;
+}();
+
 class _FakeApi extends PlankaApi {
   _FakeApi() : super('http://x', 'tok');
 
@@ -42,16 +71,23 @@ class _FakeApi extends PlankaApi {
   /// server answers with after a change made while our socket was down.
   Map<String, dynamic>? projectOverride;
 
-  /// Holds every request until released, so events can land mid-load.
+  /// Holds every request while open, so events can land mid-load.
   Completer<void>? gate;
+
+  int projectFetches = 0;
+  int boardFetches = 0;
 
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     final g = gate;
     if (g != null && !g.isCompleted) await g.future;
-    return Envelope.parse(path.startsWith('/projects/')
-        ? projectOverride ?? _json('project_show_custom_fields')
-        : _json('board_show_custom_fields'));
+    if (path.startsWith('/projects/')) {
+      projectFetches++;
+      return Envelope.parse(
+          projectOverride ?? _json('project_show_custom_fields'));
+    }
+    boardFetches++;
+    return Envelope.parse(_json('board_show_custom_fields')); 
   }
 }
 
@@ -168,10 +204,7 @@ void main() {
       () async {
     final api = _FakeApi();
     final (container, _, connected) = await _boot(api);
-    expect(
-        _stateOf(container)
-            .customFields
-            .map((f) => f.id),
+    expect(_stateOf(container).customFields.map((f) => f.id),
         contains(_baseFieldId));
 
     api.projectOverride = _projectWithoutBaseField;
@@ -182,6 +215,48 @@ void main() {
     expect(s.customFields.map((f) => f.id), isNot(contains(_baseFieldId)));
     // The group itself survives and still resolves its name from the template.
     expect(_groupNames(s), ['Base', 'BG', 'CG']);
+  });
+
+  test('a base group deleted during the outage cascades on resync', () async {
+    // The server removed the instantiated groups and their values itself,
+    // broadcasting nothing; the authoritative project response is the only
+    // notice the board gets.
+    final api = _FakeApi();
+    final (container, _, connected) = await _boot(api);
+
+    api.projectOverride = _projectWithoutBaseGroup;
+    connected.add(true);
+    await pumpEventQueue();
+
+    final s = _stateOf(container);
+    expect(_groupNames(s), ['BG', 'CG']);
+    expect(s.customFieldGroups.map((g) => g.baseCustomFieldGroupId),
+        isNot(contains(_baseGroupId)));
+    expect(s.customFieldValueOf(_cardId, _basedGroupId, _baseFieldId), isNull);
+    // The board's own groups keep everything of theirs.
+    expect(s.customFieldValues.map((v) => v.content),
+        containsAll(['hello', 'on front', 'card level']));
+  });
+
+  test('a room event landing mid-resync is not clobbered by an older response',
+      () async {
+    final api = _FakeApi();
+    final (container, room, connected) = await _boot(api);
+
+    // The rename event lands while the reconciliation fetch is in flight and
+    // carries newer data than the response that eventually answers it.
+    api.gate = Completer<void>();
+    connected.add(true);
+    await pumpEventQueue();
+    await _push(room, 'baseCustomFieldGroupUpdate',
+        {'id': _baseGroupId, 'projectId': _projectId, 'name': 'Renamed base'});
+    api.projectOverride = _projectWithRenamedBase;
+    api.gate!.complete();
+    await pumpEventQueue();
+
+    expect(_groupNames(_stateOf(container)), ['Renamed base', 'BG', 'CG']);
+    // The stale first answer was discarded and fetched again, not installed.
+    expect(api.projectFetches, greaterThanOrEqualTo(2));
   });
 
   test('another project on the same room leaves the board as it was',
@@ -208,6 +283,50 @@ void main() {
     expect(identical(_stateOf(container), before), isTrue);
     expect(_stateOf(container).users.map((u) => u.id),
         isNot(contains('stranger')));
+  });
+
+  test('a reconnect edge landing during build resyncs after state lands',
+      () async {
+    // The room's socket can come back while the first snapshot is still being
+    // fetched; that edge must not be lost just because no state exists yet.
+    final api = _FakeApi()..gate = Completer<void>();
+    final connected = StreamController<bool>.broadcast();
+    addTearDown(connected.close);
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(_AccNotifier.new),
+      userSocketProvider.overrideWithValue(null),
+      userEventsProvider.overrideWithValue(const Stream.empty()),
+      userConnectedProvider.overrideWithValue(connected.stream),
+      boardProvider.overrideWith2(_UserRoomNotifier.new),
+    ]);
+    addTearDown(container.dispose);
+
+    final loading = container.read(boardProvider(_boardId).future);
+    await pumpEventQueue();
+    api.projectOverride = _projectWithoutBaseField;
+    connected.add(true); // nobody is home yet: latch, don't drop
+    api.gate!.complete();
+    await loading;
+    await pumpEventQueue();
+
+    // One fetch from load(), one from the latched resync.
+    expect(api.projectFetches, 2);
+    expect(_stateOf(container).customFields.map((f) => f.id),
+        isNot(contains(_baseFieldId)));
+  });
+
+  test('a user-room error heals with a refetch instead of only logging',
+      () async {
+    final api = _FakeApi();
+    final (container, room, _) = await _boot(api);
+    final boardsBefore = api.boardFetches;
+
+    room.addError(StateError('user subscribe failed'));
+    await pumpEventQueue();
+
+    expect(api.boardFetches, greaterThan(boardsBefore));
+    expect(_groupNames(_stateOf(container)), ['Base', 'BG', 'CG']);
   });
 
   test('closing the board leaves no listener on the shared room', () async {
