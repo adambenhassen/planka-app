@@ -741,6 +741,14 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get customFieldsTemplateFieldDeleteTitle => 'Delete template field?';
+
+  @override
+  String customFieldsTemplateFieldDeleteMessage(String name) {
+    return '\"$name\" is deleted from this template and from the copy of it on every board in this project that uses it, along with every value stored under it. This cannot be undone.';
+  }
+
+  @override
   String get customFieldsInstantiatedGroupRemoveTitle => 'Remove from board?';
 
   @override

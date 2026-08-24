@@ -62,11 +62,15 @@ Future<void> showProjectTemplatesSheet(
   );
 }
 
-/// Whether a template write names a record the projects view still holds. A
+/// Whether a template write names records the projects view still holds. A
 /// 404 on such a write is the server's non-manager refusal (`projectNotFound`).
 /// Against an id another client has already deleted it is a plain missing
 /// record, and telling the user they are not a manager would hide the real
 /// cause — such writes fall through to [showApiError] instead.
+///
+/// Every id given must still be present: a field write names both its template
+/// and the field, and a field another client deleted under a template that
+/// survives is a missing record, not a refusal.
 bool templateRecordInView(
   ProjectsView? view, {
   String? projectId,
@@ -74,14 +78,22 @@ bool templateRecordInView(
   String? fieldId,
 }) {
   if (view == null) return false;
+  var named = false;
   if (projectId != null) {
-    return view.projects.any((p) => p.id == projectId);
+    if (!view.projects.any((p) => p.id == projectId)) return false;
+    named = true;
   }
   if (templateId != null) {
-    return view.baseCustomFieldGroups.any((b) => b.id == templateId);
+    if (!view.baseCustomFieldGroups.any((b) => b.id == templateId)) {
+      return false;
+    }
+    named = true;
   }
-  if (fieldId != null) return view.customFields.any((f) => f.id == fieldId);
-  return false;
+  if (fieldId != null) {
+    if (!view.customFields.any((f) => f.id == fieldId)) return false;
+    named = true;
+  }
+  return named;
 }
 
 /// Surfaces [e] to the user. A board-level write refused with 403 maps to the
@@ -1000,6 +1012,7 @@ class _TemplateBlock extends ConsumerWidget {
               onDelete: (field) => notifier.deleteTemplateField(field.id),
             ),
             isCard: false,
+            isTemplate: true,
             expectManagerRefusal: (field) => refusalExpected(fieldId: field.id),
             l10n: l10n,
           ),
@@ -1028,6 +1041,7 @@ class _FieldRow extends StatelessWidget {
     required this.actions,
     required this.isCard,
     required this.l10n,
+    this.isTemplate = false,
     this.readOnly = false,
     this.expectManagerRefusal,
   });
@@ -1040,6 +1054,10 @@ class _FieldRow extends StatelessWidget {
   /// Only changes the delete confirmation's copy: a field of a card-level
   /// group takes that card's values with it, not the whole board's.
   final bool isCard;
+
+  /// True on page 2's template fields. Deleting one cascades to the copy of the
+  /// template on every board in this project, so the confirmation must say so.
+  final bool isTemplate;
 
   /// True for an instantiated group's template fields: no menu is rendered.
   final bool readOnly;
@@ -1065,12 +1083,16 @@ class _FieldRow extends StatelessWidget {
     final confirmed = await confirmDialog(
       context,
       destructive: true,
-      title: isCard
-          ? l10n.customFieldsFieldInCardGroupDeleteTitle
-          : l10n.customFieldsFieldInGroupDeleteTitle,
-      message: isCard
-          ? l10n.customFieldsFieldInCardGroupDeleteMessage(field.name)
-          : l10n.customFieldsFieldInGroupDeleteMessage(field.name),
+      title: isTemplate
+          ? l10n.customFieldsTemplateFieldDeleteTitle
+          : (isCard
+              ? l10n.customFieldsFieldInCardGroupDeleteTitle
+              : l10n.customFieldsFieldInGroupDeleteTitle),
+      message: isTemplate
+          ? l10n.customFieldsTemplateFieldDeleteMessage(field.name)
+          : (isCard
+              ? l10n.customFieldsFieldInCardGroupDeleteMessage(field.name)
+              : l10n.customFieldsFieldInGroupDeleteMessage(field.name)),
       confirmLabel: l10n.actionDelete,
     );
     if (!confirmed || !context.mounted) return;
@@ -1118,7 +1140,11 @@ class _FieldRow extends StatelessWidget {
               try {
                 await actions.onMoveUp(field);
               } catch (e) {
-                if (context.mounted) _handleCfError(context, l10n, e);
+                if (context.mounted) {
+                  _handleCfError(context, l10n, e,
+                      expectManagerRefusal:
+                          expectManagerRefusal?.call(field) ?? false);
+                }
                 return;
               }
               if (context.mounted) {
@@ -1132,7 +1158,11 @@ class _FieldRow extends StatelessWidget {
               try {
                 await actions.onMoveDown(field);
               } catch (e) {
-                if (context.mounted) _handleCfError(context, l10n, e);
+                if (context.mounted) {
+                  _handleCfError(context, l10n, e,
+                      expectManagerRefusal:
+                          expectManagerRefusal?.call(field) ?? false);
+                }
                 return;
               }
               if (context.mounted) {

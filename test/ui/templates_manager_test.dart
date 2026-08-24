@@ -410,12 +410,42 @@ void main() {
       await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Delete field?'), findsOneWidget);
+      // Project-wide copy: the base field goes from every board instantiated
+      // from this template, so the board-scoped wording must not appear.
+      expect(find.text('Delete template field?'), findsOneWidget);
       expect(find.textContaining('"Story points"'), findsOneWidget);
+      expect(
+          find.textContaining('every board in this project'), findsOneWidget);
+      expect(find.textContaining('on this board'), findsNothing);
 
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(_projects.calls.where((c) => c.$1 == 'deleteField'), isEmpty);
+    });
+
+    testWidgets('404 on reordering a template field says manager-only',
+        (tester) async {
+      await tester.pumpWidget(_templatesApp(_view(), failWrites: true));
+      await tester.pumpAndSettle();
+
+      // f2's menu (index 2) is the only one offering Move up.
+      await tester.tap(find.byIcon(Icons.more_vert).at(2));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Move up'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Only project managers can change field templates.'),
+          findsOneWidget);
+      expect(find.textContaining('projectNotFound'), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.more_vert).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Move down'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Only project managers can change field templates.'),
+          findsWidgets);
+      expect(find.textContaining('projectNotFound'), findsNothing);
     });
 
     testWidgets('add field row exists on each template', (tester) async {
@@ -655,6 +685,21 @@ void main() {
     test('fields still held vs deleted from elsewhere', () {
       expect(templateRecordInView(view, fieldId: 'f1'), isTrue);
       expect(templateRecordInView(view, fieldId: 'fx'), isFalse);
+    });
+
+    test('a field write names both ids, and every one must still be held', () {
+      expect(templateRecordInView(view, templateId: 't1', fieldId: 'f1'),
+          isTrue);
+      // The field another client deleted under a template that survives: a
+      // plain missing record, so the manager-only copy must not claim it.
+      expect(templateRecordInView(view, templateId: 't1', fieldId: 'fx'),
+          isFalse);
+      expect(templateRecordInView(view, templateId: 't9', fieldId: 'f1'),
+          isFalse);
+    });
+
+    test('naming nothing is never the manager refusal', () {
+      expect(templateRecordInView(view), isFalse);
     });
 
     test('a missing projects payload never claims the manager refusal', () {

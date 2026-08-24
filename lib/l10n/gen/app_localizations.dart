@@ -1444,6 +1444,18 @@ abstract class AppLocalizations {
   /// **'\"{name}\" and its value on this card are deleted. This cannot be undone.'**
   String customFieldsFieldInCardGroupDeleteMessage(String name);
 
+  /// Title of the template field delete confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Delete template field?'**
+  String get customFieldsTemplateFieldDeleteTitle;
+
+  /// Body of the template field delete confirmation. Names the scope (every board in this project) but never a number of boards — the projects payload does not carry board custom field groups, so any count would be invented.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" is deleted from this template and from the copy of it on every board in this project that uses it, along with every value stored under it. This cannot be undone.'**
+  String customFieldsTemplateFieldDeleteMessage(String name);
+
   /// Title of the remove-instantiated-group confirmation
   ///
   /// In en, this message translates to:

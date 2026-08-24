@@ -1039,6 +1039,17 @@
     }
   },
 
+  "customFieldsTemplateFieldDeleteTitle": "Delete template field?",
+  "@customFieldsTemplateFieldDeleteTitle": { "description": "Title of the template field delete confirmation" },
+
+  "customFieldsTemplateFieldDeleteMessage": "\"{name}\" is deleted from this template and from the copy of it on every board in this project that uses it, along with every value stored under it. This cannot be undone.",
+  "@customFieldsTemplateFieldDeleteMessage": {
+    "description": "Body of the template field delete confirmation. Names the scope (every board in this project) but never a number of boards — the projects payload does not carry board custom field groups, so any count would be invented.",
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
   "customFieldsInstantiatedGroupRemoveTitle": "Remove from board?",
   "@customFieldsInstantiatedGroupRemoveTitle": { "description": "Title of the remove-instantiated-group confirmation" },
 
