@@ -63,10 +63,13 @@ class PlankaRepo {
       api.post('/lists/$id/sort',
           {'fieldName': fieldName, 'order': ?order});
 
+  /// [type] is the card type; callers pass the board's defaultCardType.
   Future<Envelope> createCard(String listId,
-          {required String name, required double position}) =>
+          {required String type,
+          required String name,
+          required double position}) =>
       api.post('/lists/$listId/cards',
-          {'type': 'project', 'name': name, 'position': position});
+          {'type': type, 'name': name, 'position': position});
   Future<Envelope> updateCard(String id, Map<String, dynamic> patch) =>
       api.patch('/cards/$id', patch);
   Future<Envelope> duplicateCard(String id, {required double position}) =>

@@ -945,9 +945,15 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     final s = state.value;
     if (s == null) return;
     final last = s.cardsOf(listId).lastOrNull?.position;
+    // The board's defaultCardType decides what a new card is; when
+    // limitCardTypesToDefaultOne is set the server rejects any other type, and
+    // the app offers no type picker anyway.
     await _createInto(
       _repo.createCard(listId,
-          name: name, position: last == null ? kPositionGap : last + kPositionGap),
+          type: s.board.defaultCardType ?? 'project',
+          name: name,
+          position:
+              last == null ? kPositionGap : last + kPositionGap),
       PlankaCard.fromJson,
       (b, c) => b.copyWith(cards: {...b.cards, c.id: c}),
     );

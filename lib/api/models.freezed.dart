@@ -862,7 +862,7 @@ as Map<String, dynamic>?,
 /// @nodoc
 mixin _$PlankaBoard {
 
- String get id; String get projectId; String get name;@JsonKey(fromJson: _toDouble) double? get position;
+ String get id; String get projectId; String get name;@JsonKey(fromJson: _toDouble) double? get position; String? get defaultView; String? get defaultCardType; bool? get limitCardTypesToDefaultOne; bool? get alwaysDisplayCardCreator; bool? get displayCardAges; bool? get expandTaskListsByDefault;
 /// Create a copy of PlankaBoard
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -875,16 +875,16 @@ $PlankaBoardCopyWith<PlankaBoard> get copyWith => _$PlankaBoardCopyWithImpl<Plan
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaBoard&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaBoard&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position)&&(identical(other.defaultView, defaultView) || other.defaultView == defaultView)&&(identical(other.defaultCardType, defaultCardType) || other.defaultCardType == defaultCardType)&&(identical(other.limitCardTypesToDefaultOne, limitCardTypesToDefaultOne) || other.limitCardTypesToDefaultOne == limitCardTypesToDefaultOne)&&(identical(other.alwaysDisplayCardCreator, alwaysDisplayCardCreator) || other.alwaysDisplayCardCreator == alwaysDisplayCardCreator)&&(identical(other.displayCardAges, displayCardAges) || other.displayCardAges == displayCardAges)&&(identical(other.expandTaskListsByDefault, expandTaskListsByDefault) || other.expandTaskListsByDefault == expandTaskListsByDefault));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,projectId,name,position);
+int get hashCode => Object.hash(runtimeType,id,projectId,name,position,defaultView,defaultCardType,limitCardTypesToDefaultOne,alwaysDisplayCardCreator,displayCardAges,expandTaskListsByDefault);
 
 @override
 String toString() {
-  return 'PlankaBoard(id: $id, projectId: $projectId, name: $name, position: $position)';
+  return 'PlankaBoard(id: $id, projectId: $projectId, name: $name, position: $position, defaultView: $defaultView, defaultCardType: $defaultCardType, limitCardTypesToDefaultOne: $limitCardTypesToDefaultOne, alwaysDisplayCardCreator: $alwaysDisplayCardCreator, displayCardAges: $displayCardAges, expandTaskListsByDefault: $expandTaskListsByDefault)';
 }
 
 
@@ -895,7 +895,7 @@ abstract mixin class $PlankaBoardCopyWith<$Res>  {
   factory $PlankaBoardCopyWith(PlankaBoard value, $Res Function(PlankaBoard) _then) = _$PlankaBoardCopyWithImpl;
 @useResult
 $Res call({
- String id, String projectId, String name,@JsonKey(fromJson: _toDouble) double? position
+ String id, String projectId, String name,@JsonKey(fromJson: _toDouble) double? position, String? defaultView, String? defaultCardType, bool? limitCardTypesToDefaultOne, bool? alwaysDisplayCardCreator, bool? displayCardAges, bool? expandTaskListsByDefault
 });
 
 
@@ -912,13 +912,19 @@ class _$PlankaBoardCopyWithImpl<$Res>
 
 /// Create a copy of PlankaBoard
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? projectId = null,Object? name = null,Object? position = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? projectId = null,Object? name = null,Object? position = freezed,Object? defaultView = freezed,Object? defaultCardType = freezed,Object? limitCardTypesToDefaultOne = freezed,Object? alwaysDisplayCardCreator = freezed,Object? displayCardAges = freezed,Object? expandTaskListsByDefault = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
-as double?,
+as double?,defaultView: freezed == defaultView ? _self.defaultView : defaultView // ignore: cast_nullable_to_non_nullable
+as String?,defaultCardType: freezed == defaultCardType ? _self.defaultCardType : defaultCardType // ignore: cast_nullable_to_non_nullable
+as String?,limitCardTypesToDefaultOne: freezed == limitCardTypesToDefaultOne ? _self.limitCardTypesToDefaultOne : limitCardTypesToDefaultOne // ignore: cast_nullable_to_non_nullable
+as bool?,alwaysDisplayCardCreator: freezed == alwaysDisplayCardCreator ? _self.alwaysDisplayCardCreator : alwaysDisplayCardCreator // ignore: cast_nullable_to_non_nullable
+as bool?,displayCardAges: freezed == displayCardAges ? _self.displayCardAges : displayCardAges // ignore: cast_nullable_to_non_nullable
+as bool?,expandTaskListsByDefault: freezed == expandTaskListsByDefault ? _self.expandTaskListsByDefault : expandTaskListsByDefault // ignore: cast_nullable_to_non_nullable
+as bool?,
   ));
 }
 
@@ -1003,10 +1009,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String name, @JsonKey(fromJson: _toDouble)  double? position)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String name, @JsonKey(fromJson: _toDouble)  double? position,  String? defaultView,  String? defaultCardType,  bool? limitCardTypesToDefaultOne,  bool? alwaysDisplayCardCreator,  bool? displayCardAges,  bool? expandTaskListsByDefault)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlankaBoard() when $default != null:
-return $default(_that.id,_that.projectId,_that.name,_that.position);case _:
+return $default(_that.id,_that.projectId,_that.name,_that.position,_that.defaultView,_that.defaultCardType,_that.limitCardTypesToDefaultOne,_that.alwaysDisplayCardCreator,_that.displayCardAges,_that.expandTaskListsByDefault);case _:
   return orElse();
 
 }
@@ -1024,10 +1030,10 @@ return $default(_that.id,_that.projectId,_that.name,_that.position);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String name, @JsonKey(fromJson: _toDouble)  double? position)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String name, @JsonKey(fromJson: _toDouble)  double? position,  String? defaultView,  String? defaultCardType,  bool? limitCardTypesToDefaultOne,  bool? alwaysDisplayCardCreator,  bool? displayCardAges,  bool? expandTaskListsByDefault)  $default,) {final _that = this;
 switch (_that) {
 case _PlankaBoard():
-return $default(_that.id,_that.projectId,_that.name,_that.position);case _:
+return $default(_that.id,_that.projectId,_that.name,_that.position,_that.defaultView,_that.defaultCardType,_that.limitCardTypesToDefaultOne,_that.alwaysDisplayCardCreator,_that.displayCardAges,_that.expandTaskListsByDefault);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1044,10 +1050,10 @@ return $default(_that.id,_that.projectId,_that.name,_that.position);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String name, @JsonKey(fromJson: _toDouble)  double? position)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String name, @JsonKey(fromJson: _toDouble)  double? position,  String? defaultView,  String? defaultCardType,  bool? limitCardTypesToDefaultOne,  bool? alwaysDisplayCardCreator,  bool? displayCardAges,  bool? expandTaskListsByDefault)?  $default,) {final _that = this;
 switch (_that) {
 case _PlankaBoard() when $default != null:
-return $default(_that.id,_that.projectId,_that.name,_that.position);case _:
+return $default(_that.id,_that.projectId,_that.name,_that.position,_that.defaultView,_that.defaultCardType,_that.limitCardTypesToDefaultOne,_that.alwaysDisplayCardCreator,_that.displayCardAges,_that.expandTaskListsByDefault);case _:
   return null;
 
 }
@@ -1059,13 +1065,19 @@ return $default(_that.id,_that.projectId,_that.name,_that.position);case _:
 @JsonSerializable()
 
 class _PlankaBoard implements PlankaBoard {
-  const _PlankaBoard({required this.id, required this.projectId, required this.name, @JsonKey(fromJson: _toDouble) this.position});
+  const _PlankaBoard({required this.id, required this.projectId, required this.name, @JsonKey(fromJson: _toDouble) this.position, this.defaultView, this.defaultCardType, this.limitCardTypesToDefaultOne, this.alwaysDisplayCardCreator, this.displayCardAges, this.expandTaskListsByDefault});
   factory _PlankaBoard.fromJson(Map<String, dynamic> json) => _$PlankaBoardFromJson(json);
 
 @override final  String id;
 @override final  String projectId;
 @override final  String name;
 @override@JsonKey(fromJson: _toDouble) final  double? position;
+@override final  String? defaultView;
+@override final  String? defaultCardType;
+@override final  bool? limitCardTypesToDefaultOne;
+@override final  bool? alwaysDisplayCardCreator;
+@override final  bool? displayCardAges;
+@override final  bool? expandTaskListsByDefault;
 
 /// Create a copy of PlankaBoard
 /// with the given fields replaced by the non-null parameter values.
@@ -1080,16 +1092,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaBoard&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaBoard&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position)&&(identical(other.defaultView, defaultView) || other.defaultView == defaultView)&&(identical(other.defaultCardType, defaultCardType) || other.defaultCardType == defaultCardType)&&(identical(other.limitCardTypesToDefaultOne, limitCardTypesToDefaultOne) || other.limitCardTypesToDefaultOne == limitCardTypesToDefaultOne)&&(identical(other.alwaysDisplayCardCreator, alwaysDisplayCardCreator) || other.alwaysDisplayCardCreator == alwaysDisplayCardCreator)&&(identical(other.displayCardAges, displayCardAges) || other.displayCardAges == displayCardAges)&&(identical(other.expandTaskListsByDefault, expandTaskListsByDefault) || other.expandTaskListsByDefault == expandTaskListsByDefault));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,projectId,name,position);
+int get hashCode => Object.hash(runtimeType,id,projectId,name,position,defaultView,defaultCardType,limitCardTypesToDefaultOne,alwaysDisplayCardCreator,displayCardAges,expandTaskListsByDefault);
 
 @override
 String toString() {
-  return 'PlankaBoard(id: $id, projectId: $projectId, name: $name, position: $position)';
+  return 'PlankaBoard(id: $id, projectId: $projectId, name: $name, position: $position, defaultView: $defaultView, defaultCardType: $defaultCardType, limitCardTypesToDefaultOne: $limitCardTypesToDefaultOne, alwaysDisplayCardCreator: $alwaysDisplayCardCreator, displayCardAges: $displayCardAges, expandTaskListsByDefault: $expandTaskListsByDefault)';
 }
 
 
@@ -1100,7 +1112,7 @@ abstract mixin class _$PlankaBoardCopyWith<$Res> implements $PlankaBoardCopyWith
   factory _$PlankaBoardCopyWith(_PlankaBoard value, $Res Function(_PlankaBoard) _then) = __$PlankaBoardCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String projectId, String name,@JsonKey(fromJson: _toDouble) double? position
+ String id, String projectId, String name,@JsonKey(fromJson: _toDouble) double? position, String? defaultView, String? defaultCardType, bool? limitCardTypesToDefaultOne, bool? alwaysDisplayCardCreator, bool? displayCardAges, bool? expandTaskListsByDefault
 });
 
 
@@ -1117,13 +1129,19 @@ class __$PlankaBoardCopyWithImpl<$Res>
 
 /// Create a copy of PlankaBoard
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? projectId = null,Object? name = null,Object? position = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? projectId = null,Object? name = null,Object? position = freezed,Object? defaultView = freezed,Object? defaultCardType = freezed,Object? limitCardTypesToDefaultOne = freezed,Object? alwaysDisplayCardCreator = freezed,Object? displayCardAges = freezed,Object? expandTaskListsByDefault = freezed,}) {
   return _then(_PlankaBoard(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
-as double?,
+as double?,defaultView: freezed == defaultView ? _self.defaultView : defaultView // ignore: cast_nullable_to_non_nullable
+as String?,defaultCardType: freezed == defaultCardType ? _self.defaultCardType : defaultCardType // ignore: cast_nullable_to_non_nullable
+as String?,limitCardTypesToDefaultOne: freezed == limitCardTypesToDefaultOne ? _self.limitCardTypesToDefaultOne : limitCardTypesToDefaultOne // ignore: cast_nullable_to_non_nullable
+as bool?,alwaysDisplayCardCreator: freezed == alwaysDisplayCardCreator ? _self.alwaysDisplayCardCreator : alwaysDisplayCardCreator // ignore: cast_nullable_to_non_nullable
+as bool?,displayCardAges: freezed == displayCardAges ? _self.displayCardAges : displayCardAges // ignore: cast_nullable_to_non_nullable
+as bool?,expandTaskListsByDefault: freezed == expandTaskListsByDefault ? _self.expandTaskListsByDefault : expandTaskListsByDefault // ignore: cast_nullable_to_non_nullable
+as bool?,
   ));
 }
 
@@ -1134,7 +1152,7 @@ as double?,
 /// @nodoc
 mixin _$PlankaList {
 
- String get id; String get boardId;@JsonKey(unknownEnumValue: PlankaListType.unknown) PlankaListType get type; String? get name;@JsonKey(fromJson: _toDouble) double? get position;
+ String get id; String get boardId;@JsonKey(unknownEnumValue: PlankaListType.unknown) PlankaListType get type; String? get name;@JsonKey(fromJson: _toDouble) double? get position; String? get color;
 /// Create a copy of PlankaList
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1147,16 +1165,16 @@ $PlankaListCopyWith<PlankaList> get copyWith => _$PlankaListCopyWithImpl<PlankaL
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaList&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.type, type) || other.type == type)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaList&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.type, type) || other.type == type)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position)&&(identical(other.color, color) || other.color == color));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,boardId,type,name,position);
+int get hashCode => Object.hash(runtimeType,id,boardId,type,name,position,color);
 
 @override
 String toString() {
-  return 'PlankaList(id: $id, boardId: $boardId, type: $type, name: $name, position: $position)';
+  return 'PlankaList(id: $id, boardId: $boardId, type: $type, name: $name, position: $position, color: $color)';
 }
 
 
@@ -1167,7 +1185,7 @@ abstract mixin class $PlankaListCopyWith<$Res>  {
   factory $PlankaListCopyWith(PlankaList value, $Res Function(PlankaList) _then) = _$PlankaListCopyWithImpl;
 @useResult
 $Res call({
- String id, String boardId,@JsonKey(unknownEnumValue: PlankaListType.unknown) PlankaListType type, String? name,@JsonKey(fromJson: _toDouble) double? position
+ String id, String boardId,@JsonKey(unknownEnumValue: PlankaListType.unknown) PlankaListType type, String? name,@JsonKey(fromJson: _toDouble) double? position, String? color
 });
 
 
@@ -1184,14 +1202,15 @@ class _$PlankaListCopyWithImpl<$Res>
 
 /// Create a copy of PlankaList
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? boardId = null,Object? type = null,Object? name = freezed,Object? position = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? boardId = null,Object? type = null,Object? name = freezed,Object? position = freezed,Object? color = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,boardId: null == boardId ? _self.boardId : boardId // ignore: cast_nullable_to_non_nullable
 as String,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
 as PlankaListType,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String?,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
-as double?,
+as double?,color: freezed == color ? _self.color : color // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
@@ -1276,10 +1295,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown)  PlankaListType type,  String? name, @JsonKey(fromJson: _toDouble)  double? position)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown)  PlankaListType type,  String? name, @JsonKey(fromJson: _toDouble)  double? position,  String? color)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlankaList() when $default != null:
-return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);case _:
+return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position,_that.color);case _:
   return orElse();
 
 }
@@ -1297,10 +1316,10 @@ return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);cas
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown)  PlankaListType type,  String? name, @JsonKey(fromJson: _toDouble)  double? position)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown)  PlankaListType type,  String? name, @JsonKey(fromJson: _toDouble)  double? position,  String? color)  $default,) {final _that = this;
 switch (_that) {
 case _PlankaList():
-return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);case _:
+return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position,_that.color);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1317,10 +1336,10 @@ return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);cas
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown)  PlankaListType type,  String? name, @JsonKey(fromJson: _toDouble)  double? position)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown)  PlankaListType type,  String? name, @JsonKey(fromJson: _toDouble)  double? position,  String? color)?  $default,) {final _that = this;
 switch (_that) {
 case _PlankaList() when $default != null:
-return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);case _:
+return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position,_that.color);case _:
   return null;
 
 }
@@ -1332,7 +1351,7 @@ return $default(_that.id,_that.boardId,_that.type,_that.name,_that.position);cas
 @JsonSerializable()
 
 class _PlankaList implements PlankaList {
-  const _PlankaList({required this.id, required this.boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown) required this.type, this.name, @JsonKey(fromJson: _toDouble) this.position});
+  const _PlankaList({required this.id, required this.boardId, @JsonKey(unknownEnumValue: PlankaListType.unknown) required this.type, this.name, @JsonKey(fromJson: _toDouble) this.position, this.color});
   factory _PlankaList.fromJson(Map<String, dynamic> json) => _$PlankaListFromJson(json);
 
 @override final  String id;
@@ -1340,6 +1359,7 @@ class _PlankaList implements PlankaList {
 @override@JsonKey(unknownEnumValue: PlankaListType.unknown) final  PlankaListType type;
 @override final  String? name;
 @override@JsonKey(fromJson: _toDouble) final  double? position;
+@override final  String? color;
 
 /// Create a copy of PlankaList
 /// with the given fields replaced by the non-null parameter values.
@@ -1354,16 +1374,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaList&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.type, type) || other.type == type)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaList&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.type, type) || other.type == type)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position)&&(identical(other.color, color) || other.color == color));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,boardId,type,name,position);
+int get hashCode => Object.hash(runtimeType,id,boardId,type,name,position,color);
 
 @override
 String toString() {
-  return 'PlankaList(id: $id, boardId: $boardId, type: $type, name: $name, position: $position)';
+  return 'PlankaList(id: $id, boardId: $boardId, type: $type, name: $name, position: $position, color: $color)';
 }
 
 
@@ -1374,7 +1394,7 @@ abstract mixin class _$PlankaListCopyWith<$Res> implements $PlankaListCopyWith<$
   factory _$PlankaListCopyWith(_PlankaList value, $Res Function(_PlankaList) _then) = __$PlankaListCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String boardId,@JsonKey(unknownEnumValue: PlankaListType.unknown) PlankaListType type, String? name,@JsonKey(fromJson: _toDouble) double? position
+ String id, String boardId,@JsonKey(unknownEnumValue: PlankaListType.unknown) PlankaListType type, String? name,@JsonKey(fromJson: _toDouble) double? position, String? color
 });
 
 
@@ -1391,14 +1411,15 @@ class __$PlankaListCopyWithImpl<$Res>
 
 /// Create a copy of PlankaList
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? boardId = null,Object? type = null,Object? name = freezed,Object? position = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? boardId = null,Object? type = null,Object? name = freezed,Object? position = freezed,Object? color = freezed,}) {
   return _then(_PlankaList(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,boardId: null == boardId ? _self.boardId : boardId // ignore: cast_nullable_to_non_nullable
 as String,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
 as PlankaListType,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String?,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
-as double?,
+as double?,color: freezed == color ? _self.color : color // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
@@ -1409,7 +1430,7 @@ as double?,
 /// @nodoc
 mixin _$PlankaCard {
 
- String get id; String get boardId; String get listId; String get type; String get name;@JsonKey(fromJson: _toDouble) double? get position; String? get description; DateTime? get dueDate; bool? get isDueCompleted; String? get coverAttachmentId; bool? get isSubscribed; PlankaStopwatch? get stopwatch; DateTime? get createdAt; String? get prevListId;
+ String get id; String get boardId; String get listId; String get type; String get name;@JsonKey(fromJson: _toDouble) double? get position; String? get description; DateTime? get dueDate; bool? get isDueCompleted; String? get coverAttachmentId; bool? get isSubscribed; PlankaStopwatch? get stopwatch; DateTime? get createdAt; String? get prevListId; String? get creatorUserId; DateTime? get listChangedAt;@JsonKey(fromJson: _toIntOrNull) int? get commentsTotal;
 /// Create a copy of PlankaCard
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1422,16 +1443,16 @@ $PlankaCardCopyWith<PlankaCard> get copyWith => _$PlankaCardCopyWithImpl<PlankaC
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaCard&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.listId, listId) || other.listId == listId)&&(identical(other.type, type) || other.type == type)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position)&&(identical(other.description, description) || other.description == description)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.isDueCompleted, isDueCompleted) || other.isDueCompleted == isDueCompleted)&&(identical(other.coverAttachmentId, coverAttachmentId) || other.coverAttachmentId == coverAttachmentId)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.stopwatch, stopwatch) || other.stopwatch == stopwatch)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.prevListId, prevListId) || other.prevListId == prevListId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaCard&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.listId, listId) || other.listId == listId)&&(identical(other.type, type) || other.type == type)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position)&&(identical(other.description, description) || other.description == description)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.isDueCompleted, isDueCompleted) || other.isDueCompleted == isDueCompleted)&&(identical(other.coverAttachmentId, coverAttachmentId) || other.coverAttachmentId == coverAttachmentId)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.stopwatch, stopwatch) || other.stopwatch == stopwatch)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.prevListId, prevListId) || other.prevListId == prevListId)&&(identical(other.creatorUserId, creatorUserId) || other.creatorUserId == creatorUserId)&&(identical(other.listChangedAt, listChangedAt) || other.listChangedAt == listChangedAt)&&(identical(other.commentsTotal, commentsTotal) || other.commentsTotal == commentsTotal));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,boardId,listId,type,name,position,description,dueDate,isDueCompleted,coverAttachmentId,isSubscribed,stopwatch,createdAt,prevListId);
+int get hashCode => Object.hash(runtimeType,id,boardId,listId,type,name,position,description,dueDate,isDueCompleted,coverAttachmentId,isSubscribed,stopwatch,createdAt,prevListId,creatorUserId,listChangedAt,commentsTotal);
 
 @override
 String toString() {
-  return 'PlankaCard(id: $id, boardId: $boardId, listId: $listId, type: $type, name: $name, position: $position, description: $description, dueDate: $dueDate, isDueCompleted: $isDueCompleted, coverAttachmentId: $coverAttachmentId, isSubscribed: $isSubscribed, stopwatch: $stopwatch, createdAt: $createdAt, prevListId: $prevListId)';
+  return 'PlankaCard(id: $id, boardId: $boardId, listId: $listId, type: $type, name: $name, position: $position, description: $description, dueDate: $dueDate, isDueCompleted: $isDueCompleted, coverAttachmentId: $coverAttachmentId, isSubscribed: $isSubscribed, stopwatch: $stopwatch, createdAt: $createdAt, prevListId: $prevListId, creatorUserId: $creatorUserId, listChangedAt: $listChangedAt, commentsTotal: $commentsTotal)';
 }
 
 
@@ -1442,7 +1463,7 @@ abstract mixin class $PlankaCardCopyWith<$Res>  {
   factory $PlankaCardCopyWith(PlankaCard value, $Res Function(PlankaCard) _then) = _$PlankaCardCopyWithImpl;
 @useResult
 $Res call({
- String id, String boardId, String listId, String type, String name,@JsonKey(fromJson: _toDouble) double? position, String? description, DateTime? dueDate, bool? isDueCompleted, String? coverAttachmentId, bool? isSubscribed, PlankaStopwatch? stopwatch, DateTime? createdAt, String? prevListId
+ String id, String boardId, String listId, String type, String name,@JsonKey(fromJson: _toDouble) double? position, String? description, DateTime? dueDate, bool? isDueCompleted, String? coverAttachmentId, bool? isSubscribed, PlankaStopwatch? stopwatch, DateTime? createdAt, String? prevListId, String? creatorUserId, DateTime? listChangedAt,@JsonKey(fromJson: _toIntOrNull) int? commentsTotal
 });
 
 
@@ -1459,7 +1480,7 @@ class _$PlankaCardCopyWithImpl<$Res>
 
 /// Create a copy of PlankaCard
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? boardId = null,Object? listId = null,Object? type = null,Object? name = null,Object? position = freezed,Object? description = freezed,Object? dueDate = freezed,Object? isDueCompleted = freezed,Object? coverAttachmentId = freezed,Object? isSubscribed = freezed,Object? stopwatch = freezed,Object? createdAt = freezed,Object? prevListId = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? boardId = null,Object? listId = null,Object? type = null,Object? name = null,Object? position = freezed,Object? description = freezed,Object? dueDate = freezed,Object? isDueCompleted = freezed,Object? coverAttachmentId = freezed,Object? isSubscribed = freezed,Object? stopwatch = freezed,Object? createdAt = freezed,Object? prevListId = freezed,Object? creatorUserId = freezed,Object? listChangedAt = freezed,Object? commentsTotal = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,boardId: null == boardId ? _self.boardId : boardId // ignore: cast_nullable_to_non_nullable
@@ -1475,7 +1496,10 @@ as String?,isSubscribed: freezed == isSubscribed ? _self.isSubscribed : isSubscr
 as bool?,stopwatch: freezed == stopwatch ? _self.stopwatch : stopwatch // ignore: cast_nullable_to_non_nullable
 as PlankaStopwatch?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,prevListId: freezed == prevListId ? _self.prevListId : prevListId // ignore: cast_nullable_to_non_nullable
-as String?,
+as String?,creatorUserId: freezed == creatorUserId ? _self.creatorUserId : creatorUserId // ignore: cast_nullable_to_non_nullable
+as String?,listChangedAt: freezed == listChangedAt ? _self.listChangedAt : listChangedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,commentsTotal: freezed == commentsTotal ? _self.commentsTotal : commentsTotal // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 /// Create a copy of PlankaCard
@@ -1572,10 +1596,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String boardId,  String listId,  String type,  String name, @JsonKey(fromJson: _toDouble)  double? position,  String? description,  DateTime? dueDate,  bool? isDueCompleted,  String? coverAttachmentId,  bool? isSubscribed,  PlankaStopwatch? stopwatch,  DateTime? createdAt,  String? prevListId)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String boardId,  String listId,  String type,  String name, @JsonKey(fromJson: _toDouble)  double? position,  String? description,  DateTime? dueDate,  bool? isDueCompleted,  String? coverAttachmentId,  bool? isSubscribed,  PlankaStopwatch? stopwatch,  DateTime? createdAt,  String? prevListId,  String? creatorUserId,  DateTime? listChangedAt, @JsonKey(fromJson: _toIntOrNull)  int? commentsTotal)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlankaCard() when $default != null:
-return $default(_that.id,_that.boardId,_that.listId,_that.type,_that.name,_that.position,_that.description,_that.dueDate,_that.isDueCompleted,_that.coverAttachmentId,_that.isSubscribed,_that.stopwatch,_that.createdAt,_that.prevListId);case _:
+return $default(_that.id,_that.boardId,_that.listId,_that.type,_that.name,_that.position,_that.description,_that.dueDate,_that.isDueCompleted,_that.coverAttachmentId,_that.isSubscribed,_that.stopwatch,_that.createdAt,_that.prevListId,_that.creatorUserId,_that.listChangedAt,_that.commentsTotal);case _:
   return orElse();
 
 }
@@ -1593,10 +1617,10 @@ return $default(_that.id,_that.boardId,_that.listId,_that.type,_that.name,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String boardId,  String listId,  String type,  String name, @JsonKey(fromJson: _toDouble)  double? position,  String? description,  DateTime? dueDate,  bool? isDueCompleted,  String? coverAttachmentId,  bool? isSubscribed,  PlankaStopwatch? stopwatch,  DateTime? createdAt,  String? prevListId)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String boardId,  String listId,  String type,  String name, @JsonKey(fromJson: _toDouble)  double? position,  String? description,  DateTime? dueDate,  bool? isDueCompleted,  String? coverAttachmentId,  bool? isSubscribed,  PlankaStopwatch? stopwatch,  DateTime? createdAt,  String? prevListId,  String? creatorUserId,  DateTime? listChangedAt, @JsonKey(fromJson: _toIntOrNull)  int? commentsTotal)  $default,) {final _that = this;
 switch (_that) {
 case _PlankaCard():
-return $default(_that.id,_that.boardId,_that.listId,_that.type,_that.name,_that.position,_that.description,_that.dueDate,_that.isDueCompleted,_that.coverAttachmentId,_that.isSubscribed,_that.stopwatch,_that.createdAt,_that.prevListId);case _:
+return $default(_that.id,_that.boardId,_that.listId,_that.type,_that.name,_that.position,_that.description,_that.dueDate,_that.isDueCompleted,_that.coverAttachmentId,_that.isSubscribed,_that.stopwatch,_that.createdAt,_that.prevListId,_that.creatorUserId,_that.listChangedAt,_that.commentsTotal);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1613,10 +1637,10 @@ return $default(_that.id,_that.boardId,_that.listId,_that.type,_that.name,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String boardId,  String listId,  String type,  String name, @JsonKey(fromJson: _toDouble)  double? position,  String? description,  DateTime? dueDate,  bool? isDueCompleted,  String? coverAttachmentId,  bool? isSubscribed,  PlankaStopwatch? stopwatch,  DateTime? createdAt,  String? prevListId)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String boardId,  String listId,  String type,  String name, @JsonKey(fromJson: _toDouble)  double? position,  String? description,  DateTime? dueDate,  bool? isDueCompleted,  String? coverAttachmentId,  bool? isSubscribed,  PlankaStopwatch? stopwatch,  DateTime? createdAt,  String? prevListId,  String? creatorUserId,  DateTime? listChangedAt, @JsonKey(fromJson: _toIntOrNull)  int? commentsTotal)?  $default,) {final _that = this;
 switch (_that) {
 case _PlankaCard() when $default != null:
-return $default(_that.id,_that.boardId,_that.listId,_that.type,_that.name,_that.position,_that.description,_that.dueDate,_that.isDueCompleted,_that.coverAttachmentId,_that.isSubscribed,_that.stopwatch,_that.createdAt,_that.prevListId);case _:
+return $default(_that.id,_that.boardId,_that.listId,_that.type,_that.name,_that.position,_that.description,_that.dueDate,_that.isDueCompleted,_that.coverAttachmentId,_that.isSubscribed,_that.stopwatch,_that.createdAt,_that.prevListId,_that.creatorUserId,_that.listChangedAt,_that.commentsTotal);case _:
   return null;
 
 }
@@ -1628,7 +1652,7 @@ return $default(_that.id,_that.boardId,_that.listId,_that.type,_that.name,_that.
 @JsonSerializable()
 
 class _PlankaCard implements PlankaCard {
-  const _PlankaCard({required this.id, required this.boardId, required this.listId, required this.type, required this.name, @JsonKey(fromJson: _toDouble) this.position, this.description, this.dueDate, this.isDueCompleted, this.coverAttachmentId, this.isSubscribed, this.stopwatch, this.createdAt, this.prevListId});
+  const _PlankaCard({required this.id, required this.boardId, required this.listId, required this.type, required this.name, @JsonKey(fromJson: _toDouble) this.position, this.description, this.dueDate, this.isDueCompleted, this.coverAttachmentId, this.isSubscribed, this.stopwatch, this.createdAt, this.prevListId, this.creatorUserId, this.listChangedAt, @JsonKey(fromJson: _toIntOrNull) this.commentsTotal});
   factory _PlankaCard.fromJson(Map<String, dynamic> json) => _$PlankaCardFromJson(json);
 
 @override final  String id;
@@ -1645,6 +1669,9 @@ class _PlankaCard implements PlankaCard {
 @override final  PlankaStopwatch? stopwatch;
 @override final  DateTime? createdAt;
 @override final  String? prevListId;
+@override final  String? creatorUserId;
+@override final  DateTime? listChangedAt;
+@override@JsonKey(fromJson: _toIntOrNull) final  int? commentsTotal;
 
 /// Create a copy of PlankaCard
 /// with the given fields replaced by the non-null parameter values.
@@ -1659,16 +1686,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaCard&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.listId, listId) || other.listId == listId)&&(identical(other.type, type) || other.type == type)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position)&&(identical(other.description, description) || other.description == description)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.isDueCompleted, isDueCompleted) || other.isDueCompleted == isDueCompleted)&&(identical(other.coverAttachmentId, coverAttachmentId) || other.coverAttachmentId == coverAttachmentId)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.stopwatch, stopwatch) || other.stopwatch == stopwatch)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.prevListId, prevListId) || other.prevListId == prevListId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaCard&&(identical(other.id, id) || other.id == id)&&(identical(other.boardId, boardId) || other.boardId == boardId)&&(identical(other.listId, listId) || other.listId == listId)&&(identical(other.type, type) || other.type == type)&&(identical(other.name, name) || other.name == name)&&(identical(other.position, position) || other.position == position)&&(identical(other.description, description) || other.description == description)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.isDueCompleted, isDueCompleted) || other.isDueCompleted == isDueCompleted)&&(identical(other.coverAttachmentId, coverAttachmentId) || other.coverAttachmentId == coverAttachmentId)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.stopwatch, stopwatch) || other.stopwatch == stopwatch)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.prevListId, prevListId) || other.prevListId == prevListId)&&(identical(other.creatorUserId, creatorUserId) || other.creatorUserId == creatorUserId)&&(identical(other.listChangedAt, listChangedAt) || other.listChangedAt == listChangedAt)&&(identical(other.commentsTotal, commentsTotal) || other.commentsTotal == commentsTotal));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,boardId,listId,type,name,position,description,dueDate,isDueCompleted,coverAttachmentId,isSubscribed,stopwatch,createdAt,prevListId);
+int get hashCode => Object.hash(runtimeType,id,boardId,listId,type,name,position,description,dueDate,isDueCompleted,coverAttachmentId,isSubscribed,stopwatch,createdAt,prevListId,creatorUserId,listChangedAt,commentsTotal);
 
 @override
 String toString() {
-  return 'PlankaCard(id: $id, boardId: $boardId, listId: $listId, type: $type, name: $name, position: $position, description: $description, dueDate: $dueDate, isDueCompleted: $isDueCompleted, coverAttachmentId: $coverAttachmentId, isSubscribed: $isSubscribed, stopwatch: $stopwatch, createdAt: $createdAt, prevListId: $prevListId)';
+  return 'PlankaCard(id: $id, boardId: $boardId, listId: $listId, type: $type, name: $name, position: $position, description: $description, dueDate: $dueDate, isDueCompleted: $isDueCompleted, coverAttachmentId: $coverAttachmentId, isSubscribed: $isSubscribed, stopwatch: $stopwatch, createdAt: $createdAt, prevListId: $prevListId, creatorUserId: $creatorUserId, listChangedAt: $listChangedAt, commentsTotal: $commentsTotal)';
 }
 
 
@@ -1679,7 +1706,7 @@ abstract mixin class _$PlankaCardCopyWith<$Res> implements $PlankaCardCopyWith<$
   factory _$PlankaCardCopyWith(_PlankaCard value, $Res Function(_PlankaCard) _then) = __$PlankaCardCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String boardId, String listId, String type, String name,@JsonKey(fromJson: _toDouble) double? position, String? description, DateTime? dueDate, bool? isDueCompleted, String? coverAttachmentId, bool? isSubscribed, PlankaStopwatch? stopwatch, DateTime? createdAt, String? prevListId
+ String id, String boardId, String listId, String type, String name,@JsonKey(fromJson: _toDouble) double? position, String? description, DateTime? dueDate, bool? isDueCompleted, String? coverAttachmentId, bool? isSubscribed, PlankaStopwatch? stopwatch, DateTime? createdAt, String? prevListId, String? creatorUserId, DateTime? listChangedAt,@JsonKey(fromJson: _toIntOrNull) int? commentsTotal
 });
 
 
@@ -1696,7 +1723,7 @@ class __$PlankaCardCopyWithImpl<$Res>
 
 /// Create a copy of PlankaCard
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? boardId = null,Object? listId = null,Object? type = null,Object? name = null,Object? position = freezed,Object? description = freezed,Object? dueDate = freezed,Object? isDueCompleted = freezed,Object? coverAttachmentId = freezed,Object? isSubscribed = freezed,Object? stopwatch = freezed,Object? createdAt = freezed,Object? prevListId = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? boardId = null,Object? listId = null,Object? type = null,Object? name = null,Object? position = freezed,Object? description = freezed,Object? dueDate = freezed,Object? isDueCompleted = freezed,Object? coverAttachmentId = freezed,Object? isSubscribed = freezed,Object? stopwatch = freezed,Object? createdAt = freezed,Object? prevListId = freezed,Object? creatorUserId = freezed,Object? listChangedAt = freezed,Object? commentsTotal = freezed,}) {
   return _then(_PlankaCard(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,boardId: null == boardId ? _self.boardId : boardId // ignore: cast_nullable_to_non_nullable
@@ -1712,7 +1739,10 @@ as String?,isSubscribed: freezed == isSubscribed ? _self.isSubscribed : isSubscr
 as bool?,stopwatch: freezed == stopwatch ? _self.stopwatch : stopwatch // ignore: cast_nullable_to_non_nullable
 as PlankaStopwatch?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,prevListId: freezed == prevListId ? _self.prevListId : prevListId // ignore: cast_nullable_to_non_nullable
-as String?,
+as String?,creatorUserId: freezed == creatorUserId ? _self.creatorUserId : creatorUserId // ignore: cast_nullable_to_non_nullable
+as String?,listChangedAt: freezed == listChangedAt ? _self.listChangedAt : listChangedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,commentsTotal: freezed == commentsTotal ? _self.commentsTotal : commentsTotal // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 
