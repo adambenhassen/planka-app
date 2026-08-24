@@ -394,6 +394,12 @@ abstract class AppLocalizations {
   /// **'Managers'**
   String get projectMenuManagers;
 
+  /// Project menu entry that opens the custom fields manager on its templates page
+  ///
+  /// In en, this message translates to:
+  /// **'Custom fields'**
+  String get projectMenuCustomFields;
+
   /// Project menu entry that opens the background picker
   ///
   /// In en, this message translates to:
@@ -1372,6 +1378,8 @@ abstract class AppLocalizations {
   /// **'You have view-only access to this board.'**
   String get customFieldsViewerReadOnly;
 
+  /// Snackbar shown when a viewer or guest gets a 403 trying to write a custom field
+  ///
   /// In en, this message translates to:
   /// **'Only board editors can change custom fields.'**
   String get customFieldsEditorRequired;
@@ -1436,6 +1444,18 @@ abstract class AppLocalizations {
   /// **'\"{name}\" and its value on this card are deleted. This cannot be undone.'**
   String customFieldsFieldInCardGroupDeleteMessage(String name);
 
+  /// Title of the template field delete confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Delete template field?'**
+  String get customFieldsTemplateFieldDeleteTitle;
+
+  /// Body of the template field delete confirmation. Names the scope (every board in this project) but never a number of boards — the projects payload does not carry board custom field groups, so any count would be invented.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" is deleted from this template and from the copy of it on every board in this project that uses it, along with every value stored under it. This cannot be undone.'**
+  String customFieldsTemplateFieldDeleteMessage(String name);
+
   /// Title of the remove-instantiated-group confirmation
   ///
   /// In en, this message translates to:
@@ -1453,6 +1473,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{name} moved to position {position} of {total}'**
   String customFieldsMovedToPosition(String name, int position, int total);
+
+  /// Section header for the project's custom field templates on the sheet's first page
+  ///
+  /// In en, this message translates to:
+  /// **'Project templates'**
+  String get customFieldsTemplatesSection;
+
+  /// Button at the end of the templates section that opens the templates page
+  ///
+  /// In en, this message translates to:
+  /// **'Manage templates'**
+  String get customFieldsManageTemplates;
+
+  /// Tooltip of the back arrow on the templates page
+  ///
+  /// In en, this message translates to:
+  /// **'Back to fields'**
+  String get customFieldsBackToFields;
+
+  /// Inline-add label for a new project field template
+  ///
+  /// In en, this message translates to:
+  /// **'Add template'**
+  String get customFieldsAddTemplate;
+
+  /// Empty state for the templates page and section
+  ///
+  /// In en, this message translates to:
+  /// **'This project has no field templates yet.'**
+  String get customFieldsTemplatesEmpty;
+
+  /// Error line shown in the templates section when the projects fetch fails
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load project templates'**
+  String get customFieldsTemplatesLoadFailed;
+
+  /// Subtitle on a template row giving how many fields it holds
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 field} other{{count} fields}}'**
+  String customFieldsFieldCount(int count);
+
+  /// Button that instantiates a template onto the current board
+  ///
+  /// In en, this message translates to:
+  /// **'Add to board'**
+  String get customFieldsAddToBoard;
+
+  /// Trailing label replacing Add to board once the board already instantiates the template
+  ///
+  /// In en, this message translates to:
+  /// **'Added'**
+  String get customFieldsAddedToBoard;
+
+  /// Title of the template delete confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Delete template?'**
+  String get customFieldsTemplateDeleteTitle;
+
+  /// Body of the template delete confirmation. Names the scope (every board in this project) but never a number of boards — the projects payload does not carry board custom field groups, so any count would be invented.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\", its {fieldCount, plural, =1{1 field} other{{fieldCount} fields}}, and the copy of this group on every board in this project that uses it are deleted, along with every value stored under them. This cannot be undone.'**
+  String customFieldsTemplateDeleteMessage(String name, int fieldCount);
+
+  /// Snackbar shown when the server refuses a template write; the server answers a non-manager with projectNotFound, so the raw message would read as a missing project
+  ///
+  /// In en, this message translates to:
+  /// **'Only project managers can change field templates.'**
+  String get customFieldsManagersRequired;
 }
 
 class _AppLocalizationsDelegate

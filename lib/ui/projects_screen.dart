@@ -13,6 +13,7 @@ import '../state/current_user_state.dart';
 import '../state/notifications_state.dart';
 import '../state/projects_state.dart';
 import '../update/update_service.dart';
+import 'custom_fields_manager_sheet.dart';
 import 'error_handling.dart';
 import 'widgets/async_retry.dart';
 import 'widgets/board_background.dart';
@@ -174,6 +175,8 @@ class _ProjectList extends ConsumerWidget {
         guardMutation(context, notifier.createBoard(project.id, name));
       case 'managers':
         await showProjectManagersDialog(context, project.id);
+      case 'customFields':
+        await showProjectTemplatesSheet(context, projectId: project.id);
       case 'background':
         await showProjectBackgroundDialog(
           context,
@@ -255,6 +258,10 @@ class _ProjectList extends ConsumerWidget {
                     PopupMenuItem(
                       value: 'managers',
                       child: Text(l10n.projectMenuManagers),
+                    ),
+                    PopupMenuItem(
+                      value: 'customFields',
+                      child: Text(l10n.projectMenuCustomFields),
                     ),
                     PopupMenuItem(
                       value: 'background',

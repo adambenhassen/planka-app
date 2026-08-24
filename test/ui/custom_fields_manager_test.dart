@@ -7,6 +7,7 @@ import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/state/board_state.dart';
+import 'package:planka_app/state/projects_state.dart';
 import 'package:planka_app/ui/custom_fields_manager_sheet.dart';
 import 'package:planka_app/ui/widgets/confirm_dialog.dart';
 import 'package:planka_app/ui/widgets/inline_add_field.dart';
@@ -162,6 +163,19 @@ class _FakeNotifier extends BoardNotifier {
   }
 }
 
+class _FakeProjectsNotifier extends ProjectsNotifier {
+  _FakeProjectsNotifier([ProjectsView? view])
+      : _view = view ??
+            const ProjectsView(
+                projects: [], boards: [], backgroundImages: []);
+  final ProjectsView _view;
+
+  final calls = <(String, Object?)>[];
+
+  @override
+  Future<ProjectsView> build() async => _view;
+}
+
 /// Always fails to load — exercises the asyncRetry error branch.
 class _ErrorNotifier extends BoardNotifier {
   _ErrorNotifier(super.boardId);
@@ -184,8 +198,9 @@ class _ForbiddenNotifier extends BoardNotifier {
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 late _FakeNotifier _notifier;
+late _FakeProjectsNotifier _projectsNotifier;
 
-Widget _app(BoardState state, {String? cardId}) {
+Widget _app(BoardState state, {String? cardId, ProjectsView? projectsView}) {
   return ProviderScope(
     overrides: [
       currentAccountProvider.overrideWith(() {
@@ -194,6 +209,10 @@ Widget _app(BoardState state, {String? cardId}) {
       boardProvider.overrideWith2((arg) {
         _notifier = _FakeNotifier(arg, state);
         return _notifier;
+      }),
+      projectsProvider.overrideWith(() {
+        _projectsNotifier = _FakeProjectsNotifier(projectsView);
+        return _projectsNotifier;
       }),
     ],
     child: MaterialApp(
@@ -631,6 +650,7 @@ void main() {
         overrides: [
           currentAccountProvider.overrideWith(() => _AccNotifier()),
           boardProvider.overrideWith2((arg) => _ErrorNotifier(arg)),
+          projectsProvider.overrideWith(_FakeProjectsNotifier.new),
         ],
         child: const MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -651,6 +671,7 @@ void main() {
           currentAccountProvider.overrideWith(() => _AccNotifier()),
           boardProvider.overrideWith2(
               (arg) => _ForbiddenNotifier(arg, _makeState())),
+          projectsProvider.overrideWith(_FakeProjectsNotifier.new),
         ],
         child: const MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,

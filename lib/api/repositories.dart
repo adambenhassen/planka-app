@@ -112,6 +112,28 @@ class PlankaRepo {
   Future<Envelope> deleteCustomFieldGroup(String id) =>
       api.delete('/custom-field-groups/$id');
 
+  Future<Envelope> createBaseCustomFieldGroup(String projectId,
+          {required String name}) =>
+      api.post('/projects/$projectId/base-custom-field-groups', {'name': name});
+  Future<Envelope> updateBaseCustomFieldGroup(
+          String id, Map<String, dynamic> patch) =>
+      api.patch('/base-custom-field-groups/$id', patch);
+  Future<Envelope> deleteBaseCustomFieldGroup(String id) =>
+      api.delete('/base-custom-field-groups/$id');
+
+  /// Instantiates a project template onto a board: the create endpoint takes
+  /// either a name or a base group id, plus the position.
+  Future<Envelope> createBoardCustomFieldGroupFromTemplate(String boardId,
+          {required String baseCustomFieldGroupId, required double position}) =>
+      api.post('/boards/$boardId/custom-field-groups',
+          {'baseCustomFieldGroupId': baseCustomFieldGroupId, 'position': position});
+
+  /// Fields on a template live under the base group, not under a board group.
+  Future<Envelope> createBaseCustomField(String baseGroupId,
+          {required String name, required double position}) =>
+      api.post('/base-custom-field-groups/$baseGroupId/custom-fields',
+          {'name': name, 'position': position});
+
   Future<Envelope> createCustomField(String groupId,
           {required String name, required double position}) =>
       api.post('/custom-field-groups/$groupId/custom-fields',

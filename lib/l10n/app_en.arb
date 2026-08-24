@@ -206,6 +206,10 @@
   "@projectMenuManagers": {
     "description": "Project menu entry that opens the managers dialog"
   },
+  "projectMenuCustomFields": "Custom fields",
+  "@projectMenuCustomFields": {
+    "description": "Project menu entry that opens the custom fields manager on its templates page"
+  },
   "projectMenuBackground": "Background",
   "@projectMenuBackground": {
     "description": "Project menu entry that opens the background picker"
@@ -1035,6 +1039,17 @@
     }
   },
 
+  "customFieldsTemplateFieldDeleteTitle": "Delete template field?",
+  "@customFieldsTemplateFieldDeleteTitle": { "description": "Title of the template field delete confirmation" },
+
+  "customFieldsTemplateFieldDeleteMessage": "\"{name}\" is deleted from this template and from the copy of it on every board in this project that uses it, along with every value stored under it. This cannot be undone.",
+  "@customFieldsTemplateFieldDeleteMessage": {
+    "description": "Body of the template field delete confirmation. Names the scope (every board in this project) but never a number of boards — the projects payload does not carry board custom field groups, so any count would be invented.",
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
   "customFieldsInstantiatedGroupRemoveTitle": "Remove from board?",
   "@customFieldsInstantiatedGroupRemoveTitle": { "description": "Title of the remove-instantiated-group confirmation" },
 
@@ -1054,5 +1069,52 @@
       "position": { "type": "int" },
       "total": { "type": "int" }
     }
-  }
+  },
+
+  "customFieldsTemplatesSection": "Project templates",
+  "@customFieldsTemplatesSection": { "description": "Section header for the project's custom field templates on the sheet's first page" },
+
+  "customFieldsManageTemplates": "Manage templates",
+  "@customFieldsManageTemplates": { "description": "Button at the end of the templates section that opens the templates page" },
+
+  "customFieldsBackToFields": "Back to fields",
+  "@customFieldsBackToFields": { "description": "Tooltip of the back arrow on the templates page" },
+
+  "customFieldsAddTemplate": "Add template",
+  "@customFieldsAddTemplate": { "description": "Inline-add label for a new project field template" },
+
+  "customFieldsTemplatesEmpty": "This project has no field templates yet.",
+  "@customFieldsTemplatesEmpty": { "description": "Empty state for the templates page and section" },
+
+  "customFieldsTemplatesLoadFailed": "Couldn't load project templates",
+  "@customFieldsTemplatesLoadFailed": { "description": "Error line shown in the templates section when the projects fetch fails" },
+
+  "customFieldsFieldCount": "{count, plural, =1{1 field} other{{count} fields}}",
+  "@customFieldsFieldCount": {
+    "description": "Subtitle on a template row giving how many fields it holds",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "customFieldsAddToBoard": "Add to board",
+  "@customFieldsAddToBoard": { "description": "Button that instantiates a template onto the current board" },
+
+  "customFieldsAddedToBoard": "Added",
+  "@customFieldsAddedToBoard": { "description": "Trailing label replacing Add to board once the board already instantiates the template" },
+
+  "customFieldsTemplateDeleteTitle": "Delete template?",
+  "@customFieldsTemplateDeleteTitle": { "description": "Title of the template delete confirmation" },
+
+  "customFieldsTemplateDeleteMessage": "\"{name}\", its {fieldCount, plural, =1{1 field} other{{fieldCount} fields}}, and the copy of this group on every board in this project that uses it are deleted, along with every value stored under them. This cannot be undone.",
+  "@customFieldsTemplateDeleteMessage": {
+    "description": "Body of the template delete confirmation. Names the scope (every board in this project) but never a number of boards — the projects payload does not carry board custom field groups, so any count would be invented.",
+    "placeholders": {
+      "name": { "type": "String" },
+      "fieldCount": { "type": "int" }
+    }
+  },
+
+  "customFieldsManagersRequired": "Only project managers can change field templates.",
+  "@customFieldsManagersRequired": { "description": "Snackbar shown when the server refuses a template write; the server answers a non-manager with projectNotFound, so the raw message would read as a missing project" }
 }
