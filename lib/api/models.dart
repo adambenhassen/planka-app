@@ -56,6 +56,9 @@ abstract class PlankaProject with _$PlankaProject {
   const factory PlankaProject({
     required String id,
     required String name,
+    String? description,
+    // Planka 2 favourite flag: favourites pin to the top of the projects list.
+    bool? isFavorite,
     // Planka background: type is null | 'gradient' | 'image'. For 'gradient' the
     // name resolves to a gradient; for 'image', backgroundImageId points at a
     // PlankaBackgroundImage in the response's `included.backgroundImages`.

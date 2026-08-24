@@ -35,6 +35,8 @@ _PlankaProject _$PlankaProjectFromJson(Map<String, dynamic> json) =>
     _PlankaProject(
       id: json['id'] as String,
       name: json['name'] as String,
+      description: json['description'] as String?,
+      isFavorite: json['isFavorite'] as bool?,
       backgroundType: json['backgroundType'] as String?,
       backgroundGradient: json['backgroundGradient'] as String?,
       backgroundImageId: json['backgroundImageId'] as String?,
@@ -44,6 +46,8 @@ Map<String, dynamic> _$PlankaProjectToJson(_PlankaProject instance) =>
     <String, dynamic>{
       'id': instance.id,
       'name': instance.name,
+      'description': instance.description,
+      'isFavorite': instance.isFavorite,
       'backgroundType': instance.backgroundType,
       'backgroundGradient': instance.backgroundGradient,
       'backgroundImageId': instance.backgroundImageId,

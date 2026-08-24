@@ -214,6 +214,14 @@
   "@projectMenuBackground": {
     "description": "Project menu entry that opens the background picker"
   },
+  "projectFavoriteAddTooltip": "Add to favorites",
+  "@projectFavoriteAddTooltip": {
+    "description": "Tooltip on the button that marks a project as a favorite"
+  },
+  "projectFavoriteRemoveTooltip": "Remove from favorites",
+  "@projectFavoriteRemoveTooltip": {
+    "description": "Tooltip on the button that clears a project's favorite mark"
+  },
 
   "boardNewTitle": "New board",
   "@boardNewTitle": {

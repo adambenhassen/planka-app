@@ -32,6 +32,18 @@ class ProjectsView {
   List<PlankaProjectManager> managersOf(String projectId) =>
       managers.where((m) => m.projectId == projectId).toList();
 
+  /// Projects with favourites pulled ahead of the rest. Server order is kept
+  /// within each group, so a user with no favourites sees exactly the order
+  /// the server sent.
+  List<PlankaProject> get orderedProjects {
+    final favorites = <PlankaProject>[];
+    final rest = <PlankaProject>[];
+    for (final p in projects) {
+      ((p.isFavorite ?? false) ? favorites : rest).add(p);
+    }
+    return [...favorites, ...rest];
+  }
+
   /// A project's templates in server order. A base group carries no position,
   /// so there is no order to change — the list is never re-sorted.
   List<PlankaBaseCustomFieldGroup> baseGroupsOf(String projectId) =>
@@ -92,6 +104,9 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
 
   Future<void> deleteProject(String id) =>
       _mutate(() => _repo.deleteProject(id));
+
+  Future<void> setProjectFavorite(String id, {required bool favorite}) =>
+      _mutate(() => _repo.updateProject(id, {'isFavorite': favorite}));
 
   Future<void> createBoard(String projectId, String name) => _mutate(() {
         final last = (state.value?.boards ?? const [])
