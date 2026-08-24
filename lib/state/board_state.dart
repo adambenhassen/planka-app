@@ -11,6 +11,7 @@ import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
 import 'envelope_cache.dart';
 import 'positions.dart';
+import 'user_socket.dart';
 
 class BoardState {
   final PlankaBoard board;
@@ -192,14 +193,67 @@ class BoardState {
   /// groups instantiated from a base group: the base groups themselves (for
   /// the display name) and their fields. Idempotent — a group arriving over the
   /// socket makes this run again on a state that already holds base fields.
+  /// The response is authoritative for everything the templates own: fields a
+  /// base group dropped while this socket was down are removed — their stored
+  /// values with them, as the live delete path does — and so are the groups
+  /// instantiated from a template it no longer holds, which the server
+  /// cascaded away. Fields belonging to plain board or card groups, and the
+  /// values under them, are untouched.
   BoardState withBaseCustomFields(Envelope projectEnv) {
-    var fields = customFields;
+    final bases = projectEnv.included.baseCustomFieldGroups;
+    final baseIds = bases.map((b) => b.id).toSet();
+    final orphaned = customFieldGroups
+        .where((g) =>
+            g.baseCustomFieldGroupId != null &&
+            !baseIds.contains(g.baseCustomFieldGroupId))
+        .map((g) => g.id)
+        .toSet();
+    final owned = projectEnv.included.customFields.map((f) => f.id).toSet();
+    final droppedFields = customFields
+        .where((f) => f.baseCustomFieldGroupId != null && !owned.contains(f.id))
+        .map((f) => f.id)
+        .toSet();
+    var fields = customFields
+        .where((f) => f.baseCustomFieldGroupId == null || owned.contains(f.id))
+        .toList();
     for (final f in projectEnv.included.customFields) {
       fields = _upsert(fields, f, (x) => x.id);
     }
     return copyWith(
+      customFieldGroups: customFieldGroups
+          .where((g) => !orphaned.contains(g.id))
+          .toList(),
       customFields: fields,
-      baseCustomFieldGroups: projectEnv.included.baseCustomFieldGroups,
+      customFieldValues: customFieldValues
+          .where((v) =>
+              !orphaned.contains(v.customFieldGroupId) &&
+              !droppedFields.contains(v.customFieldId))
+          .toList(),
+      baseCustomFieldGroups: bases,
+    );
+  }
+
+  /// Carries [old]'s base-derived data — templates and the fields they own —
+  /// into this state. Used when a recovery refetch could not resolve the
+  /// project fresh: the board snapshot alone renders instantiated groups as
+  /// untitled empty blocks, so what was on screen before the recovery ran is
+  /// kept until the next successful fetch heals it. Nothing else moves: the
+  /// board envelope stays authoritative for groups, values, cards and the
+  /// rest, so a server-side cascade deletion still cannot come back through
+  /// here.
+  BoardState withBaseDataFrom(BoardState old) {
+    final fieldIds = customFields.map((f) => f.id).toSet();
+    return copyWith(
+      baseCustomFieldGroups: [
+        ...baseCustomFieldGroups,
+        ...old.baseCustomFieldGroups.where((b) =>
+            !baseCustomFieldGroups.any((x) => x.id == b.id)),
+      ],
+      customFields: [
+        ...customFields,
+        ...old.customFields.where((f) =>
+            f.baseCustomFieldGroupId != null && !fieldIds.contains(f.id)),
+      ],
     );
   }
 
@@ -281,6 +335,40 @@ T _mergeById<T>(T? existing, Map<String, dynamic> item,
         Map<String, dynamic> Function(T) toJson,
         T Function(Map<String, dynamic>) fromJson) =>
     fromJson(existing == null ? item : {...toJson(existing), ...item});
+
+/// The events a board takes off the user's own room. Planka broadcasts changes
+/// to a project's base custom field groups — and to the fields on them — there
+/// rather than to the board room, so a board whose groups are instantiated from
+/// a template learns about them nowhere else. Everything else that room carries
+/// (notifications, the user list) belongs to whoever else listens to it.
+const kBoardUserRoomEvents = {
+  'baseCustomFieldGroupCreate',
+  'baseCustomFieldGroupUpdate',
+  'baseCustomFieldGroupDelete',
+  'customFieldCreate',
+  'customFieldUpdate',
+  'customFieldDelete',
+};
+
+/// Whether a base custom field group event names the project this board is in.
+/// The user room carries every project the account can see, so an event for
+/// another one must leave this board's state exactly as it was.
+bool _isThisProject(BoardState s, Map<String, dynamic> item) =>
+    item['projectId'] == null
+        ? s.baseCustomFieldGroups.any((b) => b.id == item['id'])
+        : item['projectId'] == s.board.projectId;
+
+/// Whether a custom field event is this board's. A field keyed to a board or
+/// card group came from the board room and always is; one keyed to a base group
+/// only if that template belongs to this project. A reposition carries neither
+/// key — just `{id, position}` — so there it comes down to already holding the
+/// field.
+bool _isThisBoardsField(BoardState s, Map<String, dynamic> item) {
+  final baseId = item['baseCustomFieldGroupId'] as String?;
+  if (baseId != null) return s.baseCustomFieldGroups.any((b) => b.id == baseId);
+  if (item['customFieldGroupId'] != null) return true;
+  return s.customFields.any((f) => f.id == item['id']);
+}
 
 /// Fold one socket event into board state. Pure; exported for tests.
 BoardState applyEvent(BoardState s, SocketEvent event) {
@@ -404,7 +492,7 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
             .toList(),
       );
     case 'customFieldCreate' || 'customFieldUpdate':
-      if (id == null) return s;
+      if (id == null || !_isThisBoardsField(s, item)) return s;
       final field = _mergeById(
           s.customFields.where((f) => f.id == id).firstOrNull,
           item,
@@ -413,6 +501,7 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
       return s.copyWith(
           customFields: _upsert(s.customFields, field, (f) => f.id));
     case 'customFieldDelete':
+      if (!_isThisBoardsField(s, item)) return s;
       return s.copyWith(
         customFields: s.customFields.where((f) => f.id != id).toList(),
         customFieldValues:
@@ -433,6 +522,37 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
                       v.customFieldGroupId == item['customFieldGroupId'] &&
                       v.customFieldId == item['customFieldId']))
               .toList());
+    case 'baseCustomFieldGroupCreate' || 'baseCustomFieldGroupUpdate':
+      if (id == null || !_isThisProject(s, item)) return s;
+      final base = _mergeById(
+          s.baseCustomFieldGroups.where((b) => b.id == id).firstOrNull,
+          item,
+          (PlankaBaseCustomFieldGroup b) => b.toJson(),
+          PlankaBaseCustomFieldGroup.fromJson);
+      return s.copyWith(
+          baseCustomFieldGroups:
+              _upsert(s.baseCustomFieldGroups, base, (b) => b.id));
+    case 'baseCustomFieldGroupDelete':
+      if (id == null || !_isThisProject(s, item)) return s;
+      // The server deletes the groups instantiated from the template itself and
+      // broadcasts nothing for them on the board room, so the whole cascade
+      // happens here or they stay on screen pointing at a template that's gone.
+      final orphaned = s.customFieldGroups
+          .where((g) => g.baseCustomFieldGroupId == id)
+          .map((g) => g.id)
+          .toSet();
+      return s.copyWith(
+        baseCustomFieldGroups:
+            s.baseCustomFieldGroups.where((b) => b.id != id).toList(),
+        customFieldGroups: s.customFieldGroups
+            .where((g) => g.baseCustomFieldGroupId != id)
+            .toList(),
+        customFields:
+            s.customFields.where((f) => f.baseCustomFieldGroupId != id).toList(),
+        customFieldValues: s.customFieldValues
+            .where((v) => !orphaned.contains(v.customFieldGroupId))
+            .toList(),
+      );
     default:
       return s;
   }
@@ -477,12 +597,20 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     return _withBaseCustomFields(BoardState.fromEnvelope(env));
   }
 
-  /// A custom field group instantiated from a project base group takes its name
-  /// and fields from that template, which the board response omits — so fetch
-  /// the project, but only for a board that actually has such a group.
-  Future<BoardState> _withBaseCustomFields(BoardState s) async {
+  /// A custom field group instantiated from a project base group takes its
+  /// name and fields from that template, which the board response omits — so
+  /// fetch the project, but only for a board that actually has such a group.
+  /// With [fresh] the fold never answers from the offline cache: it is used by
+  /// recovery and reconnect refetches, which act as authoritative
+  /// reconciliation sources a stale cache must not feed (see
+  /// [_freshProjectEnvelope]). Initial load keeps the fallback — offline,
+  /// a cached name beats none.
+  Future<BoardState> _withBaseCustomFields(BoardState s,
+      {bool fresh = false}) async {
     if (!s.needsBaseCustomFields) return s;
-    final env = await _projectEnvelope(s.board.projectId);
+    final env = fresh
+        ? await _freshProjectEnvelope(s.board.projectId)
+        : await _projectEnvelope(s.board.projectId);
     return env == null ? s : s.withBaseCustomFields(env);
   }
 
@@ -491,8 +619,9 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     final account = ref.read(currentAccountProvider);
     if (account == null) return null;
     try {
-      return await ref.read(envelopeCacheProvider).fetchOrCached(
+      final env = await ref.read(envelopeCacheProvider).fetchOrCached(
           '${account.id}-project-$projectId', () => _repo.project(projectId));
+      return env;
     } on ApiException catch (e) {
       // Reachable offline on the first open after an upgrade: the board
       // envelope is cached, the project one never was. The board still loads;
@@ -505,53 +634,220 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     }
   }
 
+  /// Same fetch, but never answered from the offline cache. This is the
+  /// reconciliation path: the cache can predate a deletion made while our
+  /// socket was down, and treating it as authoritative would resurrect what
+  /// was deleted. A failure here leaves state as it stands — the next
+  /// reconnect edge or event retries.
+  Future<Envelope?> _freshProjectEnvelope(String projectId) async {
+    final account = ref.read(currentAccountProvider);
+    if (account == null) return null;
+    try {
+      final env = await _repo.project(projectId);
+      unawaited(
+          ref.read(envelopeCacheProvider).put('${account.id}-project-$projectId', env));
+      return env;
+    } on ApiException catch (e) {
+      debugPrint('board $boardId: base custom fields resync failed: $e');
+      return null;
+    }
+  }
+
   /// Holds the fetch below to one at a time, however many events arrive while
   /// it is in flight — a group create is usually followed by its fields.
   bool _fillingBaseCustomFields = false;
 
+  /// Bumped for every event off the user room that actually changed this
+  /// board's state — cross-project events pass through untouched and must not
+  /// count. The reconciliation fetch below compares counts across its await:
+  /// a state-changing event landing mid-fetch is newer than the response that
+  /// just answered, and installing that response would clobber or resurrect
+  /// what the event changed — so it is discarded and fetched again instead.
+  int _userRoomEventsSeen = 0;
+
   /// Same fetch as [_withBaseCustomFields], for a group instantiated while the
   /// board is open — it arrives over the socket with neither its name nor its
-  /// fields. Folded into whatever state is current when the project answers, so
-  /// events landing meanwhile are not overwritten.
+  /// fields — and for reconnect resyncs. Folded into whatever state is current
+  /// when the project answers; serialized behind any room events that land
+  /// while the fetch is in flight.
   Future<void> _fillBaseCustomFields() async {
     if (_fillingBaseCustomFields) return;
     _fillingBaseCustomFields = true;
     try {
-      final projectId = state.value?.board.projectId;
-      if (projectId == null) return;
-      final env = await _projectEnvelope(projectId);
-      final cur = state.value;
-      if (env != null && cur != null) {
+      while (true) {
+        final projectId = state.value?.board.projectId;
+        if (projectId == null) return;
+        final seenBeforeFetch = _userRoomEventsSeen;
+        final env = await _freshProjectEnvelope(projectId);
+        final cur = state.value;
+        if (env == null || cur == null) return;
+        if (_userRoomEventsSeen != seenBeforeFetch) continue;
         state = AsyncData(cur.withBaseCustomFields(env));
+        return;
       }
     } finally {
       _fillingBaseCustomFields = false;
     }
   }
 
+  /// Folds the project-level custom field events off the shared user room into
+  /// this board, ignoring the rest of what that room carries. The room's socket
+  /// is already connected while the board builds, so changes landing during
+  /// [load] are buffered and folded into the snapshot by calling the returned
+  /// function with it; from then on events apply as they arrive. Folding into
+  /// the snapshot rather than replaying after it keeps an event that preceded
+  /// the fetch from resurrecting data the fetch saw past. Takes the stream as
+  /// an argument so a test can drive it without a live socket.
+  BoardState Function(BoardState snapshot) listenToUserRoom(
+      Stream<SocketEvent> events) {
+    final pending = <SocketEvent>[];
+    var live = false;
+    void apply(SocketEvent e) {
+      final before = state.value;
+      applySocketEvent(e);
+      // Only an event that actually changed this board invalidates an
+      // in-flight reconciliation — the room carries every project the account
+      // can see, and a busy one must not starve this board's resync by
+      // discarding valid responses it had nothing to do with.
+      if (!identical(state.value, before)) _userRoomEventsSeen++;
+    }
+
+    late final StreamSubscription<SocketEvent> sub;
+    sub = events
+        .where((e) => kBoardUserRoomEvents.contains(e.name))
+        .listen((e) => live ? apply(e) : pending.add(e), onError: (Object e) {
+      debugPrint('user room socket error: $e');
+      recoverRealtime(userRoom: true);
+    });
+    // The room outlives this board when another screen is watching it, so hand
+    // the subscription back rather than relying on the socket being disposed.
+    ref.onDispose(sub.cancel);
+    return (BoardState snapshot) {
+      live = true;
+      var s = snapshot;
+      for (final e in pending) {
+        final before = s;
+        s = applyEvent(s, e);
+        if (!identical(s, before)) _userRoomEventsSeen++;
+      }
+      pending.clear();
+      // A template instantiated during the buffer needs the project fetch that
+      // [applySocketEvent] would have triggered — but state is not installed
+      // yet, so latch it for [listenSelf] to fire once it is.
+      if (s.needsBaseCustomFields) _baseResyncPending = true;
+      return s;
+    };
+  }
+
+  /// Watches the shared user room and returns the fold that turns the REST
+  /// snapshot into current state (see [listenToUserRoom]), plus a resync of
+  /// everything this board takes off that room whenever the room reconnects —
+  /// each event is sent once, to whoever is joined at that moment, so changes
+  /// emitted while the socket was down never arrive and only a refetch heals
+  /// them. An edge landing before the state exists (the initial build racing
+  /// the room's socket) is latched and resynced right after build installs it.
+  /// Protected so a test subclass can run the exact production wiring without
+  /// the board socket.
+  @protected
+  BoardState Function(BoardState snapshot) wireUserRoom() {
+    final userEvents = ref.watch(userEventsProvider);
+    final userConnected = ref.watch(userConnectedProvider);
+    final fold = listenToUserRoom(userEvents);
+    final selfSub = listenSelf((previous, next) {
+      if (_baseResyncPending && next.hasValue) {
+        _baseResyncPending = false;
+        unawaited(_fillBaseCustomFields());
+      }
+    });
+    ref.onDispose(selfSub);
+    final connSub = userConnected.listen((c) {
+      if (!c) return;
+      if (state.value != null) {
+        unawaited(_fillBaseCustomFields());
+      } else {
+        _baseResyncPending = true;
+      }
+    });
+    ref.onDispose(connSub.cancel);
+    return fold;
+  }
+
+  /// Set when a base-data resync is owed but cannot run yet because the board
+  /// is still building; consumed by the [ref.listenSelf] hook in
+  /// [wireUserRoom] the moment real state exists.
+  bool _baseResyncPending = false;
+
+  DateTime? _lastRealtimeRecovery;
+  DateTime? _lastUserJoinRetry;
+  DateTime? _lastBoardJoinRetry;
+
+  /// Realtime errors mean events are being missed while the transport may look
+  /// healthy — a permanently refused subscribe leaves no disconnect to react
+  /// to. Heal with a full refetch instead of trusting the log line alone,
+  /// coalesced across both sockets so an error storm costs one reload — and
+  /// re-issue the failed room's join in the same stroke: data alone doesn't
+  /// restore membership, and a socket that stays unjoined keeps losing every
+  /// later event. Join retries are bounded per room, so one socket's failure
+  /// never suppresses the other's.
+  @protected
+  void recoverRealtime({bool userRoom = false}) {
+    final now = DateTime.now();
+    final lastRefetch = _lastRealtimeRecovery;
+    if (lastRefetch == null ||
+        now.difference(lastRefetch) >= const Duration(seconds: 30)) {
+      _lastRealtimeRecovery = now;
+      unawaited(_refetch());
+    }
+    final lastJoin = userRoom ? _lastUserJoinRetry : _lastBoardJoinRetry;
+    if (lastJoin != null &&
+        now.difference(lastJoin) < const Duration(seconds: 30)) {
+      return;
+    }
+    if (userRoom) {
+      _lastUserJoinRetry = now;
+      rejoinUserRoom();
+    } else {
+      _lastBoardJoinRetry = now;
+      rejoinBoardRoom();
+    }
+  }
+
+  /// The user room's join, retried by recovery. Protected so tests can count
+  /// retries without a live socket.
+  @protected
+  void rejoinUserRoom() =>
+      unawaited(ref.read(userSocketProvider)?.subscribeUser());
+
+  /// Same for the board room.
+  @protected
+  void rejoinBoardRoom() => unawaited(_socket?.subscribeBoard(boardId));
+
   @override
   Future<BoardState> build() async {
     final account = ref.read(currentAccountProvider)!;
+    // From here the room may deliver at any moment; buffer until the snapshot
+    // is folded (see [listenToUserRoom]).
+    final foldUserRoom = wireUserRoom();
     final loaded = await load();
     final socket = PlankaSocket(account.serverUrl, account.token);
     _socket = socket;
     ref.onDispose(socket.dispose);
     // A stream/subscribe error only degrades realtime — the REST-loaded board
     // is still valid, hard disconnects surface via _ConnectionBanner, and a
-    // reconnect re-subscribes (onConnect) then refetches. So we log rather than
-    // alarm the user.
-    // ponytail: a subscribe-ack failure without a disconnect leaves realtime
-    // silently stale until the board is reopened; add a "live updates
-    // unavailable" banner state if that proves user-visible.
-    socket.events.listen(applySocketEvent,
-        onError: (Object e) => debugPrint('board socket error: $e'));
+    // reconnect re-subscribes (onConnect) then refetches. So we log rather
+    // than alarm the user — but since an error also means missed events on a
+    // possibly healthy transport, recover with a coalesced refetch.
+    socket.events.listen(applySocketEvent, onError: (Object e) {
+      debugPrint('board socket error: $e');
+      recoverRealtime();
+    });
     socket.connected.listen((c) {
       // On reconnect the socket re-subscribes itself; refetch to fill the gap.
       if (c) _refetch();
     });
     await socket.connect();
     await socket.subscribeBoard(boardId);
-    return loaded;
+    return foldUserRoom(loaded);
   }
 
   /// Applies one server-pushed event to the board. Public so tests can drive
@@ -599,7 +895,20 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
             .read(envelopeCacheProvider)
             .put('${account.id}-board-$boardId', env);
       }
-      state = AsyncData(await _withBaseCustomFields(BoardState.fromEnvelope(env)));
+      final prev = state.value;
+      var next = BoardState.fromEnvelope(env);
+      next = await _withBaseCustomFields(next, fresh: true);
+      // When the fresh project fetch fails, the fold above returns the raw
+      // board snapshot — which carries no base data at all. Installing that
+      // would drop every instantiated group's name and fields off the open
+      // board: the round-4 resurrection vector arriving through the board
+      // response instead of the cached project one. Carry what we were
+      // already rendering forward instead — no worse than before recovery —
+      // and let the next edge, event or join retry heal.
+      if (prev != null && next.needsBaseCustomFields) {
+        next = next.withBaseDataFrom(prev);
+      }
+      state = AsyncData(next);
     } on ApiException {
       // Keep current state; next socket event or user retry will heal it.
     }

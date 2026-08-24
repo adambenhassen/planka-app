@@ -22,11 +22,19 @@ const kPlankaSocketEvents = [
   'actionCreate',
   'userUpdate',
   'customFieldGroupCreate', 'customFieldGroupUpdate', 'customFieldGroupDelete',
+  // A field on a project's base group reuses these names; only the room it
+  // arrives on differs, so there is no baseCustomField* family.
   'customFieldCreate', 'customFieldUpdate', 'customFieldDelete',
+  'baseCustomFieldGroupCreate', 'baseCustomFieldGroupUpdate',
+  'baseCustomFieldGroupDelete',
   // No create event: one endpoint creates and updates a value, and the server
   // broadcasts customFieldValueUpdate for both.
   'customFieldValueUpdate', 'customFieldValueDelete',
 ];
+
+/// The sails route that joins the signed-in user's own room. Planka broadcasts
+/// project-level events there rather than to any board room.
+const kUserSubscribeUrl = '/api/users/me?subscribe=true';
 
 class SocketEvent {
   final String name;
@@ -58,6 +66,10 @@ class PlankaSocket {
   final String token;
   io.Socket? _socket;
   String? _currentBoardId;
+
+  /// Set once [subscribeUser] has been called, so a reconnect rejoins the room
+  /// rather than leaving it silently lost.
+  bool _userSubscribed = false;
 
   final _events = StreamController<SocketEvent>.broadcast();
   final _connected = StreamController<bool>.broadcast();
@@ -96,6 +108,7 @@ class PlankaSocket {
       _connected.add(true);
       final boardId = _currentBoardId;
       if (boardId != null) subscribeBoard(boardId);
+      if (_userSubscribed) subscribeUser();
     });
     socket.onDisconnect((_) => _connected.add(false));
     socket.on('connect_error', (_) => _connected.add(false));
@@ -107,25 +120,56 @@ class PlankaSocket {
   /// completes normally (never throws) — a failed/timed-out subscription is
   /// reported asynchronously as an error on the [events] stream, so callers
   /// observe failure there rather than by awaiting this method.
-  Future<void> subscribeBoard(String boardId) async {
+  Future<void> subscribeBoard(String boardId) {
     _currentBoardId = boardId;
-    final socket = _socket;
-    if (socket == null || !socket.connected) return;
-    final ack = await socket
-        .emitWithAckAsync(
-          'get',
-          sailsRequestFrame(
-            method: 'get',
-            url: '/api/boards/$boardId?subscribe=true',
-            token: token,
-          ),
-        )
-        .timeout(const Duration(seconds: 10),
-            onTimeout: () => {'statusCode': 'timeout'});
-    final status = ack is Map ? ack['statusCode'] : null;
-    if (status != 200) {
-      _events.addError(StateError('board subscribe failed: $ack'));
+    return _subscribe('board', '/api/boards/$boardId?subscribe=true');
+  }
+
+  /// Subscribes to the signed-in user's own room, which carries the
+  /// project-level events no board room does. Joining is idempotent on the
+  /// server and one join feeds every listener on [events], so subscribe once
+  /// per socket rather than opening a second socket for another event family.
+  /// Failure is reported on [events] exactly as for [subscribeBoard].
+  Future<void> subscribeUser() {
+    _userSubscribed = true;
+    return _subscribe('user', kUserSubscribeUrl);
+  }
+
+  /// Issues one sails subscribe request. Does nothing while disconnected — the
+  /// onConnect handler re-issues whatever was asked for.
+  ///
+  /// A rejected or timed-out ack leaves the room silently unjoined while the
+  /// transport stays up — no disconnect follows, so nothing re-issues the join
+  /// by itself. Retry with backoff before reporting failure on [events], so a
+  /// blip costs a second rather than the session's realtime.
+  Future<void> _subscribe(String room, String url) async {
+    Object? ack;
+    var delay = const Duration(seconds: 1);
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(delay);
+        delay *= 2;
+      }
+      final socket = _socket;
+      if (socket == null || !socket.connected) return;
+      try {
+        ack = await socket
+            .emitWithAckAsync(
+              'get',
+              sailsRequestFrame(method: 'get', url: url, token: token),
+            )
+            .timeout(const Duration(seconds: 10),
+                onTimeout: () => {'statusCode': 'timeout'});
+      } catch (e) {
+        // A transport error (disconnect mid-request, disposed socket) counts
+        // as a failed attempt — it must not escape as an unhandled async
+        // error from the unawaited calls above.
+        ack = e;
+      }
+      if (ack is Map && ack['statusCode'] == 200) return;
     }
+    if (_events.isClosed) return;
+    _events.addError(StateError('$room subscribe failed: $ack'));
   }
 
   void dispose() {
