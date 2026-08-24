@@ -784,6 +784,24 @@ abstract class AppLocalizations {
   /// **'Delete task?'**
   String get taskDeleteTitle;
 
+  /// Menu entry that opens the checklist-item assignee picker
+  ///
+  /// In en, this message translates to:
+  /// **'Assign member…'**
+  String get taskAssign;
+
+  /// Menu entry that clears a checklist item's assignee
+  ///
+  /// In en, this message translates to:
+  /// **'Unassign'**
+  String get taskUnassign;
+
+  /// Chip on a card tile marking the card as closed (in a closed-type list)
+  ///
+  /// In en, this message translates to:
+  /// **'Closed'**
+  String get cardClosed;
+
   /// Button that picks a file to attach to the card
   ///
   /// In en, this message translates to:

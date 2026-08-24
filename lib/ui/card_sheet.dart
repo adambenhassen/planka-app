@@ -278,8 +278,17 @@ class CardSheet extends ConsumerWidget {
           CardTaskListsSection(
             taskLists: cardTaskLists,
             tasks: state.tasks,
+            users: state.users,
+            isTaskCompleted: state.isTaskCompleted,
+            linkedCardNameOf: (t) => t.linkedCardId == null
+                ? null
+                : state.cards[t.linkedCardId]?.name,
             onToggleTask: (taskId, v) =>
                 guardMutation(context, notifier.setTaskCompleted(taskId, v)),
+            onSetAssignee: (taskId, userId) => guardMutation(
+                context, notifier.setTaskAssignee(taskId, userId)),
+            onOpenLinkedCard: (linkedCardId) =>
+                showCardSheet(context, boardId, linkedCardId),
             onAddTask: (taskListId, name) =>
                 guardMutation(context, notifier.createTask(taskListId, name)),
             onAddTaskList: (name) =>

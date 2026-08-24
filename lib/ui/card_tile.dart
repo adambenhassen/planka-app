@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../api/models.dart';
 import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
+import '../l10n/gen/app_localizations.dart';
 import '../state/board_state.dart';
 import 'theme/app_theme.dart';
 import 'widgets/label_colors.dart';
@@ -38,10 +39,15 @@ class CardTile extends ConsumerWidget {
     final labels = state.labelsOf(card.id);
     final members = state.membersOf(card.id);
     final tasks = state.tasksOfCard(card.id);
-    final done = tasks.where((t) => t.isCompleted).length;
+    final done = tasks.where(state.isTaskCompleted).length;
     final attachmentCount = state.attachmentsOf(card.id).length;
     final customFields = state.frontOfCardCustomFieldsOf(card.id);
     final due = card.dueDate;
+    // The server derives this from the list type; derive it locally too so a
+    // move whose broadcast has not landed yet still shows the right state.
+    final isClosed = card.isClosed == true ||
+        state.lists.where((l) => l.id == card.listId).firstOrNull?.type ==
+            PlankaListType.closed;
 
     // Downloads authenticate via the accessToken cookie, not a Bearer header.
     final token = ref.watch(currentAccountProvider)?.token;
@@ -114,7 +120,8 @@ class CardTile extends ConsumerWidget {
                   if (due != null ||
                       tasks.isNotEmpty ||
                       attachmentCount > 0 ||
-                      members.isNotEmpty) ...[
+                      members.isNotEmpty ||
+                      isClosed) ...[
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -132,6 +139,11 @@ class CardTile extends ConsumerWidget {
                           _Chip(
                             icon: Icons.check_box_outlined,
                             label: '$done/${tasks.length}',
+                          ),
+                        if (isClosed)
+                          _Chip(
+                            icon: Icons.inventory_2_outlined,
+                            label: AppLocalizations.of(context).cardClosed,
                           ),
                         if (attachmentCount > 0)
                           _Chip(

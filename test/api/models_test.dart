@@ -14,9 +14,43 @@ void main() {
     expect(env.included.lists, isNotEmpty);
     expect(env.included.lists.first.name, 'To Do');
     expect(env.included.cards.first.position, greaterThan(0));
+    expect(env.included.cards.first.isClosed, isFalse);
     expect(env.included.taskLists, isNotEmpty);
     expect(env.included.tasks, isNotEmpty);
+    expect(env.included.tasks.first.linkedCardId, isNull);
+    expect(env.included.tasks.first.assigneeUserId, isNull);
     expect(env.included.labels.first.color, isNotEmpty);
+  });
+
+  test('task assignee and linked-card fields parse when set', () {
+    final env = Envelope.parse({
+      'item': {'id': 'b1'},
+      'included': {
+        'tasks': [
+          {
+            'id': 't1',
+            'taskListId': 'tl1',
+            'name': 'Do it',
+            'isCompleted': true,
+            'assigneeUserId': 'u9',
+            'linkedCardId': 'c9',
+          },
+        ],
+        'cards': [
+          {
+            'id': 'c9',
+            'boardId': 'b1',
+            'listId': 'l1',
+            'type': 'project',
+            'name': 'Linked',
+            'isClosed': true,
+          },
+        ],
+      },
+    });
+    expect(env.included.tasks.single.assigneeUserId, 'u9');
+    expect(env.included.tasks.single.linkedCardId, 'c9');
+    expect(env.included.cards.single.isClosed, isTrue);
   });
 
   test('parses projects index', () {
@@ -35,6 +69,11 @@ void main() {
       'included': {'accessToken': 'jwt'},
     });
     expect(env.accessToken, 'jwt');
-    expect(Envelope.parse({'item': {'id': 'u1'}}).accessToken, null);
+    expect(
+      Envelope.parse({
+        'item': {'id': 'u1'},
+      }).accessToken,
+      null,
+    );
   });
 }

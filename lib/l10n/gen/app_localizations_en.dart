@@ -365,6 +365,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get taskDeleteTitle => 'Delete task?';
 
   @override
+  String get taskAssign => 'Assign member…';
+
+  @override
+  String get taskUnassign => 'Unassign';
+
+  @override
+  String get cardClosed => 'Closed';
+
+  @override
   String get attachmentAdd => 'Add attachment';
 
   @override

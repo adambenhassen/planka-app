@@ -130,6 +130,7 @@ _PlankaCard _$PlankaCardFromJson(Map<String, dynamic> json) => _PlankaCard(
       ? null
       : DateTime.parse(json['createdAt'] as String),
   prevListId: json['prevListId'] as String?,
+  isClosed: json['isClosed'] as bool?,
 );
 
 Map<String, dynamic> _$PlankaCardToJson(_PlankaCard instance) =>
@@ -148,6 +149,7 @@ Map<String, dynamic> _$PlankaCardToJson(_PlankaCard instance) =>
       'stopwatch': instance.stopwatch,
       'createdAt': instance.createdAt?.toIso8601String(),
       'prevListId': instance.prevListId,
+      'isClosed': instance.isClosed,
     };
 
 _PlankaStopwatch _$PlankaStopwatchFromJson(Map<String, dynamic> json) =>
@@ -267,6 +269,8 @@ _PlankaTask _$PlankaTaskFromJson(Map<String, dynamic> json) => _PlankaTask(
   name: json['name'] as String,
   isCompleted: json['isCompleted'] as bool,
   position: _toDouble(json['position']),
+  assigneeUserId: json['assigneeUserId'] as String?,
+  linkedCardId: json['linkedCardId'] as String?,
 );
 
 Map<String, dynamic> _$PlankaTaskToJson(_PlankaTask instance) =>
@@ -276,6 +280,8 @@ Map<String, dynamic> _$PlankaTaskToJson(_PlankaTask instance) =>
       'name': instance.name,
       'isCompleted': instance.isCompleted,
       'position': instance.position,
+      'assigneeUserId': instance.assigneeUserId,
+      'linkedCardId': instance.linkedCardId,
     };
 
 _PlankaComment _$PlankaCommentFromJson(Map<String, dynamic> json) =>
