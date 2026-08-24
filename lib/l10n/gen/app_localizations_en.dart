@@ -163,6 +163,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get projectMenuManagers => 'Managers';
 
   @override
+  String get projectMenuCustomFields => 'Custom fields';
+
+  @override
   String get projectMenuBackground => 'Background';
 
   @override
@@ -749,4 +752,53 @@ class AppLocalizationsEn extends AppLocalizations {
   String customFieldsMovedToPosition(String name, int position, int total) {
     return '$name moved to position $position of $total';
   }
+
+  @override
+  String get customFieldsTemplatesSection => 'Project templates';
+
+  @override
+  String get customFieldsManageTemplates => 'Manage templates';
+
+  @override
+  String get customFieldsBackToFields => 'Back to fields';
+
+  @override
+  String get customFieldsAddTemplate => 'Add template';
+
+  @override
+  String get customFieldsTemplatesEmpty =>
+      'This project has no field templates yet.';
+
+  @override
+  String get customFieldsTemplatesLoadFailed =>
+      'Couldn\'t load project templates';
+
+  @override
+  String customFieldsFieldCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count fields',
+      one: '1 field',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get customFieldsAddToBoard => 'Add to board';
+
+  @override
+  String get customFieldsAddedToBoard => 'Added';
+
+  @override
+  String get customFieldsTemplateDeleteTitle => 'Delete template?';
+
+  @override
+  String customFieldsTemplateDeleteMessage(String name, int fieldCount) {
+    return '\"$name\", its $fieldCount fields, and the copy of this group on every board in this project that uses it are deleted, along with every value stored under them. This cannot be undone.';
+  }
+
+  @override
+  String get customFieldsManagersRequired =>
+      'Only project managers can change field templates.';
 }

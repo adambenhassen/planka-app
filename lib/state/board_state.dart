@@ -1333,6 +1333,24 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     );
   }
 
+  /// Instantiates a project template onto this board. The server row is
+  /// folded in on response (the socket echo dedupes via upsert); the group
+  /// borrows its name and fields from the template, so the project fetch that
+  /// supplies those is run right away instead of waiting for the socket edge.
+  Future<void> instantiateTemplateOnBoard(String baseCustomFieldGroupId) async {
+    final s = state.value;
+    if (s == null) return;
+    final position = positionBetween(_boardGroups(s).lastOrNull?.position, null);
+    await _createInto(
+      _repo.createBoardCustomFieldGroupFromTemplate(boardId,
+          baseCustomFieldGroupId: baseCustomFieldGroupId, position: position),
+      PlankaCustomFieldGroup.fromJson,
+      (b, g) => b.copyWith(
+          customFieldGroups: _upsert(b.customFieldGroups, g, (x) => x.id)),
+    );
+    await _fillBaseCustomFields();
+  }
+
   // --------------- Custom field mutations ---------------
 
   List<PlankaCustomField> _groupFields(BoardState s, String groupId) =>
