@@ -137,8 +137,6 @@ class _FakeProjectsNotifier extends ProjectsNotifier {
 
 /// Never resolves until completed — holds the templates section in its
 /// loading state so the spinner branch can be asserted.
-/// Never resolves until completed — holds the templates section in its
-/// loading state so the spinner branch can be asserted.
 class _DelayedProjectsNotifier extends ProjectsNotifier {
   _DelayedProjectsNotifier(this.completer);
   final Completer<ProjectsView> completer;
@@ -147,7 +145,10 @@ class _DelayedProjectsNotifier extends ProjectsNotifier {
 }
 
 /// View swappable mid-test, so a record can vanish between rendering and a
-/// write — the deleted-from-another-client race.
+/// write — the deleted-from-another-client race. Once the row is gone the
+/// originating context unmounts, so no snackbar can surface; what the test
+/// pins is that the refused write does not come out as the manager-only
+/// claim.
 class _MutableProjectsNotifier extends ProjectsNotifier {
   _MutableProjectsNotifier(ProjectsView view) : _view = view;
   ProjectsView _view;
@@ -496,6 +497,52 @@ void main() {
 
       expect(find.text('Only project managers can change field templates.'),
           findsOneWidget);
+    });
+
+    testWidgets('a 404 against a template another client deleted never '
+        'claims manager-only', (tester) async {
+      final fake = _MutableProjectsNotifier(_view());
+      final container = ProviderContainer(overrides: [
+        currentAccountProvider.overrideWith(() => _AccNotifier()),
+        projectsProvider.overrideWith(() => fake),
+      ]);
+      addTearDown(container.dispose);
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const Scaffold(
+            body: CustomFieldsManagerSheet(projectId: _projectId),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // Start renaming Alpha...
+      await tester.tap(find.byIcon(Icons.more_vert).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Rename'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'Renamed');
+
+      // ...then another client deletes it before Save is tapped.
+      fake.view = ProjectsView(
+        projects: const [PlankaProject(id: _projectId, name: 'Proj')],
+        boards: const [],
+        backgroundImages: const [],
+      );
+      container.invalidate(projectsProvider);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      // The row is gone so the originating context unmounted and no snackbar
+      // can show at all — but the refused write must not have been mapped to
+      // the false permission claim.
+      expect(find.text('Only project managers can change field templates.'),
+          findsNothing);
     });
   });
 
