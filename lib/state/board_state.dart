@@ -573,12 +573,20 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     return _withBaseCustomFields(BoardState.fromEnvelope(env));
   }
 
-  /// A custom field group instantiated from a project base group takes its name
-  /// and fields from that template, which the board response omits — so fetch
-  /// the project, but only for a board that actually has such a group.
-  Future<BoardState> _withBaseCustomFields(BoardState s) async {
+  /// A custom field group instantiated from a project base group takes its
+  /// name and fields from that template, which the board response omits — so
+  /// fetch the project, but only for a board that actually has such a group.
+  /// With [fresh] the fold never answers from the offline cache: it is used by
+  /// recovery and reconnect refetches, which act as authoritative
+  /// reconciliation sources a stale cache must not feed (see
+  /// [_freshProjectEnvelope]). Initial load keeps the fallback — offline,
+  /// a cached name beats none.
+  Future<BoardState> _withBaseCustomFields(BoardState s,
+      {bool fresh = false}) async {
     if (!s.needsBaseCustomFields) return s;
-    final env = await _projectEnvelope(s.board.projectId);
+    final env = fresh
+        ? await _freshProjectEnvelope(s.board.projectId)
+        : await _projectEnvelope(s.board.projectId);
     return env == null ? s : s.withBaseCustomFields(env);
   }
 
@@ -685,7 +693,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
         .where((e) => kBoardUserRoomEvents.contains(e.name))
         .listen((e) => live ? apply(e) : pending.add(e), onError: (Object e) {
       debugPrint('user room socket error: $e');
-      _recoverRealtime(userRoom: true);
+      recoverRealtime(userRoom: true);
     });
     // The room outlives this board when another screen is watching it, so hand
     // the subscription back rather than relying on the socket being disposed.
@@ -746,27 +754,49 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   bool _baseResyncPending = false;
 
   DateTime? _lastRealtimeRecovery;
+  DateTime? _lastUserJoinRetry;
+  DateTime? _lastBoardJoinRetry;
 
   /// Realtime errors mean events are being missed while the transport may look
   /// healthy — a permanently refused subscribe leaves no disconnect to react
   /// to. Heal with a full refetch instead of trusting the log line alone,
-  /// coalesced so an error storm costs one reload — and re-issue the failed
-  /// join in the same stroke: data alone doesn't restore membership, and a
-  /// socket that stays unjoined keeps losing every later event.
-  void _recoverRealtime({bool userRoom = false}) {
+  /// coalesced across both sockets so an error storm costs one reload — and
+  /// re-issue the failed room's join in the same stroke: data alone doesn't
+  /// restore membership, and a socket that stays unjoined keeps losing every
+  /// later event. Join retries are bounded per room, so one socket's failure
+  /// never suppresses the other's.
+  @protected
+  void recoverRealtime({bool userRoom = false}) {
     final now = DateTime.now();
-    final last = _lastRealtimeRecovery;
-    if (last != null && now.difference(last) < const Duration(seconds: 30)) {
+    final lastRefetch = _lastRealtimeRecovery;
+    if (lastRefetch == null ||
+        now.difference(lastRefetch) >= const Duration(seconds: 30)) {
+      _lastRealtimeRecovery = now;
+      unawaited(_refetch());
+    }
+    final lastJoin = userRoom ? _lastUserJoinRetry : _lastBoardJoinRetry;
+    if (lastJoin != null &&
+        now.difference(lastJoin) < const Duration(seconds: 30)) {
       return;
     }
-    _lastRealtimeRecovery = now;
-    unawaited(_refetch());
     if (userRoom) {
-      unawaited(ref.read(userSocketProvider)?.subscribeUser());
+      _lastUserJoinRetry = now;
+      rejoinUserRoom();
     } else {
-      unawaited(_socket?.subscribeBoard(boardId));
+      _lastBoardJoinRetry = now;
+      rejoinBoardRoom();
     }
   }
+
+  /// The user room's join, retried by recovery. Protected so tests can count
+  /// retries without a live socket.
+  @protected
+  void rejoinUserRoom() =>
+      unawaited(ref.read(userSocketProvider)?.subscribeUser());
+
+  /// Same for the board room.
+  @protected
+  void rejoinBoardRoom() => unawaited(_socket?.subscribeBoard(boardId));
 
   @override
   Future<BoardState> build() async {
@@ -785,7 +815,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     // possibly healthy transport, recover with a coalesced refetch.
     socket.events.listen(applySocketEvent, onError: (Object e) {
       debugPrint('board socket error: $e');
-      _recoverRealtime();
+      recoverRealtime();
     });
     socket.connected.listen((c) {
       // On reconnect the socket re-subscribes itself; refetch to fill the gap.
@@ -841,7 +871,9 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
             .read(envelopeCacheProvider)
             .put('${account.id}-board-$boardId', env);
       }
-      state = AsyncData(await _withBaseCustomFields(BoardState.fromEnvelope(env)));
+      state = AsyncData(
+          await _withBaseCustomFields(BoardState.fromEnvelope(env),
+              fresh: true));
     } on ApiException {
       // Keep current state; next socket event or user retry will heal it.
     }

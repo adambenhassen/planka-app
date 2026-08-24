@@ -9,6 +9,7 @@ import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/api/planka_socket.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
+import 'package:planka_app/state/envelope_cache.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/state/user_socket.dart';
 
@@ -112,6 +113,25 @@ class _UserRoomNotifier extends BoardNotifier {
     final loaded = await load();
     return foldUserRoom(loaded);
   }
+}
+
+/// Counts recovery actions instead of performing them, so the cooldown rules
+/// are observable without live sockets.
+class _CountingRecoveryNotifier extends _UserRoomNotifier {
+  _CountingRecoveryNotifier(super.boardId);
+
+  int userJoins = 0;
+  int boardJoins = 0;
+
+  @override
+  void rejoinUserRoom() => userJoins++;
+
+  @override
+  void rejoinBoardRoom() => boardJoins++;
+
+  // @protected members are fair game from the subclass.
+  void recover({required bool userRoom}) =>
+      recoverRealtime(userRoom: userRoom);
 }
 
 Future<(ProviderContainer, StreamController<SocketEvent>,
@@ -359,6 +379,92 @@ void main() {
     expect(api.projectFetches, 2);
     expect(_stateOf(container).customFields.map((f) => f.id),
         isNot(contains(_baseFieldId)));
+  });
+
+  test('recovery never resurrects deleted base data from the offline cache',
+      () async {
+    // The recovery refetch is an authoritative reconciliation: with the fresh
+    // fetch failing, the stale cached project envelope — which still holds
+    // the field the server deleted during the outage — must not be installed.
+    final tmp = await Directory.systemTemp.createTemp('envcache');
+    addTearDown(() => tmp.delete(recursive: true));
+    final api = _FakeApi();
+    final room = StreamController<SocketEvent>.broadcast();
+    addTearDown(room.close);
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(_AccNotifier.new),
+      userSocketProvider.overrideWithValue(null),
+      userEventsProvider.overrideWithValue(room.stream),
+      userConnectedProvider.overrideWithValue(const Stream.empty()),
+      envelopeCacheProvider
+          .overrideWithValue(EnvelopeCache(directory: tmp)),
+      boardProvider.overrideWith2(_UserRoomNotifier.new),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(boardProvider(_boardId).future);
+
+    // The deletion arrives while the socket was still joined; afterwards the
+    // cache alone still describes the field as alive.
+    await _push(
+        room,
+        'customFieldDelete',
+        {
+          'id': _baseFieldId,
+          'name': 'BF',
+          'position': 16384,
+          'showOnFrontOfCard': false,
+          'customFieldGroupId': null,
+          'baseCustomFieldGroupId': _baseGroupId,
+        });
+    expect(_stateOf(container).customFields.map((f) => f.id),
+        isNot(contains(_baseFieldId)));
+
+    api.projectError = true;
+    room.addError(StateError('user subscribe failed'));
+    await pumpEventQueue();
+
+    expect(api.boardFetches, greaterThanOrEqualTo(2)); // recovery ran
+    expect(_stateOf(container).customFields.map((f) => f.id),
+        isNot(contains(_baseFieldId)), reason: 'stale cache must not feed it');
+  });
+
+  test('one room\'s error does not suppress the other\'s join retry',
+      () async {
+    final api = _FakeApi();
+    final room = StreamController<SocketEvent>.broadcast();
+    addTearDown(room.close);
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(_AccNotifier.new),
+      userSocketProvider.overrideWithValue(null),
+      userEventsProvider.overrideWithValue(room.stream),
+      userConnectedProvider.overrideWithValue(const Stream.empty()),
+      envelopeCacheProvider.overrideWithValue(
+          EnvelopeCache(directory: await Directory.systemTemp.createTemp())),
+      boardProvider.overrideWith2(_CountingRecoveryNotifier.new),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(boardProvider(_boardId).future);
+    final n = container.read(boardProvider(_boardId).notifier)
+        as _CountingRecoveryNotifier;
+    final boardsBefore = api.boardFetches;
+
+    // Both rooms fail inside one window.
+    n.recover(userRoom: true);
+    n.recover(userRoom: false);
+    await pumpEventQueue();
+    expect(n.userJoins, 1);
+    expect(n.boardJoins, 1);
+    expect(api.boardFetches, boardsBefore + 1); // refetch coalesced to one
+
+    // Still inside that window: each room retries only on its own clock.
+    n.recover(userRoom: true);
+    n.recover(userRoom: false);
+    await pumpEventQueue();
+    expect(n.userJoins, 1);
+    expect(n.boardJoins, 1);
+    expect(api.boardFetches, boardsBefore + 1);
   });
 
   test('a user-room error heals with a refetch instead of only logging',
