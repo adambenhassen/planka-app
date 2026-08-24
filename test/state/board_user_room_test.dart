@@ -96,6 +96,20 @@ class _FakeApi extends PlankaApi {
   }
 }
 
+/// Same contract as [EnvelopeCache], in memory: keeps tests deterministic by
+/// staying off real file I/O while still exercising the fallback path.
+class _MemCache extends EnvelopeCache {
+  final _mem = <String, Envelope>{};
+
+  @override
+  Future<void> put(String key, Envelope env) async {
+    _mem[key] = env;
+  }
+
+  @override
+  Future<Envelope?> get(String key) async => _mem[key];
+}
+
 class _AccNotifier extends CurrentAccountNotifier {
   @override
   Account build() => Account(
@@ -381,13 +395,12 @@ void main() {
         isNot(contains(_baseFieldId)));
   });
 
-  test('recovery never resurrects deleted base data from the offline cache',
+  test('recovery with a failing project fetch never regresses base rendering',
       () async {
-    // The recovery refetch is an authoritative reconciliation: with the fresh
-    // fetch failing, the stale cached project envelope — which still holds
-    // the field the server deleted during the outage — must not be installed.
-    final tmp = await Directory.systemTemp.createTemp('envcache');
-    addTearDown(() => tmp.delete(recursive: true));
+    // Two vectors, one invariant: recovery is an authoritative
+    // reconciliation, so neither the stale cached envelope (round 4) nor the
+    // bare board snapshot missing its base data (round 5) may leave base-
+    // derived rendering worse than before the recovery ran.
     final api = _FakeApi();
     final room = StreamController<SocketEvent>.broadcast();
     addTearDown(room.close);
@@ -397,8 +410,7 @@ void main() {
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(room.stream),
       userConnectedProvider.overrideWithValue(const Stream.empty()),
-      envelopeCacheProvider
-          .overrideWithValue(EnvelopeCache(directory: tmp)),
+      envelopeCacheProvider.overrideWithValue(_MemCache()),
       boardProvider.overrideWith2(_UserRoomNotifier.new),
     ]);
     addTearDown(container.dispose);
@@ -417,16 +429,36 @@ void main() {
           'customFieldGroupId': null,
           'baseCustomFieldGroupId': _baseGroupId,
         });
+    expect(_groupNames(_stateOf(container)), ['Base', 'BG', 'CG']);
     expect(_stateOf(container).customFields.map((f) => f.id),
         isNot(contains(_baseFieldId)));
 
+    // Hold the recovery's board refetch open so the pre-recovery assertions
+    // below read state the recovery has not written yet; releasing the gate
+    // lets it settle before the post-recovery ones run.
     api.projectError = true;
+    api.gate = Completer<void>();
     room.addError(StateError('user subscribe failed'));
     await pumpEventQueue();
 
-    expect(api.boardFetches, greaterThanOrEqualTo(2)); // recovery ran
+    // Blocked on the gated fetch, the recovery has written nothing yet.
+    expect(_groupNames(_stateOf(container)), ['Base', 'BG', 'CG']);
+
+    api.gate!.complete();
+    await pumpEventQueue();
+
+    expect(api.boardFetches, greaterThanOrEqualTo(2)); // recovery settled
     expect(_stateOf(container).customFields.map((f) => f.id),
         isNot(contains(_baseFieldId)), reason: 'stale cache must not feed it');
+
+    // The failure path must carry base-derived state forward, not regress:
+    // the template's name stays on the instantiated group and its remaining
+    // value keeps rendering, while the deleted field stays gone.
+    final s = _stateOf(container);
+    expect(_groupNames(s), ['Base', 'BG', 'CG']);
+    expect(s.customFieldValueOf(_cardId, _basedGroupId, _baseFieldId)?.content,
+        'based');
+    expect(s.customFields.map((f) => f.id), isNot(contains(_baseFieldId)));
   });
 
   test('one room\'s error does not suppress the other\'s join retry',
@@ -440,8 +472,7 @@ void main() {
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(room.stream),
       userConnectedProvider.overrideWithValue(const Stream.empty()),
-      envelopeCacheProvider.overrideWithValue(
-          EnvelopeCache(directory: await Directory.systemTemp.createTemp())),
+      envelopeCacheProvider.overrideWithValue(_MemCache()),
       boardProvider.overrideWith2(_CountingRecoveryNotifier.new),
     ]);
     addTearDown(container.dispose);

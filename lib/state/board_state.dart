@@ -233,6 +233,30 @@ class BoardState {
     );
   }
 
+  /// Carries [old]'s base-derived data — templates and the fields they own —
+  /// into this state. Used when a recovery refetch could not resolve the
+  /// project fresh: the board snapshot alone renders instantiated groups as
+  /// untitled empty blocks, so what was on screen before the recovery ran is
+  /// kept until the next successful fetch heals it. Nothing else moves: the
+  /// board envelope stays authoritative for groups, values, cards and the
+  /// rest, so a server-side cascade deletion still cannot come back through
+  /// here.
+  BoardState withBaseDataFrom(BoardState old) {
+    final fieldIds = customFields.map((f) => f.id).toSet();
+    return copyWith(
+      baseCustomFieldGroups: [
+        ...baseCustomFieldGroups,
+        ...old.baseCustomFieldGroups.where((b) =>
+            !baseCustomFieldGroups.any((x) => x.id == b.id)),
+      ],
+      customFields: [
+        ...customFields,
+        ...old.customFields.where((f) =>
+            f.baseCustomFieldGroupId != null && !fieldIds.contains(f.id)),
+      ],
+    );
+  }
+
   BoardState copyWith({
     PlankaBoard? board,
     List<PlankaList>? lists,
@@ -871,9 +895,20 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
             .read(envelopeCacheProvider)
             .put('${account.id}-board-$boardId', env);
       }
-      state = AsyncData(
-          await _withBaseCustomFields(BoardState.fromEnvelope(env),
-              fresh: true));
+      final prev = state.value;
+      var next = BoardState.fromEnvelope(env);
+      next = await _withBaseCustomFields(next, fresh: true);
+      // When the fresh project fetch fails, the fold above returns the raw
+      // board snapshot — which carries no base data at all. Installing that
+      // would drop every instantiated group's name and fields off the open
+      // board: the round-4 resurrection vector arriving through the board
+      // response instead of the cached project one. Carry what we were
+      // already rendering forward instead — no worse than before recovery —
+      // and let the next edge, event or join retry heal.
+      if (prev != null && next.needsBaseCustomFields) {
+        next = next.withBaseDataFrom(prev);
+      }
+      state = AsyncData(next);
     } on ApiException {
       // Keep current state; next socket event or user retry will heal it.
     }
