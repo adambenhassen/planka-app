@@ -913,7 +913,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     if (lastRefetch == null ||
         now.difference(lastRefetch) >= const Duration(seconds: 30)) {
       _lastRealtimeRecovery = now;
-      unawaited(_refetch());
+      unawaited(_refetch(discardOnEvent: true));
     }
     final lastJoin = userRoom ? _lastUserJoinRetry : _lastBoardJoinRetry;
     if (lastJoin != null &&
@@ -960,7 +960,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     });
     socket.connected.listen((c) {
       // On reconnect the socket re-subscribes itself; refetch to fill the gap.
-      if (c) _refetch();
+      if (c) _refetch(discardOnEvent: true);
     });
     await socket.connect();
     await socket.subscribeBoard(boardId);
@@ -1008,13 +1008,17 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     }
   }
 
-  Future<void> _refetch() async {
-    // Same freshness rule the reconciliation fetch applies: an event changing
-    // this board while the fetches below are in flight is newer than the
-    // response answering them, and installing it would revert that change
-    // until something else healed it. Discard instead — the event itself
-    // proves the transport delivers again, and the next edge or event heals
-    // any residual gap from the outage.
+  /// Refetches the board and installs the answer. With [discardOnEvent], the
+  /// freshness rule recovery lives by applies: an event changing this board
+  /// while the fetches below are in flight is newer than the response
+  /// answering them, so the install is dropped — the event itself proves the
+  /// transport delivers again, and the next edge or event heals any residual
+  /// gap from the outage. Recovery-only: the rollback paths ([_optimistic],
+  /// [sortList]'s empty-response refetch) must install unconditionally, or a
+  /// rejected mutation's unconfirmed optimistic state survives forever — the
+  /// server pushes no event for a mutation it refused, so nothing would heal
+  /// it.
+  Future<void> _refetch({bool discardOnEvent = false}) async {
     final seenBeforeFetch = _stateChangesSeen;
     try {
       final env = await _repo.board(boardId);
@@ -1037,7 +1041,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       if (prev != null && next.needsBaseCustomFields) {
         next = next.withBaseDataFrom(prev);
       }
-      if (_stateChangesSeen != seenBeforeFetch) return;
+      if (discardOnEvent && _stateChangesSeen != seenBeforeFetch) return;
       final activeCardIds = _activeCommentProviders.keys.toSet();
       state = AsyncData(next);
       // Comments live outside the board envelope; an open sheet must refold
