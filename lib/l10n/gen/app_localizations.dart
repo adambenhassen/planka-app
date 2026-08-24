@@ -1525,7 +1525,7 @@ abstract class AppLocalizations {
   /// Body of the template delete confirmation. Names the scope (every board in this project) but never a number of boards — the projects payload does not carry board custom field groups, so any count would be invented.
   ///
   /// In en, this message translates to:
-  /// **'\"{name}\", its {fieldCount} fields, and the copy of this group on every board in this project that uses it are deleted, along with every value stored under them. This cannot be undone.'**
+  /// **'\"{name}\", its {fieldCount, plural, =1{1 field} other{{fieldCount} fields}}, and the copy of this group on every board in this project that uses it are deleted, along with every value stored under them. This cannot be undone.'**
   String customFieldsTemplateDeleteMessage(String name, int fieldCount);
 
   /// Snackbar shown when the server refuses a template write; the server answers a non-manager with projectNotFound, so the raw message would read as a missing project

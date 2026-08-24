@@ -795,7 +795,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String customFieldsTemplateDeleteMessage(String name, int fieldCount) {
-    return '\"$name\", its $fieldCount fields, and the copy of this group on every board in this project that uses it are deleted, along with every value stored under them. This cannot be undone.';
+    String _temp0 = intl.Intl.pluralLogic(
+      fieldCount,
+      locale: localeName,
+      other: '$fieldCount fields',
+      one: '1 field',
+    );
+    return '\"$name\", its $_temp0, and the copy of this group on every board in this project that uses it are deleted, along with every value stored under them. This cannot be undone.';
   }
 
   @override

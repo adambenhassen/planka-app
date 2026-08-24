@@ -62,22 +62,45 @@ Future<void> showProjectTemplatesSheet(
   );
 }
 
+/// Whether a template write names a record the projects view still holds. A
+/// 404 on such a write is the server's non-manager refusal (`projectNotFound`).
+/// Against an id another client has already deleted it is a plain missing
+/// record, and telling the user they are not a manager would hide the real
+/// cause — such writes fall through to [showApiError] instead.
+bool templateRecordInView(
+  ProjectsView? view, {
+  String? projectId,
+  String? templateId,
+  String? fieldId,
+}) {
+  if (view == null) return false;
+  if (projectId != null) {
+    return view.projects.any((p) => p.id == projectId);
+  }
+  if (templateId != null) {
+    return view.baseCustomFieldGroups.any((b) => b.id == templateId);
+  }
+  if (fieldId != null) return view.customFields.any((f) => f.id == fieldId);
+  return false;
+}
+
 /// Surfaces [e] to the user. A board-level write refused with 403 maps to the
-/// board-editor-only copy. A template write refused with 404 maps to the
-/// manager-only copy — the server answers a non-manager with
-/// `projectNotFound`, so the raw message would read as a missing project
-/// rather than a refusal. Anything else goes through [showApiError].
+/// board-editor-only copy. When [expectManagerRefusal] holds — the write names
+/// a template record still present in the projects view — a 404 maps to the
+/// manager-only copy, since the server answers a non-manager with
+/// `projectNotFound`, which would read as a missing project. Anything else
+/// goes through [showApiError].
 void _handleCfError(BuildContext context, AppLocalizations l10n, Object e,
-    {bool templateWrite = false}) {
+    {bool expectManagerRefusal = false}) {
   if (!context.mounted) {
     debugPrint('_handleCfError: failed after context unmounted: $e');
     return;
   }
   final code = e is ApiException ? e.statusCode : null;
   final String? message;
-  if (templateWrite && code == 404) {
+  if (expectManagerRefusal && code == 404) {
     message = l10n.customFieldsManagersRequired;
-  } else if (!templateWrite && code == 403) {
+  } else if (!expectManagerRefusal && code == 403) {
     message = l10n.customFieldsEditorRequired;
   } else {
     message = null;
@@ -97,11 +120,11 @@ void _guardCfMutation(
   BuildContext context,
   AppLocalizations l10n,
   Future<void> future, {
-  bool templateWrite = false,
+  bool expectManagerRefusal = false,
 }) {
   future.catchError((Object e) {
     if (context.mounted) {
-      _handleCfError(context, l10n, e, templateWrite: templateWrite);
+      _handleCfError(context, l10n, e, expectManagerRefusal: expectManagerRefusal);
     } else {
       // The sheet is gone so the snackbar can't be shown, but the failure
       // still happened. Log rather than swallow it silently.
@@ -866,7 +889,8 @@ class _TemplatesBody extends ConsumerWidget {
                         context,
                         l10n,
                         notifier.createTemplate(projectId, name),
-                        templateWrite: true),
+                        expectManagerRefusal:
+                            templateRecordInView(view, projectId: projectId)),
                   ),
                 ],
               ),
@@ -878,7 +902,7 @@ class _TemplatesBody extends ConsumerWidget {
   }
 }
 
-class _TemplateBlock extends StatelessWidget {
+class _TemplateBlock extends ConsumerWidget {
   const _TemplateBlock({
     required this.template,
     required this.fields,
@@ -891,7 +915,7 @@ class _TemplateBlock extends StatelessWidget {
   final ProjectsNotifier notifier;
   final AppLocalizations l10n;
 
-  Future<void> _rename(BuildContext context) async {
+  Future<void> _rename(BuildContext context, WidgetRef ref) async {
     final name = await promptText(
       context,
       title: l10n.customFieldsRenameGroupTitle,
@@ -899,10 +923,12 @@ class _TemplateBlock extends StatelessWidget {
     );
     if (name == null || !context.mounted) return;
     _guardCfMutation(context, l10n, notifier.renameTemplate(template.id, name),
-        templateWrite: true);
+        expectManagerRefusal:
+            templateRecordInView(ref.read(projectsProvider).value,
+                templateId: template.id));
   }
 
-  Future<void> _delete(BuildContext context) async {
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
     final confirmed = await confirmDialog(
       context,
       destructive: true,
@@ -913,11 +939,17 @@ class _TemplateBlock extends StatelessWidget {
     );
     if (!confirmed || !context.mounted) return;
     _guardCfMutation(context, l10n, notifier.deleteTemplate(template.id),
-        templateWrite: true);
+        expectManagerRefusal:
+            templateRecordInView(ref.read(projectsProvider).value,
+                templateId: template.id));
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    bool refusalExpected({String? fieldId}) => templateRecordInView(
+        ref.read(projectsProvider).value,
+        templateId: template.id,
+        fieldId: fieldId);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -940,9 +972,9 @@ class _TemplateBlock extends StatelessWidget {
             onSelected: (action) async {
               switch (action) {
                 case 'rename':
-                  await _rename(context);
+                  await _rename(context, ref);
                 case 'delete':
-                  await _delete(context);
+                  await _delete(context, ref);
               }
             },
             itemBuilder: (_) => [
@@ -968,6 +1000,7 @@ class _TemplateBlock extends StatelessWidget {
               onDelete: (field) => notifier.deleteTemplateField(field.id),
             ),
             isCard: false,
+            expectManagerRefusal: (field) => refusalExpected(fieldId: field.id),
             l10n: l10n,
           ),
         Padding(
@@ -979,7 +1012,7 @@ class _TemplateBlock extends StatelessWidget {
                 context,
                 l10n,
                 notifier.createTemplateField(template.id, name),
-                templateWrite: true),
+                expectManagerRefusal: refusalExpected()),
           ),
         ),
       ],
@@ -996,6 +1029,7 @@ class _FieldRow extends StatelessWidget {
     required this.isCard,
     required this.l10n,
     this.readOnly = false,
+    this.expectManagerRefusal,
   });
 
   final PlankaCustomField field;
@@ -1009,6 +1043,11 @@ class _FieldRow extends StatelessWidget {
 
   /// True for an instantiated group's template fields: no menu is rendered.
   final bool readOnly;
+
+  /// Decides per write whether a 404 should read as the manager-only refusal:
+  /// true only while the projects view still holds this very field. Null on
+  /// board and card pages, where a 404 is never that refusal.
+  final bool Function(PlankaCustomField field)? expectManagerRefusal;
   final AppLocalizations l10n;
 
   Future<void> _rename(BuildContext context) async {
@@ -1019,7 +1058,7 @@ class _FieldRow extends StatelessWidget {
     );
     if (name == null || !context.mounted) return;
     _guardCfMutation(context, l10n, actions.onRename(field, name),
-        templateWrite: !isCard && field.customFieldGroupId == null);
+        expectManagerRefusal: expectManagerRefusal?.call(field) ?? false);
   }
 
   Future<void> _delete(BuildContext context) async {
@@ -1036,7 +1075,7 @@ class _FieldRow extends StatelessWidget {
     );
     if (!confirmed || !context.mounted) return;
     _guardCfMutation(context, l10n, actions.onDelete(field),
-        templateWrite: !isCard && field.customFieldGroupId == null);
+        expectManagerRefusal: expectManagerRefusal?.call(field) ?? false);
   }
 
   @override
@@ -1072,8 +1111,8 @@ class _FieldRow extends StatelessWidget {
                 context,
                 l10n,
                 actions.onToggleFront(field, !showOnFront),
-                templateWrite:
-                    !isCard && field.customFieldGroupId == null,
+                expectManagerRefusal:
+                    expectManagerRefusal?.call(field) ?? false,
               );
             case 'up':
               try {

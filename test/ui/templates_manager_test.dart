@@ -137,11 +137,30 @@ class _FakeProjectsNotifier extends ProjectsNotifier {
 
 /// Never resolves until completed — holds the templates section in its
 /// loading state so the spinner branch can be asserted.
+/// Never resolves until completed — holds the templates section in its
+/// loading state so the spinner branch can be asserted.
 class _DelayedProjectsNotifier extends ProjectsNotifier {
   _DelayedProjectsNotifier(this.completer);
   final Completer<ProjectsView> completer;
   @override
   Future<ProjectsView> build() => completer.future;
+}
+
+/// View swappable mid-test, so a record can vanish between rendering and a
+/// write — the deleted-from-another-client race.
+class _MutableProjectsNotifier extends ProjectsNotifier {
+  _MutableProjectsNotifier(ProjectsView view) : _view = view;
+  ProjectsView _view;
+
+  set view(ProjectsView v) => _view = v;
+
+  @override
+  Future<ProjectsView> build() async => _view;
+
+  @override
+  Future<void> renameTemplate(String id, String name) async {
+    throw ApiException(404, 'projectNotFound');
+  }
 }
 
 /// Always fails to load — the templates section's error branch.
@@ -422,6 +441,62 @@ void main() {
       expect(find.text('Only project managers can change field templates.'),
           findsOneWidget);
     });
+
+    testWidgets('deleting a one-field template reads the singular count',
+        (tester) async {
+      final single = _view(
+        bases: const [
+          PlankaBaseCustomFieldGroup(id: 't9', projectId: _projectId, name: 'Solo'),
+        ],
+        fields: const [
+          PlankaCustomField(
+              id: 'sf1',
+              name: 'Only field',
+              baseCustomFieldGroupId: 't9',
+              position: 16384),
+        ],
+      );
+      await tester.pumpWidget(_templatesApp(single));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.more_vert).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining(RegExp(r'its 1 field,')), findsOneWidget);
+      expect(find.textContaining('its 1 fields'), findsNothing);
+    });
+
+    testWidgets('404 on renaming a template still in the view says '
+        'manager-only', (tester) async {
+      final fake = _MutableProjectsNotifier(_view());
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: ProviderContainer(overrides: [
+          currentAccountProvider.overrideWith(() => _AccNotifier()),
+          projectsProvider.overrideWith(() => fake),
+        ]),
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const Scaffold(
+            body: CustomFieldsManagerSheet(projectId: _projectId),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.more_vert).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Rename'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'Renamed');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Only project managers can change field templates.'),
+          findsOneWidget);
+    });
   });
 
   group('templates section on page 1', () {
@@ -563,6 +638,29 @@ void main() {
       expect(find.text('Add template'), findsOneWidget);
       expect(find.byIcon(Icons.arrow_back), findsNothing);
       expect(find.text('Board'), findsNothing);
+    });
+  });
+
+  group('templateRecordInView', () {
+    final view = _view();
+
+    test('the project the sheet is scoped to', () {
+      expect(templateRecordInView(view, projectId: _projectId), isTrue);
+      expect(templateRecordInView(view, projectId: 'other'), isFalse);
+    });
+
+    test('templates still held vs deleted from elsewhere', () {
+      expect(templateRecordInView(view, templateId: 't1'), isTrue);
+      expect(templateRecordInView(view, templateId: 't9'), isFalse);
+    });
+
+    test('fields still held vs deleted from elsewhere', () {
+      expect(templateRecordInView(view, fieldId: 'f1'), isTrue);
+      expect(templateRecordInView(view, fieldId: 'fx'), isFalse);
+    });
+
+    test('a missing projects payload never claims the manager refusal', () {
+      expect(templateRecordInView(null, templateId: 't1'), isFalse);
     });
   });
 }

@@ -1095,7 +1095,7 @@
   "customFieldsTemplateDeleteTitle": "Delete template?",
   "@customFieldsTemplateDeleteTitle": { "description": "Title of the template delete confirmation" },
 
-  "customFieldsTemplateDeleteMessage": "\"{name}\", its {fieldCount} fields, and the copy of this group on every board in this project that uses it are deleted, along with every value stored under them. This cannot be undone.",
+  "customFieldsTemplateDeleteMessage": "\"{name}\", its {fieldCount, plural, =1{1 field} other{{fieldCount} fields}}, and the copy of this group on every board in this project that uses it are deleted, along with every value stored under them. This cannot be undone.",
   "@customFieldsTemplateDeleteMessage": {
     "description": "Body of the template delete confirmation. Names the scope (every board in this project) but never a number of boards — the projects payload does not carry board custom field groups, so any count would be invented.",
     "placeholders": {
