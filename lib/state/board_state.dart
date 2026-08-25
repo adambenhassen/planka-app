@@ -92,11 +92,11 @@ class BoardState {
   }
 
   /// Whether a checklist item renders completed. A linked item mirrors its
-  /// card: completed exactly while the card is closed (the server's own
-  /// [PlankaCard.isClosed], or this board's list type when the field has not
-  /// arrived), regardless of the task's stored flag. An item linked to a card
-  /// this state does not hold — another board's — falls back to that flag, and
-  /// an unlinked one is just [PlankaTask.isCompleted].
+  /// card: completed exactly while the card is closed — the same rule the
+  /// card tile uses, so a stale stored flag and the list type never disagree
+  /// — regardless of the task's stored flag. An item linked to a card this
+  /// state does not hold (another board's) falls back to that flag, and an
+  /// unlinked one is just [PlankaTask.isCompleted].
   bool isTaskCompleted(PlankaTask task) {
     final linkedId = task.linkedCardId;
     if (linkedId == null) return task.isCompleted;
@@ -104,13 +104,8 @@ class BoardState {
     if (card == null) return task.isCompleted;
     final listClosed = lists.where((l) => l.id == card.listId).firstOrNull?.type ==
         PlankaListType.closed;
-    return card.isClosed == true || (card.isClosed == null && listClosed);
+    return card.isClosed == true || listClosed;
   }
-
-  /// The member assigned to a checklist item, or null.
-  PlankaUser? taskAssigneeOf(PlankaTask task) => task.assigneeUserId == null
-      ? null
-      : users.where((u) => u.id == task.assigneeUserId).firstOrNull;
 
   List<PlankaAttachment> attachmentsOf(String cardId) =>
       attachments.where((a) => a.cardId == cardId).toList();

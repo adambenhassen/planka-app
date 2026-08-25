@@ -84,8 +84,10 @@ void main() {
 
   group('realtime', () {
     test('moving the linked card into the closed list completes the item', () {
+      // isClosed is a persisted column defaulting to false, so a real open
+      // card arrives as false, never null.
       final s = state(
-        cards: {'c1': card('c1', 'l1')},
+        cards: {'c1': card('c1', 'l1', isClosed: false)},
         tasks: [task(linkedCardId: 'c1')],
       );
       expect(s.isTaskCompleted(s.tasks.first), isFalse);
@@ -140,7 +142,7 @@ void main() {
       notifier = container.read(boardProvider('b1').notifier);
     });
 
-    tearDown(() => container.dispose);
+    tearDown(() => container.dispose());
 
     test('assigns optimistically and PATCHes the id', () async {
       await notifier.setTaskAssignee('t1', 'u9');
