@@ -18,6 +18,7 @@ import 'widgets/board_members_dialog.dart';
 import 'card_tile.dart';
 import 'widgets/confirm_dialog.dart';
 import 'widgets/inline_add_field.dart';
+import 'widgets/label_colors.dart';
 import 'widgets/prompt_dialog.dart';
 
 const _columnWidth = 300.0;
@@ -390,6 +391,9 @@ class _ListColumn extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final tokens = context.tokens;
+    // A list's colour, set from the web client: the web tile tints the whole
+    // column with a soft variant and dots the header name with the full one.
+    final listColor = list.color == null ? null : labelColor(list.color!);
     final cards = filter.isActive
         ? state.cardsOf(list.id).where((c) => filter.matches(state, c)).toList()
         : state.cardsOf(list.id);
@@ -404,7 +408,10 @@ class _ListColumn extends StatelessWidget {
           width: _columnWidth,
           margin: const EdgeInsets.symmetric(horizontal: 4),
           decoration: BoxDecoration(
-            color: tokens.listSurface,
+            color: listColor == null
+                ? tokens.listSurface
+                : Color.alphaBlend(
+                    listColor.withValues(alpha: 0.15), tokens.listSurface),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
@@ -418,6 +425,19 @@ class _ListColumn extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(12, 4, 4, 0),
                 child: Row(
                   children: [
+                    if (listColor != null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Container(
+                          key: ValueKey('list-color-dot-${list.id}'),
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: listColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
                     Expanded(
                       child: Text(
                         list.name ?? '',

@@ -20,6 +20,16 @@ String? cardCoverUrl(PlankaCard card, BoardState state) {
   return cover?.coverThumbnailUrl;
 }
 
+/// Compact age for a card tile, from the same field the web client renders
+/// its age display from (createdAt): "now", "45m", "3h", "2d".
+String cardAgeLabel(DateTime createdAt, {DateTime? now}) {
+  final d = (now ?? DateTime.now()).difference(createdAt);
+  if (d.inMinutes < 1) return 'now';
+  if (d.inMinutes < 60) return '${d.inMinutes}m';
+  if (d.inHours < 24) return '${d.inHours}h';
+  return '${d.inDays}d';
+}
+
 class CardTile extends ConsumerWidget {
   const CardTile({
     super.key,
@@ -38,16 +48,34 @@ class CardTile extends ConsumerWidget {
     final coverUrl = cardCoverUrl(card, state);
     final labels = state.labelsOf(card.id);
     final members = state.membersOf(card.id);
+    // The creator shown when the board asks for it; a user row the board
+    // response does not carry still renders, as an unknown-initial avatar.
+    final creator =
+        state.users.where((u) => u.id == card.creatorUserId).firstOrNull;
     final tasks = state.tasksOfCard(card.id);
     final done = tasks.where(state.isTaskCompleted).length;
     final attachmentCount = state.attachmentsOf(card.id).length;
     final customFields = state.frontOfCardCustomFieldsOf(card.id);
     final due = card.dueDate;
+    // Per-board display settings; all default to off and leave the tile as it
+    // was before they existed.
+    final showCreator = state.board.alwaysDisplayCardCreator == true;
+    final showAge = state.board.displayCardAges == true;
+    final expandTaskLists = state.board.expandTaskListsByDefault == true;
+    final commentsTotal = card.commentsTotal ?? 0;
     // The server derives this from the list type; derive it locally too so a
     // move whose broadcast has not landed yet still shows the right state.
     final isClosed = card.isClosed == true ||
         state.lists.where((l) => l.id == card.listId).firstOrNull?.type ==
             PlankaListType.closed;
+    final hasBottomRow = due != null ||
+        (tasks.isNotEmpty && !expandTaskLists) ||
+        attachmentCount > 0 ||
+        members.isNotEmpty ||
+        commentsTotal > 0 ||
+        isClosed ||
+        (showCreator && card.creatorUserId != null) ||
+        (showAge && card.createdAt != null);
 
     // Downloads authenticate via the accessToken cookie, not a Bearer header.
     final token = ref.watch(currentAccountProvider)?.token;
@@ -117,40 +145,79 @@ class CardTile extends ConsumerWidget {
                       ],
                     ),
                   ],
-                  if (due != null ||
-                      tasks.isNotEmpty ||
-                      attachmentCount > 0 ||
-                      members.isNotEmpty ||
-                      isClosed) ...[
+                  if (expandTaskLists) _InlineTaskLists(state: state, cardId: card.id),
+                  if (hasBottomRow) ...[
                     const SizedBox(height: 8),
+                    // Split layout: the chips wrap (each keeps its own 8px
+                    // trailing gap, so single-line spacing is unchanged) while
+                    // the avatar group stays a fixed-width block on the right,
+                    // bottom-aligned. A single non-wrapping Row overflows the
+                    // 300px column once every chip and avatar is present.
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        if (due != null)
-                          _Chip(
-                            icon: Icons.schedule,
-                            label: DateFormat.MMMd().format(due.toLocal()),
-                            color: card.isDueCompleted == true
-                                ? theme.colorScheme.tertiary
-                                : (due.isBefore(DateTime.now())
-                                      ? theme.colorScheme.error
-                                      : null),
+                        Expanded(
+                          child: Wrap(
+                            spacing: 0,
+                            runSpacing: 8,
+                            children: [
+                              if (due != null)
+                                _Chip(
+                                  icon: Icons.schedule,
+                                  label: DateFormat.MMMd().format(due.toLocal()),
+                                  color: card.isDueCompleted == true
+                                      ? theme.colorScheme.tertiary
+                                      : (due.isBefore(DateTime.now())
+                                            ? theme.colorScheme.error
+                                            : null),
+                                ),
+                              if (tasks.isNotEmpty && !expandTaskLists)
+                                _Chip(
+                                  icon: Icons.check_box_outlined,
+                                  label: '$done/${tasks.length}',
+                                ),
+                              if (attachmentCount > 0)
+                                _Chip(
+                                  icon: Icons.attach_file,
+                                  label: '$attachmentCount',
+                                ),
+                              if (commentsTotal > 0)
+                                _Chip(
+                                  icon: Icons.comment_outlined,
+                                  label: '$commentsTotal',
+                                ),
+                              if (showAge && card.createdAt != null)
+                                _Chip(
+                                  icon: Icons.history,
+                                  label: cardAgeLabel(card.createdAt!),
+                                ),
+                              if (isClosed)
+                                _Chip(
+                                  icon: Icons.inventory_2_outlined,
+                                  label: AppLocalizations.of(context).cardClosed,
+                                ),
+                            ],
                           ),
-                        if (tasks.isNotEmpty)
-                          _Chip(
-                            icon: Icons.check_box_outlined,
-                            label: '$done/${tasks.length}',
+                        ),
+                        if (showCreator && card.creatorUserId != null) ...[
+                          CircleAvatar(
+                            radius: 12,
+                            child: Text(
+                              (creator?.name.isEmpty ?? true)
+                                  ? '?'
+                                  : creator!.name[0].toUpperCase(),
+                              style: theme.textTheme.labelSmall,
+                            ),
                           ),
-                        if (isClosed)
-                          _Chip(
-                            icon: Icons.inventory_2_outlined,
-                            label: AppLocalizations.of(context).cardClosed,
-                          ),
-                        if (attachmentCount > 0)
-                          _Chip(
-                            icon: Icons.attach_file,
-                            label: '$attachmentCount',
-                          ),
-                        const Spacer(),
+                          if (members.isNotEmpty)
+                            Container(
+                              width: 1,
+                              height: 16,
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              color: theme.colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.4),
+                            ),
+                        ],
                         for (final u in members.take(3))
                           Padding(
                             padding: const EdgeInsets.only(left: 4),
@@ -205,6 +272,104 @@ class _CustomFieldChip extends StatelessWidget {
         style: theme.textTheme.labelSmall
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       ),
+    );
+  }
+}
+
+/// A card's checklists rendered inline on the tile, expanded by default per
+/// the board's expandTaskListsByDefault; the progress-row header toggles each
+/// one closed, leaving the same done/total count the collapsed web tile shows.
+class _InlineTaskLists extends StatefulWidget {
+  const _InlineTaskLists({required this.state, required this.cardId});
+  final BoardState state;
+  final String cardId;
+
+  @override
+  State<_InlineTaskLists> createState() => _InlineTaskListsState();
+}
+
+class _InlineTaskListsState extends State<_InlineTaskLists> {
+  final Set<String> _collapsed = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final sections = <Widget>[];
+    for (final tl in widget.state.taskListsOf(widget.cardId)) {
+      final tasks = widget.state.tasks.where((t) => t.taskListId == tl.id).toList();
+      if (tasks.isEmpty) continue;
+      // Route completion through the derived rule so a linked item mirrors its
+      // card's closed state here, matching the collapsed chip and the sheet.
+      final done = tasks.where((t) => widget.state.isTaskCompleted(t)).length;
+      final isExpanded = !_collapsed.contains(tl.id);
+      sections.add(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              key: ValueKey('tile-tasklist-toggle-${tl.id}'),
+              onTap: () => setState(() {
+                isExpanded ? _collapsed.add(tl.id) : _collapsed.remove(tl.id);
+              }),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: LinearProgressIndicator(
+                          value: done / tasks.length,
+                          minHeight: 3,
+                          borderRadius: BorderRadius.circular(2)),
+                    ),
+                    const SizedBox(width: 6),
+                    Text('$done/${tasks.length}',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant)),
+                    Icon(
+                      isExpanded ? Icons.expand_less : Icons.expand_more,
+                      size: 16,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (isExpanded)
+              for (final t in tasks)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 2),
+                  child: Row(
+                    children: [
+                      Icon(
+                        widget.state.isTaskCompleted(t)
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                        size: 14,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          t.name,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            decoration: widget.state.isTaskCompleted(t)
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            const SizedBox(height: 4),
+          ],
+        ),
+      );
+    }
+    if (sections.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(children: sections),
     );
   }
 }

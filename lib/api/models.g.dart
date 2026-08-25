@@ -74,6 +74,12 @@ _PlankaBoard _$PlankaBoardFromJson(Map<String, dynamic> json) => _PlankaBoard(
   projectId: json['projectId'] as String,
   name: json['name'] as String,
   position: _toDouble(json['position']),
+  defaultView: json['defaultView'] as String?,
+  defaultCardType: json['defaultCardType'] as String?,
+  limitCardTypesToDefaultOne: json['limitCardTypesToDefaultOne'] as bool?,
+  alwaysDisplayCardCreator: json['alwaysDisplayCardCreator'] as bool?,
+  displayCardAges: json['displayCardAges'] as bool?,
+  expandTaskListsByDefault: json['expandTaskListsByDefault'] as bool?,
 );
 
 Map<String, dynamic> _$PlankaBoardToJson(_PlankaBoard instance) =>
@@ -82,6 +88,12 @@ Map<String, dynamic> _$PlankaBoardToJson(_PlankaBoard instance) =>
       'projectId': instance.projectId,
       'name': instance.name,
       'position': instance.position,
+      'defaultView': instance.defaultView,
+      'defaultCardType': instance.defaultCardType,
+      'limitCardTypesToDefaultOne': instance.limitCardTypesToDefaultOne,
+      'alwaysDisplayCardCreator': instance.alwaysDisplayCardCreator,
+      'displayCardAges': instance.displayCardAges,
+      'expandTaskListsByDefault': instance.expandTaskListsByDefault,
     };
 
 _PlankaList _$PlankaListFromJson(Map<String, dynamic> json) => _PlankaList(
@@ -94,6 +106,7 @@ _PlankaList _$PlankaListFromJson(Map<String, dynamic> json) => _PlankaList(
   ),
   name: json['name'] as String?,
   position: _toDouble(json['position']),
+  color: json['color'] as String?,
 );
 
 Map<String, dynamic> _$PlankaListToJson(_PlankaList instance) =>
@@ -103,6 +116,7 @@ Map<String, dynamic> _$PlankaListToJson(_PlankaList instance) =>
       'type': _$PlankaListTypeEnumMap[instance.type]!,
       'name': instance.name,
       'position': instance.position,
+      'color': instance.color,
     };
 
 const _$PlankaListTypeEnumMap = {
@@ -134,6 +148,11 @@ _PlankaCard _$PlankaCardFromJson(Map<String, dynamic> json) => _PlankaCard(
       ? null
       : DateTime.parse(json['createdAt'] as String),
   prevListId: json['prevListId'] as String?,
+  creatorUserId: json['creatorUserId'] as String?,
+  listChangedAt: json['listChangedAt'] == null
+      ? null
+      : DateTime.parse(json['listChangedAt'] as String),
+  commentsTotal: _toIntOrNull(json['commentsTotal']),
   isClosed: json['isClosed'] as bool?,
 );
 
@@ -153,6 +172,9 @@ Map<String, dynamic> _$PlankaCardToJson(_PlankaCard instance) =>
       'stopwatch': instance.stopwatch,
       'createdAt': instance.createdAt?.toIso8601String(),
       'prevListId': instance.prevListId,
+      'creatorUserId': instance.creatorUserId,
+      'listChangedAt': instance.listChangedAt?.toIso8601String(),
+      'commentsTotal': instance.commentsTotal,
       'isClosed': instance.isClosed,
     };
 

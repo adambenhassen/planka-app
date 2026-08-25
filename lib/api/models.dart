@@ -5,6 +5,7 @@ part 'models.g.dart';
 
 double? _toDouble(dynamic v) => v == null ? null : (v as num).toDouble();
 int _toInt(dynamic v) => (v as num).toInt();
+int? _toIntOrNull(dynamic v) => v == null ? null : (v as num).toInt();
 
 /// Planka's fixed set of board-list types. [unknown] is a forward-compat
 /// fallback for any value a newer server introduces, so parsing never throws.
@@ -88,6 +89,14 @@ abstract class PlankaBoard with _$PlankaBoard {
     required String projectId,
     required String name,
     @JsonKey(fromJson: _toDouble) double? position,
+    // Per-board display settings the web client honors; the app reads and
+    // renders them but does not edit them.
+    String? defaultView,
+    String? defaultCardType,
+    bool? limitCardTypesToDefaultOne,
+    bool? alwaysDisplayCardCreator,
+    bool? displayCardAges,
+    bool? expandTaskListsByDefault,
   }) = _PlankaBoard;
   factory PlankaBoard.fromJson(Map<String, dynamic> json) =>
       _$PlankaBoardFromJson(json);
@@ -102,6 +111,7 @@ abstract class PlankaList with _$PlankaList {
     required PlankaListType type,
     String? name,
     @JsonKey(fromJson: _toDouble) double? position,
+    String? color,
   }) = _PlankaList;
   factory PlankaList.fromJson(Map<String, dynamic> json) =>
       _$PlankaListFromJson(json);
@@ -124,6 +134,11 @@ abstract class PlankaCard with _$PlankaCard {
     PlankaStopwatch? stopwatch,
     DateTime? createdAt,
     String? prevListId,
+    // Who created the card, when it last changed list (the web client's age
+    // display is built from createdAt), and its denormalized comment count.
+    String? creatorUserId,
+    DateTime? listChangedAt,
+    @JsonKey(fromJson: _toIntOrNull) int? commentsTotal,
 
     /// Server-derived: true while the card sits in a `closed`-type list.
     bool? isClosed,

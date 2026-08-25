@@ -43,7 +43,8 @@ void main() {
       (() => repo.updateList('l1', {'name': 'X'}), 'PATCH', '/api/lists/l1', {'name': 'X'}),
       (() => repo.deleteList('l1'), 'DELETE', '/api/lists/l1', null),
       (
-        () => repo.createCard('l1', name: 'C', position: 16384),
+        () => repo.createCard('l1',
+            type: 'project', name: 'C', position: 16384),
         'POST',
         '/api/lists/l1/cards',
         {'type': 'project', 'name': 'C', 'position': 16384}
