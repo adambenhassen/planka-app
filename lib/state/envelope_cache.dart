@@ -47,6 +47,19 @@ class EnvelopeCache {
     }
   }
 
+  /// Removes the cached copy for [key]. Used when a known-stale entry must
+  /// not be served as the last good copy (a mutation landed but its
+  /// confirming refresh failed, so the cached value is pre-mutation).
+  Future<void> delete(String key) async {
+    try {
+      final file = await _file(key);
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      // A failed delete (IO error, missing platform support in tests) must
+      // never break the caller; the entry simply stays until overwritten.
+    }
+  }
+
   /// Fetches via [fetch], caching the result under [key]; on failure falls
   /// back to the cached copy, rethrowing only when there is none.
   Future<Envelope> fetchOrCached(
@@ -60,5 +73,17 @@ class EnvelopeCache {
       if (cached == null) rethrow;
       return cached;
     }
+  }
+
+  /// Fetches via [fetch] and caches the result under [key], rethrowing on
+  /// failure. Unlike [fetchOrCached] there is no fallback to the cached copy:
+  /// the caller already knows the cached state is stale (a mutation landed),
+  /// so serving it would be wrong. A successful fetch still refreshes the
+  /// cache, so the next offline start sees the post-mutation state.
+  Future<Envelope> fetchAndCache(
+      String key, Future<Envelope> Function() fetch) async {
+    final env = await fetch();
+    await put(key, env);
+    return env;
   }
 }

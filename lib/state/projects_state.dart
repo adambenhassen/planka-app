@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/envelope.dart';
 import '../api/models.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
@@ -70,79 +71,132 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
     return _fetch();
   }
 
+  /// Ordinary list load: serve the last good copy when the network is down
+  /// (offline read cache). This is the only path that may fall back to the
+  /// cache, and it is safe because a failed confirming refresh has already
+  /// deleted the stale copy (see [_mutate]) — so there is no pre-mutation
+  /// value left to serve. A cold start over the same cache directory takes
+  /// this same path and therefore never resurrects a reverted list.
   Future<ProjectsView> _fetch() async {
     final accountId = ref.read(currentAccountProvider)?.id;
-    // Serve the last good copy when the network is down (offline read cache).
     final env = accountId == null
         ? await _repo.projects()
         : await ref
             .read(envelopeCacheProvider)
             .fetchOrCached('$accountId-projects', _repo.projects);
-    return ProjectsView(
-      projects: env.items.map(PlankaProject.fromJson).toList(),
-      boards: env.included.boards,
-      backgroundImages: env.included.backgroundImages,
-      managers: env.included.projectManagers,
-      users: env.included.users,
-      baseCustomFieldGroups: env.included.baseCustomFieldGroups,
-      customFields: env.included.customFields,
-    );
+    return _view(env);
   }
+
+  ProjectsView _view(Envelope env) => ProjectsView(
+        projects: env.items.map(PlankaProject.fromJson).toList(),
+        boards: env.included.boards,
+        backgroundImages: env.included.backgroundImages,
+        managers: env.included.projectManagers,
+        users: env.included.users,
+        baseCustomFieldGroups: env.included.baseCustomFieldGroups,
+        customFields: env.included.customFields,
+      );
 
   // ponytail: no optimistic updates here — project/board CRUD is rare, so each
   // mutation awaits the server then refetches the (small) projects payload.
-  Future<void> _mutate(Future<Object?> Function() call) async {
-    await call();
-    state = AsyncData(await _fetch());
+  //
+  // The write callback receives the repo captured at the start of the
+  // mutation: no code inside a mutation may reach for the ambient client
+  // after the write has started, so a mid-write account switch can never send
+  // a follow-up request through the new account's client.
+  Future<void> _mutate(Future<Object?> Function(PlankaRepo) call) async {
+    // Capture the account and its API client before the write: the write,
+    // the confirming refresh and any cache cleanup must all act on the
+    // account the write targeted, not whichever account is active when the
+    // write happens to return. If the user switches accounts mid-write,
+    // acting on the new account would delete its valid cache entry while the
+    // old account's stale copy survives.
+    final account = ref.read(currentAccountProvider);
+    final accountId = account?.id;
+    final repo = PlankaRepo(ref.read(apiProvider));
+    final cache = ref.read(envelopeCacheProvider);
+    // A mutation may only publish to state while this notifier still
+    // represents the account it captured. Riverpod preserves the notifier
+    // across an account-switch rebuild (it is not disposed), so without this
+    // check a write captured against A would land A's result — or A's
+    // refresh error — on the screen B is now reading. Decided from
+    // mounted-and-still-current state, not from what throws.
+    bool stillCurrent() =>
+        ref.mounted && ref.read(currentAccountProvider)?.id == accountId;
+    await call(repo);
+    try {
+      // The confirming refresh must hit the server, never the cache: the
+      // cached copy is the pre-mutation state. On success it is replaced with
+      // the post-mutation result (fetchAndCache), so the next offline start
+      // sees the new values.
+      final env = accountId == null
+          ? await repo.projects()
+          : await cache.fetchAndCache('$accountId-projects', repo.projects);
+      if (stillCurrent()) state = AsyncData(_view(env));
+    } catch (e, s) {
+      // The write landed but the confirming refresh failed. The cached copy
+      // is the pre-mutation state; delete it so no later load — retry,
+      // pull-to-refresh, or a cold start that never saw the mutation — can
+      // serve it as fresh truth. The next load must reach the server, so
+      // while it is down the list stays an error instead of reverting. This
+      // is about the account that was written to, so it runs regardless of
+      // whether that account is still on screen.
+      if (accountId != null) await cache.delete('$accountId-projects');
+      // Same guard as the success path: do not publish the captured account's
+      // error onto a different account's screen. The mutation's own future
+      // still rejects with the real refresh error below, either way.
+      if (stillCurrent()) state = AsyncError(e, s);
+      rethrow;
+    }
   }
 
   Future<void> createProject(String name) =>
-      _mutate(() => _repo.createProject(name));
+      _mutate((repo) => repo.createProject(name));
 
   Future<void> renameProject(String id, String name) =>
-      _mutate(() => _repo.updateProject(id, {'name': name}));
+      _mutate((repo) => repo.updateProject(id, {'name': name}));
 
   Future<void> deleteProject(String id) =>
-      _mutate(() => _repo.deleteProject(id));
+      _mutate((repo) => repo.deleteProject(id));
 
   Future<void> setProjectFavorite(String id, {required bool favorite}) =>
-      _mutate(() => _repo.updateProject(id, {'isFavorite': favorite}));
+      _mutate((repo) => repo.updateProject(id, {'isFavorite': favorite}));
 
-  Future<void> createBoard(String projectId, String name) => _mutate(() {
+  Future<void> createBoard(String projectId, String name) => _mutate((repo) {
         final last = (state.value?.boards ?? const [])
             .where((b) => b.projectId == projectId)
             .lastOrNull
             ?.position;
-        return _repo.createBoard(projectId,
+        return repo.createBoard(projectId,
             name: name,
             position: last == null ? kPositionGap : last + kPositionGap);
       });
 
   Future<void> addProjectManager(String projectId, String userId) =>
-      _mutate(() => _repo.addProjectManager(projectId, userId));
+      _mutate((repo) => repo.addProjectManager(projectId, userId));
 
   Future<void> removeProjectManager(String id) =>
-      _mutate(() => _repo.removeProjectManager(id));
+      _mutate((repo) => repo.removeProjectManager(id));
 
   Future<void> setProjectGradient(String id, String gradient) =>
-      _mutate(() => _repo.updateProject(
+      _mutate((repo) => repo.updateProject(
           id, {'backgroundType': 'gradient', 'backgroundGradient': gradient}));
 
   Future<void> setProjectBackgroundImage(String id,
           {required String filePath, required String name}) =>
-      _mutate(() async {
-        await _repo.uploadProjectBackgroundImage(id,
+      _mutate((repo) async {
+        await repo.uploadProjectBackgroundImage(id,
             filePath: filePath, name: name);
-        return _repo.updateProject(id, {'backgroundType': 'image'});
+        return repo.updateProject(id, {'backgroundType': 'image'});
       });
 
   Future<void> clearProjectBackground(String id) =>
-      _mutate(() => _repo.updateProject(id, {'backgroundType': null}));
+      _mutate((repo) => repo.updateProject(id, {'backgroundType': null}));
 
   Future<void> renameBoard(String id, String name) =>
-      _mutate(() => _repo.updateBoard(id, {'name': name}));
+      _mutate((repo) => repo.updateBoard(id, {'name': name}));
 
-  Future<void> deleteBoard(String id) => _mutate(() => _repo.deleteBoard(id));
+  Future<void> deleteBoard(String id) => _mutate((repo) => repo.deleteBoard(id));
 
   // --------------- Custom field template mutations ---------------
   // Each awaits the server then refetches the projects payload, like every
@@ -150,28 +204,28 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
   // has resolved true — nothing here is ever sent optimistically.
 
   Future<void> createTemplate(String projectId, String name) =>
-      _mutate(() => _repo.createBaseCustomFieldGroup(projectId, name: name));
+      _mutate((repo) => repo.createBaseCustomFieldGroup(projectId, name: name));
 
   Future<void> renameTemplate(String id, String name) =>
-      _mutate(() => _repo.updateBaseCustomFieldGroup(id, {'name': name}));
+      _mutate((repo) => repo.updateBaseCustomFieldGroup(id, {'name': name}));
 
   Future<void> deleteTemplate(String id) =>
-      _mutate(() => _repo.deleteBaseCustomFieldGroup(id));
+      _mutate((repo) => repo.deleteBaseCustomFieldGroup(id));
 
   Future<void> createTemplateField(String templateId, String name) {
     final last = state.value?.fieldsOfBaseGroup(templateId).lastOrNull?.position;
-    return _mutate(() => _repo.createBaseCustomField(templateId,
+    return _mutate((repo) => repo.createBaseCustomField(templateId,
         name: name, position: positionBetween(last, null)));
   }
 
   Future<void> renameTemplateField(String id, String name) =>
-      _mutate(() => _repo.updateCustomField(id, {'name': name}));
+      _mutate((repo) => repo.updateCustomField(id, {'name': name}));
 
   Future<void> toggleTemplateFieldFrontOfCard(String id, bool show) =>
-      _mutate(() => _repo.updateCustomField(id, {'showOnFrontOfCard': show}));
+      _mutate((repo) => repo.updateCustomField(id, {'showOnFrontOfCard': show}));
 
   Future<void> deleteTemplateField(String id) =>
-      _mutate(() => _repo.deleteCustomField(id));
+      _mutate((repo) => repo.deleteCustomField(id));
 
   Future<void> moveTemplateFieldUp(String id) =>
       _moveTemplateField(id, up: true);
@@ -198,6 +252,6 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
           idx + 2 < peers.length ? peers[idx + 2].position : null);
     }
     await _mutate(
-        () => _repo.updateCustomField(id, {'position': position}));
+        (repo) => repo.updateCustomField(id, {'position': position}));
   }
 }
