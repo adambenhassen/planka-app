@@ -3396,10 +3396,9 @@ as String,
 /// @nodoc
 mixin _$PlankaTaskList {
 
- String get id; String get cardId; String get name;@JsonKey(fromJson: _toDouble) double? get position;/// Whether the web client draws this checklist on the card front. The
-/// server omits the key rather than defaulting it, so null means "not on
-/// the front".
- bool? get showOnFrontOfCard;/// When set, completed tasks are hidden from the card-front rendering.
+ String get id; String get cardId; String get name;@JsonKey(fromJson: _toDouble) double? get position;/// Whether the web client draws this checklist on the card front.
+/// Planka's model defaults it to true, so an absent key means on-front.
+ bool get showOnFrontOfCard;/// When set, completed tasks are hidden from the card-front rendering.
  bool? get hideCompletedTasks;
 /// Create a copy of PlankaTaskList
 /// with the given fields replaced by the non-null parameter values.
@@ -3433,7 +3432,7 @@ abstract mixin class $PlankaTaskListCopyWith<$Res>  {
   factory $PlankaTaskListCopyWith(PlankaTaskList value, $Res Function(PlankaTaskList) _then) = _$PlankaTaskListCopyWithImpl;
 @useResult
 $Res call({
- String id, String cardId, String name,@JsonKey(fromJson: _toDouble) double? position, bool? showOnFrontOfCard, bool? hideCompletedTasks
+ String id, String cardId, String name,@JsonKey(fromJson: _toDouble) double? position, bool showOnFrontOfCard, bool? hideCompletedTasks
 });
 
 
@@ -3450,14 +3449,14 @@ class _$PlankaTaskListCopyWithImpl<$Res>
 
 /// Create a copy of PlankaTaskList
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? cardId = null,Object? name = null,Object? position = freezed,Object? showOnFrontOfCard = freezed,Object? hideCompletedTasks = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? cardId = null,Object? name = null,Object? position = freezed,Object? showOnFrontOfCard = null,Object? hideCompletedTasks = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,cardId: null == cardId ? _self.cardId : cardId // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
-as double?,showOnFrontOfCard: freezed == showOnFrontOfCard ? _self.showOnFrontOfCard : showOnFrontOfCard // ignore: cast_nullable_to_non_nullable
-as bool?,hideCompletedTasks: freezed == hideCompletedTasks ? _self.hideCompletedTasks : hideCompletedTasks // ignore: cast_nullable_to_non_nullable
+as double?,showOnFrontOfCard: null == showOnFrontOfCard ? _self.showOnFrontOfCard : showOnFrontOfCard // ignore: cast_nullable_to_non_nullable
+as bool,hideCompletedTasks: freezed == hideCompletedTasks ? _self.hideCompletedTasks : hideCompletedTasks // ignore: cast_nullable_to_non_nullable
 as bool?,
   ));
 }
@@ -3543,7 +3542,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String cardId,  String name, @JsonKey(fromJson: _toDouble)  double? position,  bool? showOnFrontOfCard,  bool? hideCompletedTasks)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String cardId,  String name, @JsonKey(fromJson: _toDouble)  double? position,  bool showOnFrontOfCard,  bool? hideCompletedTasks)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlankaTaskList() when $default != null:
 return $default(_that.id,_that.cardId,_that.name,_that.position,_that.showOnFrontOfCard,_that.hideCompletedTasks);case _:
@@ -3564,7 +3563,7 @@ return $default(_that.id,_that.cardId,_that.name,_that.position,_that.showOnFron
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String cardId,  String name, @JsonKey(fromJson: _toDouble)  double? position,  bool? showOnFrontOfCard,  bool? hideCompletedTasks)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String cardId,  String name, @JsonKey(fromJson: _toDouble)  double? position,  bool showOnFrontOfCard,  bool? hideCompletedTasks)  $default,) {final _that = this;
 switch (_that) {
 case _PlankaTaskList():
 return $default(_that.id,_that.cardId,_that.name,_that.position,_that.showOnFrontOfCard,_that.hideCompletedTasks);case _:
@@ -3584,7 +3583,7 @@ return $default(_that.id,_that.cardId,_that.name,_that.position,_that.showOnFron
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String cardId,  String name, @JsonKey(fromJson: _toDouble)  double? position,  bool? showOnFrontOfCard,  bool? hideCompletedTasks)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String cardId,  String name, @JsonKey(fromJson: _toDouble)  double? position,  bool showOnFrontOfCard,  bool? hideCompletedTasks)?  $default,) {final _that = this;
 switch (_that) {
 case _PlankaTaskList() when $default != null:
 return $default(_that.id,_that.cardId,_that.name,_that.position,_that.showOnFrontOfCard,_that.hideCompletedTasks);case _:
@@ -3599,17 +3598,16 @@ return $default(_that.id,_that.cardId,_that.name,_that.position,_that.showOnFron
 @JsonSerializable()
 
 class _PlankaTaskList implements PlankaTaskList {
-  const _PlankaTaskList({required this.id, required this.cardId, required this.name, @JsonKey(fromJson: _toDouble) this.position, this.showOnFrontOfCard, this.hideCompletedTasks});
+  const _PlankaTaskList({required this.id, required this.cardId, required this.name, @JsonKey(fromJson: _toDouble) this.position, this.showOnFrontOfCard = true, this.hideCompletedTasks});
   factory _PlankaTaskList.fromJson(Map<String, dynamic> json) => _$PlankaTaskListFromJson(json);
 
 @override final  String id;
 @override final  String cardId;
 @override final  String name;
 @override@JsonKey(fromJson: _toDouble) final  double? position;
-/// Whether the web client draws this checklist on the card front. The
-/// server omits the key rather than defaulting it, so null means "not on
-/// the front".
-@override final  bool? showOnFrontOfCard;
+/// Whether the web client draws this checklist on the card front.
+/// Planka's model defaults it to true, so an absent key means on-front.
+@override@JsonKey() final  bool showOnFrontOfCard;
 /// When set, completed tasks are hidden from the card-front rendering.
 @override final  bool? hideCompletedTasks;
 
@@ -3646,7 +3644,7 @@ abstract mixin class _$PlankaTaskListCopyWith<$Res> implements $PlankaTaskListCo
   factory _$PlankaTaskListCopyWith(_PlankaTaskList value, $Res Function(_PlankaTaskList) _then) = __$PlankaTaskListCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String cardId, String name,@JsonKey(fromJson: _toDouble) double? position, bool? showOnFrontOfCard, bool? hideCompletedTasks
+ String id, String cardId, String name,@JsonKey(fromJson: _toDouble) double? position, bool showOnFrontOfCard, bool? hideCompletedTasks
 });
 
 
@@ -3663,14 +3661,14 @@ class __$PlankaTaskListCopyWithImpl<$Res>
 
 /// Create a copy of PlankaTaskList
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? cardId = null,Object? name = null,Object? position = freezed,Object? showOnFrontOfCard = freezed,Object? hideCompletedTasks = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? cardId = null,Object? name = null,Object? position = freezed,Object? showOnFrontOfCard = null,Object? hideCompletedTasks = freezed,}) {
   return _then(_PlankaTaskList(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,cardId: null == cardId ? _self.cardId : cardId // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,position: freezed == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
-as double?,showOnFrontOfCard: freezed == showOnFrontOfCard ? _self.showOnFrontOfCard : showOnFrontOfCard // ignore: cast_nullable_to_non_nullable
-as bool?,hideCompletedTasks: freezed == hideCompletedTasks ? _self.hideCompletedTasks : hideCompletedTasks // ignore: cast_nullable_to_non_nullable
+as double?,showOnFrontOfCard: null == showOnFrontOfCard ? _self.showOnFrontOfCard : showOnFrontOfCard // ignore: cast_nullable_to_non_nullable
+as bool,hideCompletedTasks: freezed == hideCompletedTasks ? _self.hideCompletedTasks : hideCompletedTasks // ignore: cast_nullable_to_non_nullable
 as bool?,
   ));
 }

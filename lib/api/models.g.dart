@@ -279,7 +279,7 @@ _PlankaTaskList _$PlankaTaskListFromJson(Map<String, dynamic> json) =>
       cardId: json['cardId'] as String,
       name: json['name'] as String,
       position: _toDouble(json['position']),
-      showOnFrontOfCard: json['showOnFrontOfCard'] as bool?,
+      showOnFrontOfCard: json['showOnFrontOfCard'] as bool? ?? true,
       hideCompletedTasks: json['hideCompletedTasks'] as bool?,
     );
 

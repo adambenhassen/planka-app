@@ -68,10 +68,29 @@ void main() {
     expect(tl.toJson()['hideCompletedTasks'], isTrue);
     expect(PlankaTaskList.fromJson(tl.toJson()), tl);
 
-    // Unset flags stay null through the round trip, matching the server,
-    // which omits them rather than defaulting them.
-    const bare = PlankaTaskList(id: 'tl2', cardId: 'c1', name: 'Bare');
-    expect(bare.showOnFrontOfCard, isNull);
+    // Planka's model defaults showOnFrontOfCard to true, so an absent key
+    // means on-front; only a present false hides the list.
+    final absent = PlankaTaskList.fromJson({
+      'id': 'tl2',
+      'cardId': 'c1',
+      'name': 'Bare',
+    });
+    expect(absent.showOnFrontOfCard, isTrue);
+    expect(absent.hideCompletedTasks, isNull);
+    expect(PlankaTaskList.fromJson(absent.toJson()), absent);
+
+    final hidden = PlankaTaskList.fromJson({
+      'id': 'tl3',
+      'cardId': 'c1',
+      'name': 'Hidden',
+      'showOnFrontOfCard': false,
+    });
+    expect(hidden.showOnFrontOfCard, isFalse);
+    expect(PlankaTaskList.fromJson(hidden.toJson()), hidden);
+
+    // hideCompletedTasks has no model default; an absent key stays null.
+    final bare = PlankaTaskList(id: 'tl4', cardId: 'c1', name: 'Bare');
+    expect(bare.showOnFrontOfCard, isTrue);
     expect(bare.hideCompletedTasks, isNull);
     expect(PlankaTaskList.fromJson(bare.toJson()), bare);
   });

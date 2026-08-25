@@ -292,7 +292,7 @@ void main() {
     expect(style?.decoration, TextDecoration.lineThrough);
   });
 
-  testWidgets('showOnFrontOfCard unset keeps the list off the tile',
+  testWidgets('showOnFrontOfCard false keeps the list off the tile',
       (tester) async {
     // Planka only draws a checklist on the card front when the list opts in
     // with showOnFrontOfCard; the board's expansion setting does not change
@@ -302,7 +302,11 @@ void main() {
       c,
       b: board(expandTaskListsByDefault: true),
       taskLists: const [
-        PlankaTaskList(id: 'tl1', cardId: 'c1', name: 'Checklist')
+        PlankaTaskList(
+            id: 'tl1',
+            cardId: 'c1',
+            name: 'Checklist',
+            showOnFrontOfCard: false)
       ],
       tasks: const [
         PlankaTask(id: 't1', taskListId: 'tl1', name: 'task 1', isCompleted: false),
@@ -329,19 +333,21 @@ void main() {
     expect(find.text('0/1'), findsNothing);
   });
 
-  testWidgets('showOnFrontOfCard true puts the list on the tile',
+  testWidgets('a list without the flag parses on-front and shows on the tile',
       (tester) async {
+    // Planka's model defaults showOnFrontOfCard to true, so a payload that
+    // omits the key must keep the checklist on the tile, not drop it.
+    final tl = PlankaTaskList.fromJson({
+      'id': 'tl1',
+      'cardId': 'c1',
+      'name': 'Checklist',
+    });
+    expect(tl.showOnFrontOfCard, isTrue);
     final c = card();
     final s = state(
       c,
       b: board(expandTaskListsByDefault: true),
-      taskLists: const [
-        PlankaTaskList(
-            id: 'tl1',
-            cardId: 'c1',
-            name: 'Checklist',
-            showOnFrontOfCard: true)
-      ],
+      taskLists: [tl],
       tasks: const [
         PlankaTask(id: 't1', taskListId: 'tl1', name: 'task 1', isCompleted: false),
       ],
@@ -389,7 +395,11 @@ void main() {
             cardId: 'c1',
             name: 'Checklist',
             showOnFrontOfCard: true),
-        PlankaTaskList(id: 'tl2', cardId: 'c1', name: 'Hidden'),
+        PlankaTaskList(
+            id: 'tl2',
+            cardId: 'c1',
+            name: 'Hidden',
+            showOnFrontOfCard: false),
       ],
       tasks: const [
         PlankaTask(id: 't1', taskListId: 'tl1', name: 'a', isCompleted: true),

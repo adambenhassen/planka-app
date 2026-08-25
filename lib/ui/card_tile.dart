@@ -58,7 +58,7 @@ class CardTile extends ConsumerWidget {
     // those lists' tasks.
     final frontTaskListIds = state
         .taskListsOf(card.id)
-        .where((tl) => tl.showOnFrontOfCard == true)
+        .where((tl) => tl.showOnFrontOfCard)
         .map((tl) => tl.id)
         .toSet();
     final frontTasks =
@@ -309,7 +309,7 @@ class _InlineTaskListsState extends State<_InlineTaskLists> {
       // The web client only draws a checklist on the card front when the
       // list opts in; the board's expansion setting only controls how far
       // the drawn lists open.
-      if (tl.showOnFrontOfCard != true) continue;
+      if (!tl.showOnFrontOfCard) continue;
       final tasks = widget.state.tasks.where((t) => t.taskListId == tl.id).toList();
       if (tasks.isEmpty) continue;
       // hideCompletedTasks prunes the expanded rows, not the progress count,
