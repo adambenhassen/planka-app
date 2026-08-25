@@ -1850,12 +1850,16 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
     final current = state.value;
     if (current == null) return fetched;
+    var users = current.users;
+    for (final user in env.included.users) {
+      users = _upsert(users, user, (u) => u.id);
+    }
     var comments = current.comments;
     for (final comment in fetched) {
       if (current.deletedCommentIds.contains(comment.id)) continue;
       comments = _upsert(comments, comment, (c) => c.id);
     }
-    state = AsyncData(current.copyWith(comments: comments));
+    state = AsyncData(current.copyWith(comments: comments, users: users));
     return fetched;
   }
 

@@ -25,6 +25,7 @@ class _FakeApi extends PlankaApi {
   final List<String> patchPaths = [];
   final List<Map<String, dynamic>> patchBodies = [];
   Completer<Envelope>? commentsResponse;
+  Envelope? commentsEnvelope;
   List<Map<String, dynamic>>? commentsItems;
 
   @override
@@ -34,6 +35,8 @@ class _FakeApi extends PlankaApi {
     if (path.endsWith('/comments')) {
       final pending = commentsResponse;
       if (pending != null) return pending.future;
+      final envelope = commentsEnvelope;
+      if (envelope != null) return envelope;
       final cardId = path.split('/')[2];
       return Envelope.parse({
         'items': commentsItems ??
@@ -423,6 +426,36 @@ void main() {
     expect(s.commentsOf(cardId).map((c) => c.id), ['c-server']);
     expect(s.commentsOf(cardId).single.text, 'from server');
     expect(s.cards[cardId]!.commentsTotal, s.commentsOf(cardId).length);
+  });
+
+  test('fetchComments folds authors supplied by the comments response', () async {
+    final api = _FakeApi();
+    final (container, notifier, boardId) = await boot(api: api);
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+    api.commentsEnvelope = Envelope.parse({
+      'items': [
+        {
+          'id': 'c-removed-user',
+          'cardId': cardId,
+          'userId': 'u-removed',
+          'text': 'from a removed member',
+        },
+      ],
+      'included': {
+        'users': [
+          {'id': 'u-removed', 'name': 'Removed member'},
+        ],
+      },
+    });
+
+    await notifier.fetchComments(cardId);
+
+    final users = container.read(boardProvider(boardId)).value!.users;
+    expect(users.where((user) => user.id == 'u-removed'), hasLength(1));
+    expect(users.singleWhere((user) => user.id == 'u-removed').name,
+        'Removed member');
   });
 
   test('fetchComments does not duplicate a comment already in state', () async {
