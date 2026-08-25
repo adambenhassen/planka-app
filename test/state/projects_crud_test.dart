@@ -6,8 +6,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/models.dart';
 import 'package:planka_app/api/planka_api.dart';
+import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
+import 'package:planka_app/state/envelope_cache.dart';
 import 'package:planka_app/state/projects_state.dart';
+
+/// A fixed current account, so the notifier's offline-cache path is used.
+class _CurrentAccount extends CurrentAccountNotifier {
+  @override
+  Account build() => Account(
+      serverUrl: 'https://planka.example.com',
+      token: 'tok',
+      userId: 'u1',
+      displayName: 'Test');
+}
 
 Map<String, dynamic> _fixture() =>
     jsonDecode(File('test/fixtures/projects_index.json').readAsStringSync())
@@ -20,9 +32,12 @@ class _FakeApi extends PlankaApi {
   final calls = <String>[];
   final patchBodies = <String, Object?>{};
 
+  bool failGets = false;
+
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     getCalls++;
+    if (failGets) throw ApiException(503, 'server unavailable');
     return Envelope.parse(_fixture());
   }
 
@@ -47,10 +62,20 @@ class _FakeApi extends PlankaApi {
 }
 
 void main() {
+  /// Boots with a selected account (so the offline cache path is used) and
+  /// an in-memory cache directory.
   Future<(ProviderContainer, ProjectsNotifier, _FakeApi)> boot() async {
     final api = _FakeApi();
-    final container = ProviderContainer(
-        overrides: [apiProvider.overrideWithValue(api)]);
+    final cacheDir =
+        Directory.systemTemp.createTempSync('projects_crud_cache');
+    addTearDown(() => cacheDir.deleteSync(recursive: true));
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      currentAccountProvider
+          .overrideWith(() => _CurrentAccount()),
+      envelopeCacheProvider
+          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
+    ]);
     await container.read(projectsProvider.future);
     return (container, container.read(projectsProvider.notifier), api);
   }
@@ -92,6 +117,44 @@ void main() {
 
     expect(view.orderedProjects.map((p) => p.id).toList(),
         ['b', 'd', 'a', 'c', 'x']);
+  });
+
+  test('a failed refresh after a successful mutation surfaces an error, '
+      'never stale cached data', () async {
+    final (container, notifier, api) = await boot();
+    addTearDown(container.dispose);
+
+    // The initial load succeeded, so the offline cache now holds a copy with
+    // the pre-mutation state. The write succeeds; the refresh after it fails.
+    api.failGets = true;
+    // The mutation rejects with the refresh failure, so the caller can
+    // surface it (guardMutation shows the snackbar).
+    await expectLater(
+        notifier.setProjectFavorite('p1', favorite: true),
+        throwsA(isA<ApiException>()));
+
+    expect(api.calls, ['PATCH /projects/p1']);
+
+    final state = container.read(projectsProvider);
+    expect(state.hasError, isTrue);
+    // The mutation's own write succeeded, so the failure is the refresh's.
+    expect(state.error, isA<ApiException>());
+  });
+
+  test('an ordinary list load still falls back to the offline cache',
+      () async {
+    final (container, notifier, api) = await boot();
+    addTearDown(container.dispose);
+
+    api.failGets = true;
+    container.invalidate(projectsProvider);
+
+    // The fetch fails, but the last good copy is served from the cache.
+    await expectLater(container.read(projectsProvider.future),
+        completes);
+    final state = container.read(projectsProvider);
+    expect(state.hasError, isFalse);
+    expect(state.value!.projects, isNotEmpty);
   });
 
   test('project and board mutations hit the expected endpoints', () async {

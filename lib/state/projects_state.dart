@@ -70,10 +70,13 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
     return _fetch();
   }
 
-  Future<ProjectsView> _fetch() async {
+  Future<ProjectsView> _fetch({bool useCache = true}) async {
     final accountId = ref.read(currentAccountProvider)?.id;
     // Serve the last good copy when the network is down (offline read cache).
-    final env = accountId == null
+    // Only the ordinary load path uses it: a refresh that follows a
+    // successful mutation must never present the pre-mutation copy as fresh
+    // server truth, so there a fetch failure rethrows.
+    final env = accountId == null || !useCache
         ? await _repo.projects()
         : await ref
             .read(envelopeCacheProvider)
@@ -93,7 +96,14 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
   // mutation awaits the server then refetches the (small) projects payload.
   Future<void> _mutate(Future<Object?> Function() call) async {
     await call();
-    state = AsyncData(await _fetch());
+    // The write succeeded, so a failed refresh must surface as an error,
+    // never as a silent revert to the cached pre-mutation state.
+    try {
+      state = AsyncData(await _fetch(useCache: false));
+    } catch (e, s) {
+      state = AsyncError(e, s);
+      rethrow;
+    }
   }
 
   Future<void> createProject(String name) =>
