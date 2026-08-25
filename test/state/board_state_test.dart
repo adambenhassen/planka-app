@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
+import 'package:planka_app/api/models.dart';
 import 'package:planka_app/api/planka_socket.dart';
 import 'package:planka_app/state/board_state.dart';
 
@@ -71,6 +72,156 @@ void main() {
           }
         }));
     expect(next.comments.map((c) => c.id), contains('cm1'));
+  });
+
+  test('commentCreate moves only its own card tile comment count', () {
+    final s = seed();
+    final firstCardId = s.cards.values.first.id;
+    final secondCard = PlankaCard.fromJson({
+      'id': 'c2',
+      'boardId': s.board.id,
+      'listId': s.columns.first.id,
+      'type': 'project',
+      'name': 'Other card',
+      'position': 32768,
+      'commentsTotal': 4,
+    });
+    final withTwo = s.copyWith(cards: {...s.cards, secondCard.id: secondCard});
+
+    final next = applyEvent(
+        withTwo,
+        ev('commentCreate', {
+          'item': {
+            'id': 'cm1',
+            'cardId': firstCardId,
+            'userId': 'u1',
+            'text': 'hi',
+          }
+        }));
+
+    expect(next.cards[firstCardId]!.commentsTotal, 2);
+    expect(next.cards['c2']!.commentsTotal, 4,
+        reason: 'no other card\'s count changes');
+  });
+
+  test('commentCreate for an unknown card leaves the board untouched', () {
+    final s = seed();
+    final next = applyEvent(
+        s,
+        ev('commentCreate', {
+          'item': {
+            'id': 'cm1',
+            'cardId': 'no-such-card',
+            'userId': 'u1',
+            'text': 'hi',
+          }
+        }));
+    expect(next.cards, s.cards);
+  });
+
+  test('commentDelete decrements and never goes below zero', () {
+    final s = seed();
+    final cardId = s.cards.values.first.id;
+    // The fixture card reports one comment but the board response carries no
+    // comment rows, so state never knew one was created: its own count moves.
+    expect(applyEvent(
+        s,
+        ev('commentDelete', {'item': {'id': 'cm9', 'cardId': cardId}}))
+        .cards[cardId]!
+        .commentsTotal,
+        0);
+    expect(applyEvent(
+        s,
+        ev('commentDelete', {'item': {'id': 'cm9', 'cardId': cardId}}))
+        .cards[cardId]!
+        .commentsTotal,
+        0, reason: 'stays at zero, never negative');
+
+    // A comment the state already holds: this delete decrements, and the
+    // replayed delete of the now-absent row is a no-op — the ledger, not row
+    // presence, decides it.
+    final withComment = s.copyWith(comments: [
+      PlankaComment.fromJson({
+        'id': 'cm1',
+        'cardId': cardId,
+        'userId': 'u1',
+        'text': 'hi',
+      })
+    ]);
+    final afterDelete = applyEvent(
+        withComment,
+        ev('commentDelete', {'item': {'id': 'cm1', 'cardId': cardId}}));
+    expect(afterDelete.cards[cardId]!.commentsTotal, 0);
+    expect(applyEvent(
+        afterDelete,
+        ev('commentDelete', {'item': {'id': 'cm1', 'cardId': cardId}}))
+        .cards[cardId]!
+        .commentsTotal,
+        0, reason: 'the replayed delete moves the count exactly once');
+  });
+
+  test('commentDelete of an unknown comment leaves the board untouched', () {
+    final s = seed();
+    final next =
+        applyEvent(s, ev('commentDelete', {'item': {'id': 'cm9'}}));
+    expect(next.cards, s.cards);
+  });
+
+  test('a duplicate commentCreate or commentDelete echo moves the count once',
+      () {
+    final s = seed();
+    final cardId = s.cards.values.first.id;
+    final createItem = <String, dynamic>{
+      'id': 'cm1',
+      'cardId': cardId,
+      'userId': 'u1',
+      'text': 'hi',
+    };
+    final deleteItem = <String, dynamic>{'id': 'cm1', 'cardId': cardId};
+
+    // App side first: the create response folds the comment row in and the
+    // count moves once. Its socket echo and any late replay must not move it
+    // again.
+    final afterApp = s.copyWith(
+      cards: {
+        ...s.cards,
+        cardId: PlankaCard.fromJson({
+          ...s.cards[cardId]!.toJson(),
+          'commentsTotal': 2,
+        })
+      },
+      comments: [
+        PlankaComment.fromJson(createItem),
+      ],
+    );
+    var next = applyEvent(afterApp, ev('commentCreate', {'item': createItem}));
+    next = applyEvent(next, ev('commentCreate', {'item': createItem}));
+    expect(next.cards[cardId]!.commentsTotal, 2);
+
+    // Remote side: a create and its echo move once; a delete and its echo
+    // move once back.
+    next = applyEvent(s, ev('commentCreate', {'item': createItem}));
+    next = applyEvent(next, ev('commentCreate', {'item': createItem}));
+    expect(next.cards[cardId]!.commentsTotal, 2);
+    next = applyEvent(next, ev('commentDelete', {'item': deleteItem}));
+    next = applyEvent(next, ev('commentDelete', {'item': deleteItem}));
+    expect(next.cards[cardId]!.commentsTotal, 1);
+  });
+
+  test('commentUpdate does not move the count', () {
+    final s = seed();
+    final cardId = s.cards.values.first.id;
+    final next = applyEvent(
+        s,
+        ev('commentUpdate', {
+          'item': {
+            'id': 'cm1',
+            'cardId': cardId,
+            'userId': 'u1',
+            'text': 'edited',
+          }
+        }));
+    expect(next.cards[cardId]!.commentsTotal, 1);
   });
 
   test('cardsUpdate bulk-upserts items', () {

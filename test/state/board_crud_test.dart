@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/models.dart';
 import 'package:planka_app/api/planka_api.dart';
+import 'package:planka_app/api/planka_socket.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
 
@@ -69,8 +70,20 @@ class _FakeApi extends PlankaApi {
   Future<Envelope> post(String path, Object? body) async {
     postPaths.add(path);
     postBodies.add((body as Map).cast<String, dynamic>());
+    if (fail) throw ApiException(500, 'rejected');
     if (path.endsWith('/sort') && sortResponse != null) {
       return Envelope.parse(sortResponse!);
+    }
+    // Echo the create like the server answers it, keyed to the created card.
+    if (path.contains('/comments')) {
+      return Envelope.parse({
+        'item': {
+          'id': 'c-created',
+          'cardId': path.split('/')[2],
+          'userId': 'u1',
+          'text': (body as Map<String, dynamic>)['text'],
+        },
+      });
     }
     return Envelope.parse({'item': <String, dynamic>{}});
   }
@@ -361,7 +374,161 @@ void main() {
         'edited');
   });
 
-  test('moveCardToBoard removes the card from state and PATCHes boardId/listId/position '
+  test('createComment increments the card tile comment count', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final cardId = container.read(boardProvider(boardId)).value!.cards.values.first.id;
+    final s0 = container.read(boardProvider(boardId)).value!;
+    expect(s0.cards[cardId]!.commentsTotal, 1);
+
+    await notifier.createComment(cardId, 'hello');
+
+    final s1 = container.read(boardProvider(boardId)).value!;
+    expect(s1.cards[cardId]!.commentsTotal, 2);
+    expect(s1.comments.map((c) => c.cardId), contains(cardId));
+  });
+
+  test('createComment leaves the count untouched on failure, then rethrows',
+      () async {
+    final (container, notifier, boardId) = await boot(fail: true);
+    addTearDown(container.dispose);
+    final cardId = container.read(boardProvider(boardId)).value!.cards.values.first.id;
+
+    await expectLater(notifier.createComment(cardId, 'hello'),
+        throwsA(isA<ApiException>()));
+
+    final s = container.read(boardProvider(boardId)).value!;
+    expect(s.cards[cardId]!.commentsTotal, 1,
+        reason: 'the failed create never moved the count');
+    expect(s.comments, isEmpty, reason: 'no row for a rejected comment');
+  });
+
+  test('deleteComment decrements the card tile comment count', () async {
+    final (container, notifier, boardId) = await boot(
+      seed: (s) {
+        final card = s.cards.values.first;
+        return s.copyWith(comments: [
+          PlankaComment.fromJson({
+            'id': 'c-seed',
+            'cardId': card.id,
+            'userId': 'u1',
+            'text': 'original',
+          }),
+        ]);
+      },
+    );
+    addTearDown(container.dispose);
+    final cardId = container.read(boardProvider(boardId)).value!.cards.values.first.id;
+    expect(container.read(boardProvider(boardId)).value!.cards[cardId]!.commentsTotal, 1);
+
+    await notifier.deleteComment('c-seed');
+
+    final s1 = container.read(boardProvider(boardId)).value!;
+    expect(s1.cards[cardId]!.commentsTotal, 0);
+    expect(s1.comments, isEmpty);
+  });
+
+  test('deleteComment never drives the count below zero', () async {
+    final (container, notifier, boardId) = await boot(
+      seed: (s) {
+        final card = s.cards.values.first;
+        final zeroCard =
+            PlankaCard.fromJson({...card.toJson(), 'commentsTotal': 0});
+        return s.copyWith(
+          cards: {...s.cards, card.id: zeroCard},
+          comments: [
+            PlankaComment.fromJson({
+              'id': 'c-seed',
+              'cardId': card.id,
+              'userId': 'u1',
+              'text': 'original',
+            }),
+          ],
+        );
+      },
+    );
+    addTearDown(container.dispose);
+    final cardId = container.read(boardProvider(boardId)).value!.cards.values.first.id;
+
+    await notifier.deleteComment('c-seed');
+
+    expect(container.read(boardProvider(boardId)).value!.cards[cardId]!.commentsTotal, 0);
+  });
+
+  test('the app\'s own create and delete move the count once, echoes no-op',
+      () async {
+    final (container, notifier, boardId) = await boot(
+      seed: (s) {
+        final card = s.cards.values.first;
+        return s.copyWith(comments: [
+          PlankaComment.fromJson({
+            'id': 'c-seed',
+            'cardId': card.id,
+            'userId': 'u1',
+            'text': 'original',
+          }),
+        ]);
+      },
+    );
+    addTearDown(container.dispose);
+    BoardState board() => container.read(boardProvider(boardId)).value!;
+    final cardId = board().cards.values.first.id;
+
+    await notifier.createComment(cardId, 'hello');
+    expect(board().cards[cardId]!.commentsTotal, 2);
+    // The socket echo of the app's own create: the row is already in state,
+    // so the count does not move again.
+    notifier.applySocketEvent(SocketEvent.parse('commentCreate', {
+      'item': {
+        'id': 'c-created',
+        'cardId': cardId,
+        'userId': 'u1',
+        'text': 'hello',
+      }
+    }));
+    expect(board().cards[cardId]!.commentsTotal, 2);
+
+    await notifier.deleteComment('c-seed');
+    expect(board().cards[cardId]!.commentsTotal, 1);
+    // The socket echo of the app's own delete: the row is already gone, and
+    // the ledger says the decrement was applied — the count does not move.
+    notifier.applySocketEvent(SocketEvent.parse('commentDelete', {
+      'item': {'id': 'c-seed', 'cardId': cardId}
+    }));
+    expect(board().cards[cardId]!.commentsTotal, 1);
+  });
+
+  test('deleteComment heals the comment and count back on failure, then rethrows',
+      () async {
+    final (container, notifier, boardId) = await boot(
+      fail: true,
+      seed: (s) {
+        final card = s.cards.values.first;
+        return s.copyWith(comments: [
+          PlankaComment.fromJson({
+            'id': 'c-seed',
+            'cardId': card.id,
+            'userId': 'u1',
+            'text': 'original',
+          }),
+        ]);
+      },
+    );
+    addTearDown(container.dispose);
+    final cardId = container.read(boardProvider(boardId)).value!.cards.values.first.id;
+
+    await expectLater(notifier.deleteComment('c-seed'),
+        throwsA(isA<ApiException>()));
+
+    final s = container.read(boardProvider(boardId)).value!;
+    expect(s.cards[cardId]!.commentsTotal, 1,
+        reason: 'the refetch restores the server count');
+    // The fixture carries no comment rows, so the server truth for this
+    // seeded comment is "absent": the optimistic removal stands.
+    expect(s.comments, isEmpty);
+  });
+
+  test('moveCardToBoard removes the card from state and PATCHes boardId/listId/position'
       'when moving to a different board', () async {
     final (container, notifier, boardId) = await boot();
     addTearDown(container.dispose);
