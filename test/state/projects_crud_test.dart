@@ -68,6 +68,19 @@ class _FakeApi extends PlankaApi {
 }
 
 void main() {
+  /// Lets a provider rebuild settle. The UI reads state via watch, so tests
+  /// drive a reload (invalidate/refresh) and then assert on the settled
+  /// state rather than awaiting the provider's future, which Riverpod does
+  /// not complete once a build has errored.
+  Future<void> settle(ProviderContainer container) async {
+    for (var i = 0;
+        i < 200 && container.read(projectsProvider).isLoading;
+        i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+      await container.pump();
+    }
+  }
+
   /// Boots with a selected account (so the offline cache path is used) and
   /// an in-memory cache directory.
   Future<(ProviderContainer, ProjectsNotifier, _FakeApi)> boot() async {
@@ -184,6 +197,59 @@ void main() {
     // No partial refresh: the cache still holds the last good copy.
     final cachedEnv = await cached(container);
     expect(cachedEnv!.items[0]['isFavorite'], isFalse);
+  });
+
+  test('a still-offline retry after a failed mutation refresh stays in '
+      'error, then recovers on a live fetch', () async {
+    final (container, notifier, api) = await boot();
+    addTearDown(container.dispose);
+
+    api.failGets = true;
+    await expectLater(
+        notifier.setProjectFavorite('p1', favorite: true),
+        throwsA(isA<ApiException>()));
+    expect(container.read(projectsProvider).hasError, isTrue);
+
+    // The error UI's Retry invalidates the provider. While the server is
+    // still down the rebuild must not serve the cached pre-mutation copy.
+    api.favorited = true;
+    container.invalidate(projectsProvider);
+    await settle(container);
+    expect(container.read(projectsProvider).hasError, isTrue);
+
+    // Once the server answers, the same retry path recovers with fresh data
+    // and the pending-mutation state is cleared.
+    api.failGets = false;
+    container.invalidate(projectsProvider);
+    await settle(container);
+    final state = container.read(projectsProvider);
+    expect(state.hasError, isFalse);
+    expect(state.value!.projects.first.isFavorite, isTrue);
+  });
+
+  test('pull-to-refresh on a failed mutation refresh stays in error while '
+      'offline', () async {
+    final (container, notifier, api) = await boot();
+    addTearDown(container.dispose);
+
+    api.failGets = true;
+    await expectLater(
+        notifier.setProjectFavorite('p1', favorite: true),
+        throwsA(isA<ApiException>()));
+    expect(container.read(projectsProvider).hasError, isTrue);
+
+    // The list's pull-to-refresh calls refresh(projectsProvider.future) with
+    // the server still down: the rebuild must not revert to the cached
+    // pre-mutation copy, so the state stays an error.
+    api.favorited = true;
+    final getsBefore = api.getCalls;
+    container.refresh(projectsProvider.future);
+    await settle(container);
+    // The refresh actually re-ran a fetch (did not just keep the old error),
+    // hit the downed server, and therefore stayed in error rather than
+    // serving the cached pre-mutation copy.
+    expect(api.getCalls, greaterThan(getsBefore));
+    expect(container.read(projectsProvider).hasError, isTrue);
   });
 
   test('an ordinary list load still falls back to the offline cache',
