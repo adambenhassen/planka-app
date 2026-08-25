@@ -549,6 +549,11 @@
     "description": "Title of the delete-comment confirmation"
   },
 
+  "commentsLoadError": "Could not load comments",
+  "@commentsLoadError": {
+    "description": "Shown in the comments section when its request fails"
+  },
+
   "activityLoadError": "Could not load activity",
   "@activityLoadError": {
     "description": "Shown in the activity section when its request failed"

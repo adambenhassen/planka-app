@@ -28,6 +28,19 @@ class _FakeApi extends PlankaApi {
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     getCalls++;
     getPaths.add(path);
+    if (path.endsWith('/comments')) {
+      final cardId = path.split('/')[2];
+      return Envelope.parse({
+        'items': [
+          {
+            'id': 'c-server',
+            'cardId': cardId,
+            'userId': 'u1',
+            'text': 'from server',
+          },
+        ],
+      });
+    }
     final listCards = RegExp(r'^/lists/(.+)/cards$').firstMatch(path);
     if (listCards != null) {
       return Envelope.parse({
@@ -386,6 +399,46 @@ void main() {
     final s1 = container.read(boardProvider(boardId)).value!;
     expect(s1.cards[cardId]!.commentsTotal, 2);
     expect(s1.comments.map((c) => c.cardId), contains(cardId));
+  });
+
+  test('fetchComments populates an empty card from the server', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+
+    await notifier.fetchComments(cardId);
+
+    final s = container.read(boardProvider(boardId)).value!;
+    expect((container.read(apiProvider) as _FakeApi).getPaths,
+        contains('/cards/$cardId/comments'));
+    expect(s.commentsOf(cardId).map((c) => c.id), ['c-server']);
+    expect(s.commentsOf(cardId).single.text, 'from server');
+    expect(s.cards[cardId]!.commentsTotal, s.commentsOf(cardId).length);
+  });
+
+  test('fetchComments does not duplicate a comment already in state', () async {
+    final (container, notifier, boardId) = await boot(seed: (s) {
+      final cardId = s.cards.values.first.id;
+      return s.copyWith(comments: [
+        PlankaComment.fromJson({
+          'id': 'c-server',
+          'cardId': cardId,
+          'userId': 'u1',
+          'text': 'from socket',
+        }),
+      ]);
+    });
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+
+    await notifier.fetchComments(cardId);
+
+    final comments =
+        container.read(boardProvider(boardId)).value!.commentsOf(cardId);
+    expect(comments, hasLength(1));
+    expect(comments.single.text, 'from server');
   });
 
   test('createComment leaves the count untouched on failure, then rethrows',

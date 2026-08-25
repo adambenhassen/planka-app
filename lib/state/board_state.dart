@@ -669,6 +669,15 @@ final allUsersProvider = FutureProvider.autoDispose<List<PlankaUser>>(
 final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState,
     String>(BoardNotifier.new);
 
+/// Comments are not part of the board response, so load them when a card
+/// detail sheet opens. The notifier folds the result into the board state so
+/// socket events and comment mutations continue to share one collection.
+final cardCommentsProvider = FutureProvider.autoDispose
+    .family<List<PlankaComment>, (String, String)>((ref, args) async {
+  final notifier = ref.read(boardProvider(args.$1).notifier);
+  return notifier.fetchComments(args.$2);
+});
+
 class BoardNotifier extends AsyncNotifier<BoardState> {
   BoardNotifier(this.boardId);
 
@@ -1810,6 +1819,35 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       // move it exactly once.
       applyCommentCreate,
     );
+  }
+
+  /// Loads a card's comments and merges them into the current board snapshot.
+  /// The merge is against the state that exists when the request answers, so a
+  /// socket comment arriving while the request is in flight is preserved. The
+  /// id-based upsert also folds the REST row and a socket row into one item.
+  Future<List<PlankaComment>> fetchComments(String cardId) async {
+    final env = await _repo.comments(cardId);
+    final fetched = <PlankaComment>[];
+    final rows = env.items.isNotEmpty
+        ? env.items
+        : env.included.comments.map((comment) => comment.toJson()).toList();
+    for (final row in rows) {
+      final comment = PlankaComment.fromJson(row);
+      if (comment.cardId != cardId) continue;
+      if (!fetched.any((existing) => existing.id == comment.id)) {
+        fetched.add(comment);
+      }
+    }
+
+    final current = state.value;
+    if (current == null) return fetched;
+    var comments = current.comments;
+    for (final comment in fetched) {
+      if (current.deletedCommentIds.contains(comment.id)) continue;
+      comments = _upsert(comments, comment, (c) => c.id);
+    }
+    state = AsyncData(current.copyWith(comments: comments));
+    return fetched;
   }
 
   Future<void> deleteComment(String commentId) async {
