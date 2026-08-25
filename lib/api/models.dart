@@ -224,6 +224,13 @@ abstract class PlankaTaskList with _$PlankaTaskList {
     required String cardId,
     required String name,
     @JsonKey(fromJson: _toDouble) double? position,
+
+    /// Whether the web client draws this checklist on the card front.
+    /// Planka's model defaults it to true, so an absent key means on-front.
+    @Default(true) bool showOnFrontOfCard,
+
+    /// When set, completed tasks are hidden from the card-front rendering.
+    bool? hideCompletedTasks,
   }) = _PlankaTaskList;
   factory PlankaTaskList.fromJson(Map<String, dynamic> json) =>
       _$PlankaTaskListFromJson(json);

@@ -53,7 +53,17 @@ class CardTile extends ConsumerWidget {
     final creator =
         state.users.where((u) => u.id == card.creatorUserId).firstOrNull;
     final tasks = state.tasksOfCard(card.id);
-    final done = tasks.where(state.isTaskCompleted).length;
+    // The web client only draws the progress row for checklists opted into
+    // the card front; the collapsed chip mirrors that, so it counts only
+    // those lists' tasks.
+    final frontTaskListIds = state
+        .taskListsOf(card.id)
+        .where((tl) => tl.showOnFrontOfCard)
+        .map((tl) => tl.id)
+        .toSet();
+    final frontTasks =
+        tasks.where((t) => frontTaskListIds.contains(t.taskListId)).toList();
+    final frontDone = frontTasks.where(state.isTaskCompleted).length;
     final attachmentCount = state.attachmentsOf(card.id).length;
     final customFields = state.frontOfCardCustomFieldsOf(card.id);
     final due = card.dueDate;
@@ -69,7 +79,7 @@ class CardTile extends ConsumerWidget {
         state.lists.where((l) => l.id == card.listId).firstOrNull?.type ==
             PlankaListType.closed;
     final hasBottomRow = due != null ||
-        (tasks.isNotEmpty && !expandTaskLists) ||
+        (frontTasks.isNotEmpty && !expandTaskLists) ||
         attachmentCount > 0 ||
         members.isNotEmpty ||
         commentsTotal > 0 ||
@@ -171,10 +181,10 @@ class CardTile extends ConsumerWidget {
                                             ? theme.colorScheme.error
                                             : null),
                                 ),
-                              if (tasks.isNotEmpty && !expandTaskLists)
+                              if (frontTasks.isNotEmpty && !expandTaskLists)
                                 _Chip(
                                   icon: Icons.check_box_outlined,
-                                  label: '$done/${tasks.length}',
+                                  label: '$frontDone/${frontTasks.length}',
                                 ),
                               if (attachmentCount > 0)
                                 _Chip(
@@ -296,8 +306,17 @@ class _InlineTaskListsState extends State<_InlineTaskLists> {
     final theme = Theme.of(context);
     final sections = <Widget>[];
     for (final tl in widget.state.taskListsOf(widget.cardId)) {
+      // The web client only draws a checklist on the card front when the
+      // list opts in; the board's expansion setting only controls how far
+      // the drawn lists open.
+      if (!tl.showOnFrontOfCard) continue;
       final tasks = widget.state.tasks.where((t) => t.taskListId == tl.id).toList();
       if (tasks.isEmpty) continue;
+      // hideCompletedTasks prunes the expanded rows, not the progress count,
+      // which the web client keeps as the whole list's done/total.
+      final shown = tl.hideCompletedTasks == true
+          ? tasks.where((t) => !widget.state.isTaskCompleted(t)).toList()
+          : tasks;
       // Route completion through the derived rule so a linked item mirrors its
       // card's closed state here, matching the collapsed chip and the sheet.
       final done = tasks.where((t) => widget.state.isTaskCompleted(t)).length;
@@ -335,7 +354,7 @@ class _InlineTaskListsState extends State<_InlineTaskLists> {
               ),
             ),
             if (isExpanded)
-              for (final t in tasks)
+              for (final t in shown)
                 Padding(
                   padding: const EdgeInsets.only(top: 4, left: 2),
                   child: Row(

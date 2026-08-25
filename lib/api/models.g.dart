@@ -279,6 +279,8 @@ _PlankaTaskList _$PlankaTaskListFromJson(Map<String, dynamic> json) =>
       cardId: json['cardId'] as String,
       name: json['name'] as String,
       position: _toDouble(json['position']),
+      showOnFrontOfCard: json['showOnFrontOfCard'] as bool? ?? true,
+      hideCompletedTasks: json['hideCompletedTasks'] as bool?,
     );
 
 Map<String, dynamic> _$PlankaTaskListToJson(_PlankaTaskList instance) =>
@@ -287,6 +289,8 @@ Map<String, dynamic> _$PlankaTaskListToJson(_PlankaTaskList instance) =>
       'cardId': instance.cardId,
       'name': instance.name,
       'position': instance.position,
+      'showOnFrontOfCard': instance.showOnFrontOfCard,
+      'hideCompletedTasks': instance.hideCompletedTasks,
     };
 
 _PlankaTask _$PlankaTaskFromJson(Map<String, dynamic> json) => _PlankaTask(
