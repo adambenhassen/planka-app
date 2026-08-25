@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
+import 'package:planka_app/api/models.dart';
 import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/api/planka_socket.dart';
 import 'package:planka_app/auth/auth_providers.dart';
@@ -75,8 +76,8 @@ void main() {
     expect(card.creatorUserId, isNotEmpty);
     expect(card.listChangedAt, isNotNull);
     expect(card.commentsTotal, 1);
-    // Parsing, not just freezed round-tripping: the fixture's list rows carry
-    // explicit colours, and a payload with none leaves the field null.
+    // Parsing, not just freezed round-tripping: the fixture's colour-less list
+    // rows parse to null, and an explicit colour parses through.
     final fixtureList = jsonDecode(
         File('test/fixtures/board_show.json').readAsStringSync())
         as Map<String, dynamic>;
