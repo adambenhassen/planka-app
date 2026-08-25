@@ -1008,7 +1008,16 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       if (prev != null && next.needsBaseCustomFields) {
         next = next.withBaseDataFrom(prev);
       }
+      final loadedCardIds = prev?.comments
+              .map((comment) => comment.cardId)
+              .toSet() ??
+          const <String>{};
       state = AsyncData(next);
+      // Comments live outside the board envelope; an open sheet must refold
+      // them after the board snapshot is replaced during recovery.
+      for (final cardId in loadedCardIds) {
+        ref.invalidate(cardCommentsProvider((boardId, cardId)));
+      }
     } on ApiException {
       // Keep current state; next socket event or user retry will heal it.
     }
