@@ -34,7 +34,12 @@ PlankaTask task({
 );
 
 /// Active l1 and closed l2; open card c1 sits in l1, closed card c2 in l2.
-BoardState state({List<PlankaTask>? tasks, Map<String, PlankaCard>? cards}) {
+BoardState state({
+  List<PlankaTask>? tasks,
+  Map<String, PlankaCard>? cards,
+  List<PlankaUser>? users,
+  List<PlankaBoardMembership>? boardMemberships,
+}) {
   final allCards =
       cards ?? {'c1': card('c1', 'l1'), 'c2': card('c2', 'l2', isClosed: true)};
   return BoardState(
@@ -45,10 +50,26 @@ BoardState state({List<PlankaTask>? tasks, Map<String, PlankaCard>? cards}) {
     ],
     cards: allCards,
     tasks: tasks ?? const [],
+    users: users ?? const [],
+    boardMemberships: boardMemberships ?? const [],
   );
 }
 
 void main() {
+  test('boardMembers resolves only board members, not card creators', () {
+    final s = state(
+      users: [
+        PlankaUser(id: 'u1', name: 'Demo'),
+        PlankaUser(id: 'u2', name: 'Stranger'),
+      ],
+      boardMemberships: [
+        PlankaBoardMembership(
+            id: 'bm1', boardId: 'b1', userId: 'u1', role: 'editor'),
+      ],
+    );
+    expect(s.boardMembers.map((u) => u.id), ['u1']);
+  });
+
   group('isTaskCompleted', () {
     test('an unlinked item keeps its own flag either way', () {
       final s = state();

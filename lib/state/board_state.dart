@@ -73,6 +73,15 @@ class BoardState {
       .nonNulls
       .toList();
 
+  /// The board's members, resolved from [users]. The board response's users
+  /// are a union of members and card creators, so only the boardMemberships
+  /// junction marks who is actually a member — the checklist assignee picker
+  /// offers exactly this list, since the server rejects a non-member.
+  List<PlankaUser> get boardMembers => [
+        for (final m in boardMemberships)
+          ...users.where((u) => u.id == m.userId),
+      ];
+
   /// The users assigned to a card (cardMemberships junction joined to users).
   List<PlankaUser> membersOf(String cardId) => cardMemberships
       .where((m) => m.cardId == cardId)

@@ -278,7 +278,7 @@ class CardSheet extends ConsumerWidget {
           CardTaskListsSection(
             taskLists: cardTaskLists,
             tasks: state.tasks,
-            users: state.users,
+            users: state.boardMembers,
             isTaskCompleted: state.isTaskCompleted,
             linkedCardNameOf: (t) => t.linkedCardId == null
                 ? null
