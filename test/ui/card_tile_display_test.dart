@@ -33,6 +33,7 @@ PlankaCard card({
   String? creatorUserId = 'u1',
   int? commentsTotal,
   DateTime? createdAt,
+  DateTime? dueDate,
 }) =>
     PlankaCard(
       id: 'c1',
@@ -43,6 +44,7 @@ PlankaCard card({
       creatorUserId: creatorUserId,
       commentsTotal: commentsTotal,
       createdAt: createdAt,
+      dueDate: dueDate,
     );
 
 BoardState state(
@@ -51,6 +53,8 @@ BoardState state(
   List<PlankaTaskList> taskLists = const [],
   List<PlankaTask> tasks = const [],
   List<PlankaUser> users = const [],
+  List<String> memberIds = const [],
+  List<PlankaAttachment> attachments = const [],
 }) =>
     BoardState(
       board: b,
@@ -59,9 +63,14 @@ BoardState state(
       taskLists: taskLists,
       tasks: tasks,
       users: users,
+      cardMemberships: [
+        for (final u in memberIds)
+          PlankaCardMembership(id: 'm-$u', cardId: c.id, userId: u),
+      ],
+      attachments: attachments,
     );
 
-Widget host(PlankaCard c, BoardState s) => ProviderScope(
+Widget host(PlankaCard c, BoardState s, {double? width}) => ProviderScope(
       overrides: [
         currentAccountProvider.overrideWith(() => _AccNotifier(Account(
             serverUrl: 'http://x',
@@ -70,8 +79,16 @@ Widget host(PlankaCard c, BoardState s) => ProviderScope(
             displayName: 'U'))),
       ],
       child: MaterialApp(
-          theme: AppTheme.light,
-          home: Scaffold(body: CardTile(card: c, state: s))),
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: width == null
+              ? CardTile(card: c, state: s)
+              : Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(width: width, child: CardTile(card: c, state: s)),
+                ),
+        ),
+      ),
     );
 
 void main() {
@@ -124,12 +141,12 @@ void main() {
 
   testWidgets('creator setting with no creator id adds no empty bottom row',
       (tester) async {
-    // A card the server has no creator for must not leave an empty Spacer
+    // A card the server has no creator for must not leave an empty metadata
     // row on the tile when alwaysDisplayCardCreator is set.
     final c = card(creatorUserId: null);
     await tester.pumpWidget(host(
         c, state(c, b: board(alwaysDisplayCardCreator: true))));
-    expect(find.byType(Spacer), findsNothing);
+    expect(find.byType(Wrap), findsNothing);
 
     // Control: a resolvable creator does render the row.
     final c2 = card();
@@ -138,7 +155,7 @@ void main() {
         state(c2,
             b: board(alwaysDisplayCardCreator: true),
             users: [const PlankaUser(id: 'u1', name: 'Demo')])));
-    expect(find.byType(Spacer), findsOneWidget);
+    expect(find.byType(Wrap), findsOneWidget);
   });
 
   testWidgets('expandTaskListsByDefault expands checklists on the tile; '
@@ -161,6 +178,44 @@ void main() {
     expect(find.text('task 1'), findsNothing);
     // The collapsed header still shows the done/total count.
     expect(find.text('0/1'), findsOneWidget);
+  });
+
+  testWidgets('fully-loaded metadata does not overflow the 300px column',
+      (tester) async {
+    // The board column is a fixed 300px; the tile must fit it with every
+    // metadata element present at once, not clip the new chips/avatars.
+    final c = card(
+      creatorUserId: 'u1',
+      commentsTotal: 3,
+      createdAt: twoHoursAgo,
+      dueDate: DateTime.now().add(const Duration(days: 2)),
+    );
+    final s = state(
+      c,
+      b: board(alwaysDisplayCardCreator: true, displayCardAges: true),
+      users: const [
+        PlankaUser(id: 'u1', name: 'Demo'),
+        PlankaUser(id: 'u2', name: 'Ann'),
+        PlankaUser(id: 'u3', name: 'Bob'),
+        PlankaUser(id: 'u4', name: 'Cy'),
+      ],
+      memberIds: const ['u2', 'u3', 'u4'],
+      attachments: const [
+        PlankaAttachment(id: 'a1', cardId: 'c1', type: 'file', name: 'p.png'),
+      ],
+      taskLists: const [
+        PlankaTaskList(id: 'tl1', cardId: 'c1', name: 'Checklist')
+      ],
+      tasks: const [
+        PlankaTask(id: 't1', taskListId: 'tl1', name: 'task 1', isCompleted: false),
+      ],
+    );
+    await tester.pumpWidget(host(c, s, width: 300));
+    expect(tester.takeException(), isNull);
+    // Every element is present and none is clipped away.
+    expect(find.text('3'), findsOneWidget); // comments
+    expect(find.text('2h'), findsOneWidget); // age
+    expect(find.text('D'), findsOneWidget); // creator avatar
   });
 
   testWidgets('checklists stay off the tile without the setting', (tester) async {

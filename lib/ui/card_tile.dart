@@ -141,39 +141,52 @@ class CardTile extends ConsumerWidget {
                   if (expandTaskLists) _InlineTaskLists(state: state, cardId: card.id),
                   if (hasBottomRow) ...[
                     const SizedBox(height: 8),
+                    // Split layout: the chips wrap (each keeps its own 8px
+                    // trailing gap, so single-line spacing is unchanged) while
+                    // the avatar group stays a fixed-width block on the right,
+                    // bottom-aligned. A single non-wrapping Row overflows the
+                    // 300px column once every chip and avatar is present.
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        if (due != null)
-                          _Chip(
-                            icon: Icons.schedule,
-                            label: DateFormat.MMMd().format(due.toLocal()),
-                            color: card.isDueCompleted == true
-                                ? theme.colorScheme.tertiary
-                                : (due.isBefore(DateTime.now())
-                                      ? theme.colorScheme.error
-                                      : null),
+                        Expanded(
+                          child: Wrap(
+                            spacing: 0,
+                            runSpacing: 8,
+                            children: [
+                              if (due != null)
+                                _Chip(
+                                  icon: Icons.schedule,
+                                  label: DateFormat.MMMd().format(due.toLocal()),
+                                  color: card.isDueCompleted == true
+                                      ? theme.colorScheme.tertiary
+                                      : (due.isBefore(DateTime.now())
+                                            ? theme.colorScheme.error
+                                            : null),
+                                ),
+                              if (tasks.isNotEmpty && !expandTaskLists)
+                                _Chip(
+                                  icon: Icons.check_box_outlined,
+                                  label: '$done/${tasks.length}',
+                                ),
+                              if (attachmentCount > 0)
+                                _Chip(
+                                  icon: Icons.attach_file,
+                                  label: '$attachmentCount',
+                                ),
+                              if (commentsTotal > 0)
+                                _Chip(
+                                  icon: Icons.comment_outlined,
+                                  label: '$commentsTotal',
+                                ),
+                              if (showAge && card.createdAt != null)
+                                _Chip(
+                                  icon: Icons.history,
+                                  label: cardAgeLabel(card.createdAt!),
+                                ),
+                            ],
                           ),
-                        if (tasks.isNotEmpty && !expandTaskLists)
-                          _Chip(
-                            icon: Icons.check_box_outlined,
-                            label: '$done/${tasks.length}',
-                          ),
-                        if (attachmentCount > 0)
-                          _Chip(
-                            icon: Icons.attach_file,
-                            label: '$attachmentCount',
-                          ),
-                        if (commentsTotal > 0)
-                          _Chip(
-                            icon: Icons.comment_outlined,
-                            label: '$commentsTotal',
-                          ),
-                        if (showAge && card.createdAt != null)
-                          _Chip(
-                            icon: Icons.history,
-                            label: cardAgeLabel(card.createdAt!),
-                          ),
-                        const Spacer(),
+                        ),
                         if (showCreator && card.creatorUserId != null) ...[
                           CircleAvatar(
                             radius: 12,
