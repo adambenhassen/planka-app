@@ -427,7 +427,8 @@ T _mergeById<T>(T? existing, Map<String, dynamic> item,
 /// to a project's base custom field groups — and to the fields on them — there
 /// rather than to the board room, so a board whose groups are instantiated from
 /// a template learns about them nowhere else. Everything else that room carries
-/// (notifications, the user list) belongs to whoever else listens to it.
+/// (the projects screen, notifications, and user list) belongs to whoever else
+/// listens to it.
 const kBoardUserRoomEvents = {
   'baseCustomFieldGroupCreate',
   'baseCustomFieldGroupUpdate',
@@ -663,13 +664,143 @@ final cardActionsProvider = FutureProvider.autoDispose
   return env.items.map(PlankaAction.fromJson).toList();
 });
 
-/// All server users, for the add-board-member picker. The endpoint is
-/// admin/project-owner only; non-admins get a 403 the UI surfaces as a hint.
-final allUsersProvider = FutureProvider.autoDispose<List<PlankaUser>>(
-    (ref) async {
-  final env = await PlankaRepo(ref.watch(apiProvider)).users();
-  return env.items.map(PlankaUser.fromJson).toList();
-});
+/// All server users, for the member and manager pickers and admin user list.
+/// The endpoint is admin/project-owner only; non-admins get a 403 the UI
+/// surfaces as a hint. The shared user room keeps an open picker current.
+const kAllUsersEvents = {'userCreate', 'userUpdate', 'userDelete'};
+
+List<PlankaUser> applyUsersEvent(List<PlankaUser> users, SocketEvent event) {
+  final item = event.data.item;
+  final id = item['id'];
+  if (id is! String) return users;
+  final existing = users.where((user) => user.id == id).firstOrNull;
+  switch (event.name) {
+    case 'userCreate':
+      if (existing != null) return users;
+      return [
+        ...users,
+        PlankaUser.fromJson(item),
+      ];
+    case 'userUpdate':
+      if (existing == null) return users;
+      return _upsert(users,
+          PlankaUser.fromJson({...existing.toJson(), ...item}), (u) => u.id);
+    case 'userDelete':
+      return users.where((user) => user.id != id).toList();
+    default:
+      return users;
+  }
+}
+
+final allUsersProvider = AsyncNotifierProvider.autoDispose<AllUsersNotifier,
+    List<PlankaUser>>(AllUsersNotifier.new);
+
+/// Applies user-room changes immediately, then confirms them with a fresh
+/// users request so reconnects and event bursts cannot leave a stale list.
+class AllUsersNotifier extends AutoDisposeAsyncNotifier<List<PlankaUser>> {
+  StreamSubscription<SocketEvent>? _eventsSub;
+  StreamSubscription<bool>? _connectedSub;
+  var _disposeRegistered = false;
+  var _ready = false;
+  int? _refreshSession;
+  var _refreshRequested = false;
+  var _eventVersion = 0;
+  var _session = 0;
+
+  @override
+  Future<List<PlankaUser>> build() async {
+    ref.watch(apiProvider);
+    final userEvents = ref.watch(userEventsProvider);
+    final userConnected = ref.watch(userConnectedProvider);
+    final session = ++_session;
+    _ready = false;
+    _refreshRequested = false;
+    _eventVersion = 0;
+    _eventsSub?.cancel();
+    _connectedSub?.cancel();
+    _eventsSub = userEvents.listen(
+      (event) {
+        if (session != _session || !kAllUsersEvents.contains(event.name)) {
+          return;
+        }
+        _eventVersion++;
+        final current = state.value;
+        if (current != null) {
+          final next = applyUsersEvent(current, event);
+          if (!identical(next, current)) state = AsyncData(next);
+        }
+        _queueRefresh(session);
+      },
+      onError: (Object error) {
+        if (session != _session) return;
+        debugPrint('users user room error: $error');
+        _eventVersion++;
+        _queueRefresh(session);
+      },
+    );
+    _connectedSub = userConnected.listen((connected) {
+      if (session != _session || !connected) return;
+      _eventVersion++;
+      _queueRefresh(session);
+    });
+    if (!_disposeRegistered) {
+      _disposeRegistered = true;
+      ref.onDispose(() {
+        _eventsSub?.cancel();
+        _connectedSub?.cancel();
+      });
+    }
+
+    var version = _eventVersion;
+    var users = await _load();
+    while (version != _eventVersion) {
+      version = _eventVersion;
+      users = await _load();
+    }
+    if (session != _session) return users;
+    _refreshRequested = false;
+    _ready = true;
+    return users;
+  }
+
+  Future<List<PlankaUser>> _load() async {
+    final env = await PlankaRepo(ref.read(apiProvider)).users();
+    return env.items.map(PlankaUser.fromJson).toList();
+  }
+
+  void _queueRefresh(int session) {
+    if (session != _session) return;
+    _refreshRequested = true;
+    if (_ready && _refreshSession == null) unawaited(_drainRefresh(session));
+  }
+
+  Future<void> _drainRefresh(int session) async {
+    if (session != _session || !_ready || _refreshSession != null) return;
+    _refreshSession = session;
+    try {
+      while (session == _session && _refreshRequested) {
+        _refreshRequested = false;
+        final version = _eventVersion;
+        try {
+          final users = await _load();
+          if (session != _session) return;
+          if (version != _eventVersion) {
+            _refreshRequested = true;
+            continue;
+          }
+          state = AsyncData(users);
+        } on Object catch (error, stackTrace) {
+          debugPrint('users realtime resync failed: $error\n$stackTrace');
+        }
+      }
+    } finally {
+      if (_refreshSession == session) _refreshSession = null;
+      if (_ready && _refreshRequested && _refreshSession == null) {
+        unawaited(_drainRefresh(_session));
+      }
+    }
+  }
+}
 
 final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState,
     String>(BoardNotifier.new);

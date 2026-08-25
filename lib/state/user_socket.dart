@@ -7,12 +7,13 @@ import '../auth/auth_providers.dart';
 
 /// The one socket joined to the signed-in user's own room (`user:<id>`).
 ///
-/// Planka broadcasts a project's own events there rather than to a board room:
-/// base custom field groups and the fields on them, notifications, the user
-/// list. It is deliberately shared — a second socket would join the same room
-/// and every event would then be handled twice — so anything needing a
-/// user-scoped event listens to [userEventsProvider] instead of connecting a
-/// socket of its own, and filters the stream down to the events it owns.
+/// Planka broadcasts project-scoped events there rather than to a board room:
+/// projects, boards, managers, backgrounds, base custom field groups and their
+/// fields, notifications, and the user list. It is deliberately shared — a
+/// second socket would join the same room and every event would then be
+/// handled twice — so anything needing a user-scoped event listens to
+/// [userEventsProvider] instead of connecting a socket of its own, and filters
+/// the stream down to the events it owns.
 ///
 /// The provider is rebuilt whenever the current account changes, which disposes
 /// the previous socket: signing out, signing back in and switching accounts
