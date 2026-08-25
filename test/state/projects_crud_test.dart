@@ -72,12 +72,24 @@ class _FakeApi extends PlankaApi {
   /// (the background-image write) in flight.
   Completer<void>? postGate;
 
+  /// When set, [get] awaits it before responding, so a test can hold a load or
+  /// a confirming refresh in flight (e.g. to switch the active account while
+  /// the refresh is pending).
+  Completer<void>? getGate;
+
+  /// The name of the first served project. Lets one fake per account serve
+  /// distinguishable data so a cross-account state leak is detectable.
+  String projectName = 'Fixture Project';
+
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
+    final gate = getGate;
+    if (gate != null) await gate.future;
     getCalls++;
     if (failGets) throw ApiException(503, 'server unavailable');
     final fixture = jsonDecode(jsonEncode(_fixture())) as Map<String, dynamic>;
     if (favorited) fixture['items'][0]['isFavorite'] = true;
+    fixture['items'][0]['name'] = projectName;
     return Envelope.parse(fixture);
   }
 
@@ -449,12 +461,137 @@ void main() {
     expect(apiB.calls, isNot(contains('PATCH /projects/p1')));
     expect(apiB.calls, isNot(contains('POST /projects/p1/background-images')));
 
-    // The mutation may reject because A's notifier was disposed by the
-    // account switch; the write already routed to the correct client above,
+    // The confirming refresh hits B's server (now the active account), so the
+    // mutation rejects; the write already routed to the correct client above,
     // so just settle the future to keep the test from leaking an error.
     try {
       await mutation;
     } catch (_) {}
+  });
+
+  /// Boots a container whose active account can be switched mid-flight and
+  /// whose [apiProvider] resolves to a distinct fake per account (watching the
+  /// account, like the real provider), so a state leak from one account into
+  /// the other is detectable.
+  Future<(ProviderContainer, _MutableAccount, _FakeApi, _FakeApi)> bootSwitchable(
+      Account accountA, Account accountB, Directory cacheDir) async {
+    final apiA = _FakeApi()..projectName = 'Project A';
+    final apiB = _FakeApi()..projectName = 'Project B';
+    final mutable = _MutableAccount()..account = accountA;
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWith((ref) =>
+          ref.watch(currentAccountProvider) == accountA ? apiA : apiB),
+      currentAccountProvider.overrideWith(() => mutable),
+      envelopeCacheProvider
+          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
+    ]);
+    container.read(currentAccountProvider); // build the notifier
+    await container.read(projectsProvider.future); // initial load as A
+    return (container, mutable, apiA, apiB);
+  }
+
+  test('a mutation that completes after an account switch does not publish '
+      'the captured account\'s data onto the new account\'s screen', () async {
+    final accountA = Account(
+        serverUrl: 'https://a.example.com',
+        token: 'tok',
+        userId: 'u1',
+        displayName: 'A');
+    final accountB = Account(
+        serverUrl: 'https://b.example.com',
+        token: 'tok',
+        userId: 'u1',
+        displayName: 'B');
+    final cacheDir =
+        Directory.systemTemp.createTempSync('projects_crud_publish');
+    addTearDown(() => cacheDir.deleteSync(recursive: true));
+
+    final (container, mutable, apiA, apiB) =
+        await bootSwitchable(accountA, accountB, cacheDir);
+    addTearDown(container.dispose);
+
+    // A's mutation is in flight (write landed, confirming refresh pending).
+    // Hold the refresh so it resolves only after the account has switched.
+    final gate = Completer<void>();
+    apiA.getGate = gate;
+    final mutation = container
+        .read(projectsProvider.notifier)
+        .setProjectFavorite('p1', favorite: true);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    mutable.switchTo(accountB);
+    // The real account switcher invalidates the provider after selecting the
+    // new account, so B's own load settles while A's refresh is still pending.
+    container.invalidate(projectsProvider);
+    await settle(container);
+    expect(container.read(projectsProvider).value!.projects.first.name,
+        'Project B');
+
+    // A's refresh now resolves with A's data. The notifier is not disposed by
+    // the switch — it is preserved across the rebuild — so without the guard
+    // A's projects would overwrite B's on the shared screen. Awaiting the
+    // mutation settles only after _mutate has finished its state write, so the
+    // read below observes the result of that write.
+    gate.complete();
+    try {
+      await mutation;
+    } catch (_) {}
+    await settle(container);
+    final view = container.read(projectsProvider);
+    expect(view.hasError, isFalse);
+    expect(view.value!.projects.first.name, 'Project B',
+        reason: 'A\'s late refresh must not publish A\'s data on B\'s screen');
+  });
+
+  test('a mutation that fails after an account switch neither publishes the '
+      'captured account\'s error nor replaces it with a disposal error',
+      () async {
+    final accountA = Account(
+        serverUrl: 'https://a.example.com',
+        token: 'tok',
+        userId: 'u1',
+        displayName: 'A');
+    final accountB = Account(
+        serverUrl: 'https://b.example.com',
+        token: 'tok',
+        userId: 'u1',
+        displayName: 'B');
+    final cacheDir =
+        Directory.systemTemp.createTempSync('projects_crud_publish_err');
+    addTearDown(() => cacheDir.deleteSync(recursive: true));
+
+    final (container, mutable, apiA, apiB) =
+        await bootSwitchable(accountA, accountB, cacheDir);
+    addTearDown(container.dispose);
+
+    // A's mutation is in flight (write landed, confirming refresh pending).
+    final gate = Completer<void>();
+    apiA.getGate = gate;
+    final mutation = container
+        .read(projectsProvider.notifier)
+        .setProjectFavorite('p1', favorite: true);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    mutable.switchTo(accountB);
+    container.invalidate(projectsProvider);
+    await settle(container);
+    expect(container.read(projectsProvider).value!.projects.first.name,
+        'Project B');
+
+    // A's refresh now fails. The error must not land on B's screen, and the
+    // mutation's own future must still reject with the real refresh error —
+    // not a disposal error from a state write.
+    apiA.failGets = true;
+    gate.complete();
+    await expectLater(mutation, throwsA(isA<ApiException>()));
+    await settle(container);
+    final view = container.read(projectsProvider);
+    expect(view.hasError, isFalse,
+        reason: 'A\'s refresh error must not publish on B\'s screen');
+    expect(view.value!.projects.first.name, 'Project B');
+
+    // The cache cleanup still ran for the account that was written to.
+    final cache = container.read(envelopeCacheProvider);
+    expect(await cache.get('${accountA.id}-projects'), isNull);
+    expect(await cache.get('${accountB.id}-projects'), isNotNull);
   });
 
   test('a still-offline retry after a failed mutation refresh stays in '

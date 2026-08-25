@@ -115,6 +115,14 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
     final accountId = account?.id;
     final repo = PlankaRepo(ref.read(apiProvider));
     final cache = ref.read(envelopeCacheProvider);
+    // A mutation may only publish to state while this notifier still
+    // represents the account it captured. Riverpod preserves the notifier
+    // across an account-switch rebuild (it is not disposed), so without this
+    // check a write captured against A would land A's result — or A's
+    // refresh error — on the screen B is now reading. Decided from
+    // mounted-and-still-current state, not from what throws.
+    bool stillCurrent() =>
+        ref.mounted && ref.read(currentAccountProvider)?.id == accountId;
     await call(repo);
     try {
       // The confirming refresh must hit the server, never the cache: the
@@ -124,24 +132,20 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
       final env = accountId == null
           ? await repo.projects()
           : await cache.fetchAndCache('$accountId-projects', repo.projects);
-      state = AsyncData(_view(env));
+      if (stillCurrent()) state = AsyncData(_view(env));
     } catch (e, s) {
       // The write landed but the confirming refresh failed. The cached copy
       // is the pre-mutation state; delete it so no later load — retry,
       // pull-to-refresh, or a cold start that never saw the mutation — can
       // serve it as fresh truth. The next load must reach the server, so
-      // while it is down the list stays an error instead of reverting.
+      // while it is down the list stays an error instead of reverting. This
+      // is about the account that was written to, so it runs regardless of
+      // whether that account is still on screen.
       if (accountId != null) await cache.delete('$accountId-projects');
-      // The account may have switched during the write, in which case this
-      // notifier is already disposed and the state write is a no-op that
-      // throws; swallow that, but always reject the mutation's own future
-      // with the real refresh error so the caller surfaces it.
-      try {
-        state = AsyncError(e, s);
-      } on StateError {
-        // The notifier was disposed by the mid-write account switch; the
-        // state write is a no-op. Any other failure still propagates.
-      }
+      // Same guard as the success path: do not publish the captured account's
+      // error onto a different account's screen. The mutation's own future
+      // still rejects with the real refresh error below, either way.
+      if (stillCurrent()) state = AsyncError(e, s);
       rethrow;
     }
   }
