@@ -68,6 +68,10 @@ class _FakeApi extends PlankaApi {
   /// in flight (e.g. to switch the active account mid-write).
   Completer<void>? patchGate;
 
+  /// When set, [post] awaits it before responding, so a test can hold an upload
+  /// (the background-image write) in flight.
+  Completer<void>? postGate;
+
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     getCalls++;
@@ -80,6 +84,8 @@ class _FakeApi extends PlankaApi {
   @override
   Future<Envelope> post(String path, Object? body) async {
     calls.add('POST $path');
+    final gate = postGate;
+    if (gate != null) await gate.future;
     return Envelope.parse({'item': <String, dynamic>{}});
   }
 
@@ -387,6 +393,68 @@ void main() {
     // survives — the account switch did not redirect the cleanup to B's key.
     expect(await cache.get(keyA), isNull);
     expect(await cache.get(keyB), isNotNull);
+  });
+
+  test('a background-image upload held in flight across an account switch '
+      'sends its follow-up patch to the write\'s client', () async {
+    final accountA = Account(
+        serverUrl: 'https://a.example.com',
+        token: 'tok',
+        userId: 'u1',
+        displayName: 'A');
+    final accountB = Account(
+        serverUrl: 'https://b.example.com',
+        token: 'tok',
+        userId: 'u1',
+        displayName: 'B');
+    // One client per account: if the follow-up patch is routed through the
+    // ambient (newly active) client it lands on apiB, not apiA.
+    final apiA = _FakeApi();
+    final apiB = _FakeApi();
+    final cacheDir =
+        Directory.systemTemp.createTempSync('projects_crud_upload');
+    addTearDown(() => cacheDir.deleteSync(recursive: true));
+
+    final mutable = _MutableAccount()..account = accountA;
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWith((ref) =>
+          ref.watch(currentAccountProvider) == accountA ? apiA : apiB),
+      currentAccountProvider.overrideWith(() => mutable),
+      envelopeCacheProvider
+          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
+    ]);
+    addTearDown(container.dispose);
+    container.read(currentAccountProvider); // build the notifier
+    await container.read(projectsProvider.future); // initial load as A
+
+    // Hold the upload (the background-image write) in flight, then switch the
+    // active account to B while it is pending. The follow-up updateProject
+    // must still go through A's client — the repo captured at the start of
+    // the mutation — never B's.
+    final gate = Completer<void>();
+    apiA.postGate = gate;
+    final mutation = container.read(projectsProvider.notifier).setProjectBackgroundImage(
+        'p1', filePath: 'test/fixtures/projects_index.json', name: 'bg.png');
+    // Let the upload reach the gate before switching accounts.
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    mutable.switchTo(accountB);
+    gate.complete();
+    // Let the follow-up patch and the confirming refresh run.
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    // The upload (POST) and the follow-up patch (PATCH) both went to A's
+    // client; B's client saw neither.
+    expect(apiA.calls, contains('POST /projects/p1/background-images'));
+    expect(apiA.calls, contains('PATCH /projects/p1'));
+    expect(apiB.calls, isNot(contains('PATCH /projects/p1')));
+    expect(apiB.calls, isNot(contains('POST /projects/p1/background-images')));
+
+    // The mutation may reject because A's notifier was disposed by the
+    // account switch; the write already routed to the correct client above,
+    // so just settle the future to keep the test from leaking an error.
+    try {
+      await mutation;
+    } catch (_) {}
   });
 
   test('a still-offline retry after a failed mutation refresh stays in '

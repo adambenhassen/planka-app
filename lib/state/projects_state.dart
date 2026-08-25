@@ -99,17 +99,23 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
 
   // ponytail: no optimistic updates here — project/board CRUD is rare, so each
   // mutation awaits the server then refetches the (small) projects payload.
-  Future<void> _mutate(Future<Object?> Function() call) async {
-    // Capture the account and its API client before the write: the confirming
-    // refresh and any cache cleanup must act on the account the write targeted,
-    // not whichever account is active when the write happens to return. If the
-    // user switches accounts mid-write, acting on the new account would delete
-    // its valid cache entry while the old account's stale copy survives.
+  //
+  // The write callback receives the repo captured at the start of the
+  // mutation: no code inside a mutation may reach for the ambient client
+  // after the write has started, so a mid-write account switch can never send
+  // a follow-up request through the new account's client.
+  Future<void> _mutate(Future<Object?> Function(PlankaRepo) call) async {
+    // Capture the account and its API client before the write: the write,
+    // the confirming refresh and any cache cleanup must all act on the
+    // account the write targeted, not whichever account is active when the
+    // write happens to return. If the user switches accounts mid-write,
+    // acting on the new account would delete its valid cache entry while the
+    // old account's stale copy survives.
     final account = ref.read(currentAccountProvider);
     final accountId = account?.id;
     final repo = PlankaRepo(ref.read(apiProvider));
     final cache = ref.read(envelopeCacheProvider);
-    await call();
+    await call(repo);
     try {
       // The confirming refresh must hit the server, never the cache: the
       // cached copy is the pre-mutation state. On success it is replaced with
@@ -132,58 +138,61 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
       // with the real refresh error so the caller surfaces it.
       try {
         state = AsyncError(e, s);
-      } catch (_) {}
+      } on StateError {
+        // The notifier was disposed by the mid-write account switch; the
+        // state write is a no-op. Any other failure still propagates.
+      }
       rethrow;
     }
   }
 
   Future<void> createProject(String name) =>
-      _mutate(() => _repo.createProject(name));
+      _mutate((repo) => repo.createProject(name));
 
   Future<void> renameProject(String id, String name) =>
-      _mutate(() => _repo.updateProject(id, {'name': name}));
+      _mutate((repo) => repo.updateProject(id, {'name': name}));
 
   Future<void> deleteProject(String id) =>
-      _mutate(() => _repo.deleteProject(id));
+      _mutate((repo) => repo.deleteProject(id));
 
   Future<void> setProjectFavorite(String id, {required bool favorite}) =>
-      _mutate(() => _repo.updateProject(id, {'isFavorite': favorite}));
+      _mutate((repo) => repo.updateProject(id, {'isFavorite': favorite}));
 
-  Future<void> createBoard(String projectId, String name) => _mutate(() {
+  Future<void> createBoard(String projectId, String name) => _mutate((repo) {
         final last = (state.value?.boards ?? const [])
             .where((b) => b.projectId == projectId)
             .lastOrNull
             ?.position;
-        return _repo.createBoard(projectId,
+        return repo.createBoard(projectId,
             name: name,
             position: last == null ? kPositionGap : last + kPositionGap);
       });
 
   Future<void> addProjectManager(String projectId, String userId) =>
-      _mutate(() => _repo.addProjectManager(projectId, userId));
+      _mutate((repo) => repo.addProjectManager(projectId, userId));
 
   Future<void> removeProjectManager(String id) =>
-      _mutate(() => _repo.removeProjectManager(id));
+      _mutate((repo) => repo.removeProjectManager(id));
 
   Future<void> setProjectGradient(String id, String gradient) =>
-      _mutate(() => _repo.updateProject(
+      _mutate((repo) => repo.updateProject(
           id, {'backgroundType': 'gradient', 'backgroundGradient': gradient}));
 
   Future<void> setProjectBackgroundImage(String id,
           {required String filePath, required String name}) =>
-      _mutate(() async {
-        await _repo.uploadProjectBackgroundImage(id,
+      _mutate((repo) async {
+        await repo.uploadProjectBackgroundImage(id,
             filePath: filePath, name: name);
-        return _repo.updateProject(id, {'backgroundType': 'image'});
+        return repo.updateProject(id, {'backgroundType': 'image'});
       });
 
   Future<void> clearProjectBackground(String id) =>
-      _mutate(() => _repo.updateProject(id, {'backgroundType': null}));
+      _mutate((repo) => repo.updateProject(id, {'backgroundType': null}));
 
   Future<void> renameBoard(String id, String name) =>
-      _mutate(() => _repo.updateBoard(id, {'name': name}));
+      _mutate((repo) => repo.updateBoard(id, {'name': name}));
 
-  Future<void> deleteBoard(String id) => _mutate(() => _repo.deleteBoard(id));
+  Future<void> deleteBoard(String id) => _mutate((repo) => repo.deleteBoard(id));
 
   // --------------- Custom field template mutations ---------------
   // Each awaits the server then refetches the projects payload, like every
@@ -191,28 +200,28 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
   // has resolved true — nothing here is ever sent optimistically.
 
   Future<void> createTemplate(String projectId, String name) =>
-      _mutate(() => _repo.createBaseCustomFieldGroup(projectId, name: name));
+      _mutate((repo) => repo.createBaseCustomFieldGroup(projectId, name: name));
 
   Future<void> renameTemplate(String id, String name) =>
-      _mutate(() => _repo.updateBaseCustomFieldGroup(id, {'name': name}));
+      _mutate((repo) => repo.updateBaseCustomFieldGroup(id, {'name': name}));
 
   Future<void> deleteTemplate(String id) =>
-      _mutate(() => _repo.deleteBaseCustomFieldGroup(id));
+      _mutate((repo) => repo.deleteBaseCustomFieldGroup(id));
 
   Future<void> createTemplateField(String templateId, String name) {
     final last = state.value?.fieldsOfBaseGroup(templateId).lastOrNull?.position;
-    return _mutate(() => _repo.createBaseCustomField(templateId,
+    return _mutate((repo) => repo.createBaseCustomField(templateId,
         name: name, position: positionBetween(last, null)));
   }
 
   Future<void> renameTemplateField(String id, String name) =>
-      _mutate(() => _repo.updateCustomField(id, {'name': name}));
+      _mutate((repo) => repo.updateCustomField(id, {'name': name}));
 
   Future<void> toggleTemplateFieldFrontOfCard(String id, bool show) =>
-      _mutate(() => _repo.updateCustomField(id, {'showOnFrontOfCard': show}));
+      _mutate((repo) => repo.updateCustomField(id, {'showOnFrontOfCard': show}));
 
   Future<void> deleteTemplateField(String id) =>
-      _mutate(() => _repo.deleteCustomField(id));
+      _mutate((repo) => repo.deleteCustomField(id));
 
   Future<void> moveTemplateFieldUp(String id) =>
       _moveTemplateField(id, up: true);
@@ -239,6 +248,6 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
           idx + 2 < peers.length ? peers[idx + 2].position : null);
     }
     await _mutate(
-        () => _repo.updateCustomField(id, {'position': position}));
+        (repo) => repo.updateCustomField(id, {'position': position}));
   }
 }
