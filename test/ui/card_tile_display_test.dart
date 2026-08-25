@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/models.dart';
 import 'package:planka_app/auth/accounts.dart';
+import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/ui/card_tile.dart';
@@ -50,6 +51,7 @@ PlankaCard card({
 BoardState state(
   PlankaCard c, {
   PlankaBoard b = const PlankaBoard(id: 'b1', projectId: 'p1', name: 'B'),
+  List<PlankaList> lists = const [],
   List<PlankaTaskList> taskLists = const [],
   List<PlankaTask> tasks = const [],
   List<PlankaUser> users = const [],
@@ -58,7 +60,7 @@ BoardState state(
 }) =>
     BoardState(
       board: b,
-      lists: const [],
+      lists: lists,
       cards: {c.id: c},
       taskLists: taskLists,
       tasks: tasks,
@@ -79,6 +81,8 @@ Widget host(PlankaCard c, BoardState s, {double? width}) => ProviderScope(
             displayName: 'U'))),
       ],
       child: MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         theme: AppTheme.light,
         home: Scaffold(
           body: width == null
@@ -193,6 +197,16 @@ void main() {
     final s = state(
       c,
       b: board(alwaysDisplayCardCreator: true, displayCardAges: true),
+      // The card sits in a closed list so the widest chip of the group — the
+      // localized "Closed" word — is part of the combined-width bound.
+      lists: const [
+        PlankaList(
+            id: 'l1',
+            boardId: 'b1',
+            type: PlankaListType.closed,
+            name: 'Closed',
+            position: 1),
+      ],
       users: const [
         PlankaUser(id: 'u1', name: 'Demo'),
         PlankaUser(id: 'u2', name: 'Ann'),
@@ -216,6 +230,52 @@ void main() {
     expect(find.text('3'), findsOneWidget); // comments
     expect(find.text('2h'), findsOneWidget); // age
     expect(find.text('D'), findsOneWidget); // creator avatar
+    expect(find.text('Closed'), findsOneWidget); // closed-list chip
+  });
+
+  testWidgets('inline checklist mirrors the collapsed chip for a linked task',
+      (tester) async {
+    // A task linked to a closed card counts as completed by the derived
+    // rule; the inline expanded row must agree with the collapsed chip and
+    // the card sheet, which all use state.isTaskCompleted.
+    final c = card();
+    final withLinked = BoardState(
+      board: board(expandTaskListsByDefault: true),
+      lists: const [
+        PlankaList(
+            id: 'l2',
+            boardId: 'b1',
+            type: PlankaListType.closed,
+            name: 'Closed',
+            position: 2),
+      ],
+      cards: {
+        c.id: c,
+        'c2': PlankaCard(
+            id: 'c2',
+            boardId: 'b1',
+            listId: 'l2',
+            type: 'project',
+            name: 'Linked',
+            isClosed: true),
+      },
+      taskLists: const [
+        PlankaTaskList(id: 'tl1', cardId: 'c1', name: 'Checklist')
+      ],
+      tasks: const [
+        PlankaTask(
+            id: 't1',
+            taskListId: 'tl1',
+            name: 'linked',
+            isCompleted: false,
+            linkedCardId: 'c2'),
+      ],
+    );
+    await tester.pumpWidget(host(c, withLinked));
+    // Expanded inline row: the linked task renders completed.
+    expect(find.text('1/1'), findsOneWidget);
+    final style = tester.widget<Text>(find.text('linked')).style;
+    expect(style?.decoration, TextDecoration.lineThrough);
   });
 
   testWidgets('checklists stay off the tile without the setting', (tester) async {

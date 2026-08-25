@@ -298,7 +298,9 @@ class _InlineTaskListsState extends State<_InlineTaskLists> {
     for (final tl in widget.state.taskListsOf(widget.cardId)) {
       final tasks = widget.state.tasks.where((t) => t.taskListId == tl.id).toList();
       if (tasks.isEmpty) continue;
-      final done = tasks.where((t) => t.isCompleted).length;
+      // Route completion through the derived rule so a linked item mirrors its
+      // card's closed state here, matching the collapsed chip and the sheet.
+      final done = tasks.where((t) => widget.state.isTaskCompleted(t)).length;
       final isExpanded = !_collapsed.contains(tl.id);
       sections.add(
         Column(
@@ -339,7 +341,7 @@ class _InlineTaskListsState extends State<_InlineTaskLists> {
                   child: Row(
                     children: [
                       Icon(
-                        t.isCompleted
+                        widget.state.isTaskCompleted(t)
                             ? Icons.check_box
                             : Icons.check_box_outline_blank,
                         size: 14,
@@ -350,7 +352,7 @@ class _InlineTaskListsState extends State<_InlineTaskLists> {
                         child: Text(
                           t.name,
                           style: theme.textTheme.labelSmall?.copyWith(
-                            decoration: t.isCompleted
+                            decoration: widget.state.isTaskCompleted(t)
                                 ? TextDecoration.lineThrough
                                 : null,
                           ),
