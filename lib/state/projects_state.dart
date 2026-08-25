@@ -374,7 +374,6 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
 
   StreamSubscription<SocketEvent>? _userEventsSub;
   StreamSubscription<bool>? _userConnectedSub;
-  var _disposeRegistered = false;
   var _ready = false;
   int? _resyncSession;
   var _resyncRequested = false;
@@ -405,28 +404,28 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
         }
       },
     );
-    if (!_disposeRegistered) {
-      _disposeRegistered = true;
-      ref.onDispose(() {
-        _userEventsSub?.cancel();
-        _userConnectedSub?.cancel();
-      });
-    }
+    ref.onDispose(() {
+      _userEventsSub?.cancel();
+      _userConnectedSub?.cancel();
+    });
 
-    var version = _eventVersion;
-    final loaded = await _fetch();
-    var view = loaded;
-    // Events can arrive after the listener is attached but before the initial
-    // REST response completes. Fold no stale snapshot into state: reconcile
-    // from the server until the response covers the latest event edge.
-    while (version != _eventVersion) {
-      version = _eventVersion;
-      view = await _fetch(fresh: true);
+    try {
+      var version = _eventVersion;
+      final loaded = await _fetch();
+      var view = loaded;
+      // Events can arrive after the listener is attached but before the initial
+      // REST response completes. Fold no stale snapshot into state: reconcile
+      // from the server until the response covers the latest event edge.
+      while (version != _eventVersion) {
+        version = _eventVersion;
+        view = await _fetch(fresh: true);
+      }
+      if (session != _session) return view;
+      _resyncRequested = false;
+      return view;
+    } finally {
+      if (session == _session) _ready = true;
     }
-    if (session != _session) return view;
-    _resyncRequested = false;
-    _ready = true;
-    return view;
   }
 
   /// Ordinary list load: serve the last good copy when the network is down

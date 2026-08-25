@@ -700,7 +700,6 @@ final allUsersProvider = AsyncNotifierProvider.autoDispose<AllUsersNotifier,
 class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
   StreamSubscription<SocketEvent>? _eventsSub;
   StreamSubscription<bool>? _connectedSub;
-  var _disposeRegistered = false;
   var _ready = false;
   int? _refreshSession;
   var _refreshRequested = false;
@@ -743,24 +742,24 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
       _eventVersion++;
       _queueRefresh(session);
     });
-    if (!_disposeRegistered) {
-      _disposeRegistered = true;
-      ref.onDispose(() {
-        _eventsSub?.cancel();
-        _connectedSub?.cancel();
-      });
-    }
+    ref.onDispose(() {
+      _eventsSub?.cancel();
+      _connectedSub?.cancel();
+    });
 
-    var version = _eventVersion;
-    var users = await _load();
-    while (version != _eventVersion) {
-      version = _eventVersion;
-      users = await _load();
+    try {
+      var version = _eventVersion;
+      var users = await _load();
+      while (version != _eventVersion) {
+        version = _eventVersion;
+        users = await _load();
+      }
+      if (session != _session) return users;
+      _refreshRequested = false;
+      return users;
+    } finally {
+      if (session == _session) _ready = true;
     }
-    if (session != _session) return users;
-    _refreshRequested = false;
-    _ready = true;
-    return users;
   }
 
   Future<List<PlankaUser>> _load() async {

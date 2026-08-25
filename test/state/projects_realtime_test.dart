@@ -54,11 +54,35 @@ class _FakeApi extends PlankaApi {
 
   var projectName = 'Project';
   var includeSecondProject = false;
+  var userName = 'Alice';
+  var includeSecondUser = false;
+  var projectError = false;
+  var userError = false;
+  Completer<void>? projectGate;
+  Completer<void>? userGate;
   var getCalls = 0;
+  var projectGetCalls = 0;
+  var userGetCalls = 0;
 
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     getCalls++;
+    final gate = path == '/users' ? userGate : projectGate;
+    if (gate != null && !gate.isCompleted) await gate.future;
+    if (path == '/users') {
+      userGetCalls++;
+      if (userError) throw ApiException(503, 'users unavailable');
+      return Envelope.parse({
+        'items': [
+          {'id': 'u1', 'name': userName, 'role': 'admin'},
+          if (includeSecondUser)
+            {'id': 'u2', 'name': 'Bob', 'role': 'boardUser'},
+        ],
+      });
+    }
+    if (path != '/projects') throw StateError('unexpected GET $path');
+    projectGetCalls++;
+    if (projectError) throw ApiException(503, 'projects unavailable');
     return Envelope.parse({
       'items': [
         {'id': 'p1', 'name': projectName},
@@ -89,6 +113,28 @@ Future<(ProviderContainer, _FakeApi, StreamController<SocketEvent>,
   addTearDown(events.close);
   addTearDown(connected.close);
   await container.read(projectsProvider.future);
+  return (container, api, events, connected);
+}
+
+Future<(ProviderContainer, _FakeApi, StreamController<SocketEvent>,
+        StreamController<bool>)>
+    _bootUsers() async {
+  final api = _FakeApi();
+  final events = StreamController<SocketEvent>.broadcast();
+  final connected = StreamController<bool>.broadcast();
+  final container = ProviderContainer(overrides: [
+    apiProvider.overrideWithValue(api),
+    userSocketProvider.overrideWithValue(null),
+    userEventsProvider.overrideWithValue(events.stream),
+    userConnectedProvider.overrideWithValue(connected.stream),
+  ]);
+  final subscription =
+      container.listen(allUsersProvider, (_, _) {}, fireImmediately: true);
+  addTearDown(subscription.close);
+  addTearDown(container.dispose);
+  addTearDown(events.close);
+  addTearDown(connected.close);
+  await container.read(allUsersProvider.future);
   return (container, api, events, connected);
 }
 
@@ -201,5 +247,147 @@ void main() {
     expect(api.getCalls, greaterThan(before));
     expect(container.read(projectsProvider).value!.projects.single.name,
         'Renamed after reconnect');
+  });
+
+  test('the all-users provider applies and reconciles user-room events',
+      () async {
+    final (container, api, events, _) = await _bootUsers();
+    api.userName = 'Renamed after event';
+    events.add(_event('userUpdate', {'id': 'u1', 'name': 'Event name'}));
+    await pumpEventQueue();
+
+    expect(container.read(allUsersProvider).value!.single.name,
+        'Renamed after event');
+    expect(api.userGetCalls, greaterThan(1));
+  });
+
+  test('a failed projects load recovers on reconnect', () async {
+    final api = _FakeApi()..projectError = true;
+    final events = StreamController<SocketEvent>.broadcast();
+    final connected = StreamController<bool>.broadcast();
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      userSocketProvider.overrideWithValue(null),
+      userEventsProvider.overrideWithValue(events.stream),
+      userConnectedProvider.overrideWithValue(connected.stream),
+    ]);
+    final subscription = container.listen(projectsProvider, (_, _) {},
+        fireImmediately: true);
+    addTearDown(subscription.close);
+    addTearDown(container.dispose);
+    addTearDown(events.close);
+    addTearDown(connected.close);
+
+    container.read(projectsProvider);
+    await pumpEventQueue();
+    expect(container.read(projectsProvider).hasError, isTrue);
+    api.projectError = false;
+    api.projectName = 'Recovered project';
+    connected.add(true);
+    await pumpEventQueue();
+
+    expect(container.read(projectsProvider).value!.projects.single.name,
+        'Recovered project');
+    expect(api.projectGetCalls, greaterThan(1));
+  });
+
+  test('a failed all-users load recovers on reconnect', () async {
+    final api = _FakeApi()..userError = true;
+    final events = StreamController<SocketEvent>.broadcast();
+    final connected = StreamController<bool>.broadcast();
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      userSocketProvider.overrideWithValue(null),
+      userEventsProvider.overrideWithValue(events.stream),
+      userConnectedProvider.overrideWithValue(connected.stream),
+    ]);
+    final subscription = container.listen(allUsersProvider, (_, _) {},
+        fireImmediately: true);
+    addTearDown(subscription.close);
+    addTearDown(container.dispose);
+    addTearDown(events.close);
+    addTearDown(connected.close);
+
+    container.read(allUsersProvider);
+    await pumpEventQueue();
+    expect(container.read(allUsersProvider).hasError, isTrue);
+    api.userError = false;
+    api.userName = 'Recovered user';
+    connected.add(true);
+    await pumpEventQueue();
+
+    expect(container.read(allUsersProvider).value!.single.name,
+        'Recovered user');
+    expect(api.userGetCalls, greaterThan(1));
+  });
+
+  test('rebuilding both providers leaves room subscriptions disposable',
+      () async {
+    final api = _FakeApi();
+    final events = StreamController<SocketEvent>.broadcast();
+    final connected = StreamController<bool>.broadcast();
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      userSocketProvider.overrideWithValue(null),
+      userEventsProvider.overrideWithValue(events.stream),
+      userConnectedProvider.overrideWithValue(connected.stream),
+    ]);
+    final projectsSubscription =
+        container.listen(projectsProvider, (_, _) {}, fireImmediately: true);
+    final usersSubscription =
+        container.listen(allUsersProvider, (_, _) {}, fireImmediately: true);
+    addTearDown(projectsSubscription.close);
+    addTearDown(usersSubscription.close);
+    addTearDown(container.dispose);
+    addTearDown(events.close);
+    addTearDown(connected.close);
+    await container.read(projectsProvider.future);
+    await container.read(allUsersProvider.future);
+
+    container.invalidate(projectsProvider);
+    container.invalidate(allUsersProvider);
+    await container.read(projectsProvider.future);
+    await container.read(allUsersProvider.future);
+
+    container.dispose();
+    await pumpEventQueue();
+    expect(events.hasListener, isFalse);
+    expect(connected.hasListener, isFalse);
+  });
+
+  test('projects resync discards a response crossed by a newer event',
+      () async {
+    final (container, api, events, connected) = await _boot();
+    api.projectGate = Completer<void>();
+    connected.add(true);
+    await pumpEventQueue();
+
+    api.projectName = 'Server after event';
+    events.add(_event('projectUpdate', {'id': 'p1', 'name': 'Event name'}));
+    await pumpEventQueue();
+    api.projectGate!.complete();
+    await pumpEventQueue();
+
+    expect(container.read(projectsProvider).value!.projects.single.name,
+        'Server after event');
+    expect(api.projectGetCalls, greaterThanOrEqualTo(3));
+  });
+
+  test('all-users refresh discards a response crossed by a newer event',
+      () async {
+    final (container, api, events, connected) = await _bootUsers();
+    api.userGate = Completer<void>();
+    connected.add(true);
+    await pumpEventQueue();
+
+    api.userName = 'Server after event';
+    events.add(_event('userUpdate', {'id': 'u1', 'name': 'Event name'}));
+    await pumpEventQueue();
+    api.userGate!.complete();
+    await pumpEventQueue();
+
+    expect(container.read(allUsersProvider).value!.single.name,
+        'Server after event');
+    expect(api.userGetCalls, greaterThanOrEqualTo(3));
   });
 }
