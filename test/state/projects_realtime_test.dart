@@ -9,6 +9,7 @@ import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/state/projects_state.dart';
+import 'package:planka_app/state/user_socket.dart';
 
 SocketEvent _event(String name, Map<String, dynamic> item) =>
     SocketEvent.parse(name, {'item': item});
@@ -20,6 +21,7 @@ ProjectsView _view() => ProjectsView(
           name: 'Project',
           backgroundType: 'gradient',
           backgroundGradient: 'ocean-dive',
+          backgroundImageId: 'image-1',
         ),
       ],
       boards: [

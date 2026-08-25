@@ -697,7 +697,7 @@ final allUsersProvider = AsyncNotifierProvider.autoDispose<AllUsersNotifier,
 
 /// Applies user-room changes immediately, then confirms them with a fresh
 /// users request so reconnects and event bursts cannot leave a stale list.
-class AllUsersNotifier extends AutoDisposeAsyncNotifier<List<PlankaUser>> {
+class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
   StreamSubscription<SocketEvent>? _eventsSub;
   StreamSubscription<bool>? _connectedSub;
   var _disposeRegistered = false;
