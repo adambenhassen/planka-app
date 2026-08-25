@@ -758,7 +758,12 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
       _refreshRequested = false;
       return users;
     } finally {
-      if (session == _session) _ready = true;
+      if (session == _session) {
+        _ready = true;
+        if (_refreshRequested && _refreshSession == null) {
+          unawaited(_drainRefresh(session));
+        }
+      }
     }
   }
 

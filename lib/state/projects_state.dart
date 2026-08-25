@@ -424,7 +424,12 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
       _resyncRequested = false;
       return view;
     } finally {
-      if (session == _session) _ready = true;
+      if (session == _session) {
+        _ready = true;
+        if (_resyncRequested && _resyncSession == null) {
+          unawaited(_drainResync(session));
+        }
+      }
     }
   }
 
