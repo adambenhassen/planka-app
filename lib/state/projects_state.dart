@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/envelope.dart';
 import '../api/models.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
@@ -60,22 +61,6 @@ class ProjectsView {
 final projectsProvider =
     AsyncNotifierProvider<ProjectsNotifier, ProjectsView>(ProjectsNotifier.new);
 
-/// The account whose last successful write was never confirmed by a
-/// successful refresh. While set, every load of that account's list must hit
-/// the server: the offline cache may still hold the pre-mutation copy, and
-/// serving it would silently revert the mutation. It lives in its own
-/// provider (not the notifier's fields) so it survives a provider rebuild —
-/// retry and pull-to-refresh both rebuild the notifier. Cleared as soon as
-/// any live fetch of the list succeeds.
-final pendingMutationProvider =
-    NotifierProvider<PendingMutationNotifier, String?>(
-        PendingMutationNotifier.new);
-
-class PendingMutationNotifier extends Notifier<String?> {
-  @override
-  String? build() => null;
-}
-
 class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
   PlankaRepo get _repo => PlankaRepo(ref.read(apiProvider));
 
@@ -86,51 +71,54 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
     return _fetch();
   }
 
+  /// Ordinary list load: serve the last good copy when the network is down
+  /// (offline read cache). This is the only path that may fall back to the
+  /// cache, and it is safe because a failed confirming refresh has already
+  /// deleted the stale copy (see [_mutate]) — so there is no pre-mutation
+  /// value left to serve. A cold start over the same cache directory takes
+  /// this same path and therefore never resurrects a reverted list.
   Future<ProjectsView> _fetch() async {
     final accountId = ref.read(currentAccountProvider)?.id;
-    final pending = ref.read(pendingMutationProvider);
-    // Ordinary loads serve the last good copy when the network is down
-    // (offline read cache). Never do so while a write is awaiting its
-    // confirming refresh: fetchAndCache hits the server, persists the new
-    // result, and rethrows on failure, so the user keeps seeing an error
-    // until a real fetch succeeds.
-    final env = switch ((accountId, pending)) {
-      (null, _) => await _repo.projects(),
-      (_, final p) when p != null && p == accountId => await ref
-          .read(envelopeCacheProvider)
-          .fetchAndCache('$accountId-projects', _repo.projects),
-      (_, _) => await ref
-          .read(envelopeCacheProvider)
-          .fetchOrCached('$accountId-projects', _repo.projects),
-    };
-    if (accountId != null && pending == accountId) {
-      ref.read(pendingMutationProvider.notifier).state = null;
-    }
-    return ProjectsView(
-      projects: env.items.map(PlankaProject.fromJson).toList(),
-      boards: env.included.boards,
-      backgroundImages: env.included.backgroundImages,
-      managers: env.included.projectManagers,
-      users: env.included.users,
-      baseCustomFieldGroups: env.included.baseCustomFieldGroups,
-      customFields: env.included.customFields,
-    );
+    final env = accountId == null
+        ? await _repo.projects()
+        : await ref
+            .read(envelopeCacheProvider)
+            .fetchOrCached('$accountId-projects', _repo.projects);
+    return _view(env);
   }
+
+  ProjectsView _view(Envelope env) => ProjectsView(
+        projects: env.items.map(PlankaProject.fromJson).toList(),
+        boards: env.included.boards,
+        backgroundImages: env.included.backgroundImages,
+        managers: env.included.projectManagers,
+        users: env.included.users,
+        baseCustomFieldGroups: env.included.baseCustomFieldGroups,
+        customFields: env.included.customFields,
+      );
 
   // ponytail: no optimistic updates here — project/board CRUD is rare, so each
   // mutation awaits the server then refetches the (small) projects payload.
   Future<void> _mutate(Future<Object?> Function() call) async {
     await call();
-    // The write succeeded, so the confirming refresh must hit the server,
-    // never the cache. Mark the account pending before the fetch so the
-    // refresh takes the no-fallback path from the first attempt; if it
-    // fails, pending stays set (every retry re-hits the server), and if it
-    // succeeds, _fetch clears it.
     final accountId = ref.read(currentAccountProvider)?.id;
-    ref.read(pendingMutationProvider.notifier).state = accountId;
+    final cache = ref.read(envelopeCacheProvider);
     try {
-      state = AsyncData(await _fetch());
+      // The confirming refresh must hit the server, never the cache: the
+      // cached copy is the pre-mutation state. On success it is replaced with
+      // the post-mutation result (fetchAndCache), so the next offline start
+      // sees the new values.
+      final env = accountId == null
+          ? await _repo.projects()
+          : await cache.fetchAndCache('$accountId-projects', _repo.projects);
+      state = AsyncData(_view(env));
     } catch (e, s) {
+      // The write landed but the confirming refresh failed. The cached copy
+      // is the pre-mutation state; delete it so no later load — retry,
+      // pull-to-refresh, or a cold start that never saw the mutation — can
+      // serve it as fresh truth. The next load must reach the server, so
+      // while it is down the list stays an error instead of reverting.
+      if (accountId != null) await cache.delete('$accountId-projects');
       state = AsyncError(e, s);
       rethrow;
     }

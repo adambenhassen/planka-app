@@ -11,14 +11,22 @@ import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/envelope_cache.dart';
 import 'package:planka_app/state/projects_state.dart';
 
-/// A fixed current account, so the notifier's offline-cache path is used.
-class _CurrentAccount extends CurrentAccountNotifier {
+/// The default fixed account used by the tests.
+final Account _fixed = Account(
+    serverUrl: 'https://planka.example.com',
+    token: 'tok',
+    userId: 'u1',
+    displayName: 'Test');
+
+/// The default account's cache key.
+const String _defaultKey = 'https://planka.example.com#u1-projects';
+
+/// A current account pinned to a fixed [Account].
+class _FixedAccount extends CurrentAccountNotifier {
+  _FixedAccount(this._account);
+  final Account _account;
   @override
-  Account build() => Account(
-      serverUrl: 'https://planka.example.com',
-      token: 'tok',
-      userId: 'u1',
-      displayName: 'Test');
+  Account build() => _account;
 }
 
 Map<String, dynamic> _fixture() =>
@@ -82,28 +90,30 @@ void main() {
   }
 
   /// Boots with a selected account (so the offline cache path is used) and
-  /// an in-memory cache directory.
-  Future<(ProviderContainer, ProjectsNotifier, _FakeApi)> boot() async {
+  /// an in-memory cache directory. [cacheDir] may be shared across containers
+  /// to simulate a cold start over the same on-disk cache.
+  Future<(ProviderContainer, ProjectsNotifier, _FakeApi)> boot({
+    Directory? cacheDir,
+    Account? account,
+    bool initialLoad = true,
+  }) async {
     final api = _FakeApi();
-    final cacheDir =
+    final dir = cacheDir ??
         Directory.systemTemp.createTempSync('projects_crud_cache');
-    addTearDown(() => cacheDir.deleteSync(recursive: true));
+    if (cacheDir == null) addTearDown(() => dir.deleteSync(recursive: true));
+    final active = account ?? _fixed;
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
-      currentAccountProvider
-          .overrideWith(() => _CurrentAccount()),
-      envelopeCacheProvider
-          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
+      currentAccountProvider.overrideWith(() => _FixedAccount(active)),
+      envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: dir)),
     ]);
-    await container.read(projectsProvider.future);
+    if (initialLoad) await container.read(projectsProvider.future);
     return (container, container.read(projectsProvider.notifier), api);
   }
 
-  /// The envelope the on-disk offline cache currently holds.
-  Future<Envelope?> cached(ProviderContainer container) =>
-      container
-          .read(envelopeCacheProvider)
-          .get('https://planka.example.com#u1-projects');
+  /// The envelope the on-disk offline cache currently holds for [key].
+  Future<Envelope?> cached(ProviderContainer container, String key) =>
+      container.read(envelopeCacheProvider).get(key);
 
   test('createProject posts then refetches the projects list', () async {
     final (container, notifier, api) = await boot();
@@ -172,7 +182,8 @@ void main() {
     addTearDown(container.dispose);
 
     // Before the mutation the cache holds the initial load, unfavourited.
-    expect((await cached(container))!.items[0]['isFavorite'], isFalse);
+    expect((await cached(container, _defaultKey))!.items[0]['isFavorite'],
+        isFalse);
 
     // The server now reports the project favourited, so the post-mutation
     // refresh is distinguishable from the initial load.
@@ -181,22 +192,121 @@ void main() {
 
     // The next offline start must be served the post-mutation state, not the
     // pre-mutation copy the cache held before the refresh.
-    final cachedEnv = await cached(container);
+    final cachedEnv = await cached(container, _defaultKey);
     expect(cachedEnv!.items[0]['isFavorite'], isTrue);
+
+    // A successful mutation must not strand the account: with the server now
+    // down, an ordinary reload still succeeds, serving the cached
+    // post-mutation copy (no error, no revert to the pre-mutation value).
+    api.failGets = true;
+    container.invalidate(projectsProvider);
+    await settle(container);
+    final reloaded = container.read(projectsProvider);
+    expect(reloaded.hasError, isFalse);
+    expect(reloaded.value!.projects.first.isFavorite, isTrue);
   });
 
-  test('a failed mutation refresh leaves the cache untouched', () async {
+  test('a failed mutation refresh deletes the stale cache copy', () async {
     final (container, notifier, api) = await boot();
     addTearDown(container.dispose);
+
+    // The initial load populated the cache with the pre-mutation copy.
+    expect((await cached(container, _defaultKey))!.items[0]['isFavorite'],
+        isFalse);
 
     api.failGets = true;
     await expectLater(
         notifier.setProjectFavorite('p1', favorite: true),
         throwsA(isA<ApiException>()));
 
-    // No partial refresh: the cache still holds the last good copy.
-    final cachedEnv = await cached(container);
-    expect(cachedEnv!.items[0]['isFavorite'], isFalse);
+    // The write landed but the confirming refresh failed, so the pre-mutation
+    // copy must not remain available: the cache entry is deleted.
+    expect(await cached(container, _defaultKey), isNull);
+  });
+
+  test('a cold start after a failed confirming refresh errors rather than '
+      'serving the pre-mutation copy', () async {
+    final api = _FakeApi();
+    final cacheDir =
+        Directory.systemTemp.createTempSync('projects_crud_cold');
+    addTearDown(() => cacheDir.deleteSync(recursive: true));
+
+    // First "session": load (populates the cache), then a mutation whose
+    // confirming refresh fails (deletes the stale copy).
+    final first = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(() => _FixedAccount(_fixed)),
+      envelopeCacheProvider
+          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
+    ]);
+    await first.read(projectsProvider.future);
+    api.failGets = true;
+    await expectLater(
+        first.read(projectsProvider.notifier)
+            .setProjectFavorite('p1', favorite: true),
+        throwsA(isA<ApiException>()));
+    first.dispose();
+
+    // "Cold start": a fresh container over the same on-disk cache, still
+    // offline. It must not resurrect the pre-mutation copy — with the stale
+    // entry gone and the server down, the load errors rather than serving
+    // the old values.
+    final second = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(() => _FixedAccount(_fixed)),
+      envelopeCacheProvider
+          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
+    ]);
+    addTearDown(second.dispose);
+    second.read(projectsProvider); // start the build
+    await settle(second);
+    final state = second.read(projectsProvider);
+    expect(state.hasError, isTrue);
+    // Not a silent revert: no pre-mutation value is presented as data.
+    expect(state.value, isNull);
+  });
+
+  test('a failed write on one account leaves the other account\'s cache '
+      'fallback intact', () async {
+    final api = _FakeApi();
+    final cacheDir =
+        Directory.systemTemp.createTempSync('projects_crud_accounts');
+    addTearDown(() => cacheDir.deleteSync(recursive: true));
+    final accountA = Account(
+        serverUrl: 'https://a.example.com',
+        token: 'tok',
+        userId: 'u1',
+        displayName: 'A');
+    final accountB = Account(
+        serverUrl: 'https://b.example.com',
+        token: 'tok',
+        userId: 'u1',
+        displayName: 'B');
+    final keyA = '${accountA.id}-projects';
+    final keyB = '${accountB.id}-projects';
+
+    // Give both accounts a good cached copy.
+    final cache = EnvelopeCache(directory: cacheDir);
+    final good = Envelope.parse(_fixture());
+    await cache.put(keyA, good);
+    await cache.put(keyB, good);
+
+    // A failed confirming refresh on account A deletes only A's key.
+    final containerA = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(() => _FixedAccount(accountA)),
+      envelopeCacheProvider
+          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
+    ]);
+    addTearDown(containerA.dispose);
+    api.failGets = true;
+    await expectLater(containerA.read(projectsProvider.notifier)
+        .setProjectFavorite('p1', favorite: true), throwsA(isA<ApiException>()));
+
+    // A's stale copy is gone; B's is untouched, so B can still fall back to
+    // its last good copy while offline.
+    expect(await cache.get(keyA), isNull);
+    expect(await cache.get(keyB), isNotNull);
   });
 
   test('a still-offline retry after a failed mutation refresh stays in '
