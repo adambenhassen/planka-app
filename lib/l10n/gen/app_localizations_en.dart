@@ -169,6 +169,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get projectMenuBackground => 'Background';
 
   @override
+  String get projectFavoriteAddTooltip => 'Add to favorites';
+
+  @override
+  String get projectFavoriteRemoveTooltip => 'Remove from favorites';
+
+  @override
   String get boardNewTitle => 'New board';
 
   @override

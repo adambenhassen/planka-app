@@ -310,7 +310,7 @@ as bool?,
 /// @nodoc
 mixin _$PlankaProject {
 
- String get id; String get name; String? get backgroundType; String? get backgroundGradient; String? get backgroundImageId;
+ String get id; String get name; String? get description; bool? get isFavorite; String? get backgroundType; String? get backgroundGradient; String? get backgroundImageId;
 /// Create a copy of PlankaProject
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -323,16 +323,16 @@ $PlankaProjectCopyWith<PlankaProject> get copyWith => _$PlankaProjectCopyWithImp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaProject&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.backgroundType, backgroundType) || other.backgroundType == backgroundType)&&(identical(other.backgroundGradient, backgroundGradient) || other.backgroundGradient == backgroundGradient)&&(identical(other.backgroundImageId, backgroundImageId) || other.backgroundImageId == backgroundImageId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlankaProject&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&(identical(other.isFavorite, isFavorite) || other.isFavorite == isFavorite)&&(identical(other.backgroundType, backgroundType) || other.backgroundType == backgroundType)&&(identical(other.backgroundGradient, backgroundGradient) || other.backgroundGradient == backgroundGradient)&&(identical(other.backgroundImageId, backgroundImageId) || other.backgroundImageId == backgroundImageId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,backgroundType,backgroundGradient,backgroundImageId);
+int get hashCode => Object.hash(runtimeType,id,name,description,isFavorite,backgroundType,backgroundGradient,backgroundImageId);
 
 @override
 String toString() {
-  return 'PlankaProject(id: $id, name: $name, backgroundType: $backgroundType, backgroundGradient: $backgroundGradient, backgroundImageId: $backgroundImageId)';
+  return 'PlankaProject(id: $id, name: $name, description: $description, isFavorite: $isFavorite, backgroundType: $backgroundType, backgroundGradient: $backgroundGradient, backgroundImageId: $backgroundImageId)';
 }
 
 
@@ -343,7 +343,7 @@ abstract mixin class $PlankaProjectCopyWith<$Res>  {
   factory $PlankaProjectCopyWith(PlankaProject value, $Res Function(PlankaProject) _then) = _$PlankaProjectCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String? backgroundType, String? backgroundGradient, String? backgroundImageId
+ String id, String name, String? description, bool? isFavorite, String? backgroundType, String? backgroundGradient, String? backgroundImageId
 });
 
 
@@ -360,11 +360,13 @@ class _$PlankaProjectCopyWithImpl<$Res>
 
 /// Create a copy of PlankaProject
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? backgroundType = freezed,Object? backgroundGradient = freezed,Object? backgroundImageId = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? description = freezed,Object? isFavorite = freezed,Object? backgroundType = freezed,Object? backgroundGradient = freezed,Object? backgroundImageId = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
-as String,backgroundType: freezed == backgroundType ? _self.backgroundType : backgroundType // ignore: cast_nullable_to_non_nullable
+as String,description: freezed == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
+as String?,isFavorite: freezed == isFavorite ? _self.isFavorite : isFavorite // ignore: cast_nullable_to_non_nullable
+as bool?,backgroundType: freezed == backgroundType ? _self.backgroundType : backgroundType // ignore: cast_nullable_to_non_nullable
 as String?,backgroundGradient: freezed == backgroundGradient ? _self.backgroundGradient : backgroundGradient // ignore: cast_nullable_to_non_nullable
 as String?,backgroundImageId: freezed == backgroundImageId ? _self.backgroundImageId : backgroundImageId // ignore: cast_nullable_to_non_nullable
 as String?,
@@ -452,10 +454,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String? backgroundType,  String? backgroundGradient,  String? backgroundImageId)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String? description,  bool? isFavorite,  String? backgroundType,  String? backgroundGradient,  String? backgroundImageId)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlankaProject() when $default != null:
-return $default(_that.id,_that.name,_that.backgroundType,_that.backgroundGradient,_that.backgroundImageId);case _:
+return $default(_that.id,_that.name,_that.description,_that.isFavorite,_that.backgroundType,_that.backgroundGradient,_that.backgroundImageId);case _:
   return orElse();
 
 }
@@ -473,10 +475,10 @@ return $default(_that.id,_that.name,_that.backgroundType,_that.backgroundGradien
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String? backgroundType,  String? backgroundGradient,  String? backgroundImageId)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String? description,  bool? isFavorite,  String? backgroundType,  String? backgroundGradient,  String? backgroundImageId)  $default,) {final _that = this;
 switch (_that) {
 case _PlankaProject():
-return $default(_that.id,_that.name,_that.backgroundType,_that.backgroundGradient,_that.backgroundImageId);case _:
+return $default(_that.id,_that.name,_that.description,_that.isFavorite,_that.backgroundType,_that.backgroundGradient,_that.backgroundImageId);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -493,10 +495,10 @@ return $default(_that.id,_that.name,_that.backgroundType,_that.backgroundGradien
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String? backgroundType,  String? backgroundGradient,  String? backgroundImageId)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String? description,  bool? isFavorite,  String? backgroundType,  String? backgroundGradient,  String? backgroundImageId)?  $default,) {final _that = this;
 switch (_that) {
 case _PlankaProject() when $default != null:
-return $default(_that.id,_that.name,_that.backgroundType,_that.backgroundGradient,_that.backgroundImageId);case _:
+return $default(_that.id,_that.name,_that.description,_that.isFavorite,_that.backgroundType,_that.backgroundGradient,_that.backgroundImageId);case _:
   return null;
 
 }
@@ -508,11 +510,13 @@ return $default(_that.id,_that.name,_that.backgroundType,_that.backgroundGradien
 @JsonSerializable()
 
 class _PlankaProject implements PlankaProject {
-  const _PlankaProject({required this.id, required this.name, this.backgroundType, this.backgroundGradient, this.backgroundImageId});
+  const _PlankaProject({required this.id, required this.name, this.description, this.isFavorite, this.backgroundType, this.backgroundGradient, this.backgroundImageId});
   factory _PlankaProject.fromJson(Map<String, dynamic> json) => _$PlankaProjectFromJson(json);
 
 @override final  String id;
 @override final  String name;
+@override final  String? description;
+@override final  bool? isFavorite;
 @override final  String? backgroundType;
 @override final  String? backgroundGradient;
 @override final  String? backgroundImageId;
@@ -530,16 +534,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaProject&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.backgroundType, backgroundType) || other.backgroundType == backgroundType)&&(identical(other.backgroundGradient, backgroundGradient) || other.backgroundGradient == backgroundGradient)&&(identical(other.backgroundImageId, backgroundImageId) || other.backgroundImageId == backgroundImageId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlankaProject&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&(identical(other.isFavorite, isFavorite) || other.isFavorite == isFavorite)&&(identical(other.backgroundType, backgroundType) || other.backgroundType == backgroundType)&&(identical(other.backgroundGradient, backgroundGradient) || other.backgroundGradient == backgroundGradient)&&(identical(other.backgroundImageId, backgroundImageId) || other.backgroundImageId == backgroundImageId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,backgroundType,backgroundGradient,backgroundImageId);
+int get hashCode => Object.hash(runtimeType,id,name,description,isFavorite,backgroundType,backgroundGradient,backgroundImageId);
 
 @override
 String toString() {
-  return 'PlankaProject(id: $id, name: $name, backgroundType: $backgroundType, backgroundGradient: $backgroundGradient, backgroundImageId: $backgroundImageId)';
+  return 'PlankaProject(id: $id, name: $name, description: $description, isFavorite: $isFavorite, backgroundType: $backgroundType, backgroundGradient: $backgroundGradient, backgroundImageId: $backgroundImageId)';
 }
 
 
@@ -550,7 +554,7 @@ abstract mixin class _$PlankaProjectCopyWith<$Res> implements $PlankaProjectCopy
   factory _$PlankaProjectCopyWith(_PlankaProject value, $Res Function(_PlankaProject) _then) = __$PlankaProjectCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String? backgroundType, String? backgroundGradient, String? backgroundImageId
+ String id, String name, String? description, bool? isFavorite, String? backgroundType, String? backgroundGradient, String? backgroundImageId
 });
 
 
@@ -567,11 +571,13 @@ class __$PlankaProjectCopyWithImpl<$Res>
 
 /// Create a copy of PlankaProject
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? backgroundType = freezed,Object? backgroundGradient = freezed,Object? backgroundImageId = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? description = freezed,Object? isFavorite = freezed,Object? backgroundType = freezed,Object? backgroundGradient = freezed,Object? backgroundImageId = freezed,}) {
   return _then(_PlankaProject(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
-as String,backgroundType: freezed == backgroundType ? _self.backgroundType : backgroundType // ignore: cast_nullable_to_non_nullable
+as String,description: freezed == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
+as String?,isFavorite: freezed == isFavorite ? _self.isFavorite : isFavorite // ignore: cast_nullable_to_non_nullable
+as bool?,backgroundType: freezed == backgroundType ? _self.backgroundType : backgroundType // ignore: cast_nullable_to_non_nullable
 as String?,backgroundGradient: freezed == backgroundGradient ? _self.backgroundGradient : backgroundGradient // ignore: cast_nullable_to_non_nullable
 as String?,backgroundImageId: freezed == backgroundImageId ? _self.backgroundImageId : backgroundImageId // ignore: cast_nullable_to_non_nullable
 as String?,

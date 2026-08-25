@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
+import 'package:planka_app/api/models.dart';
 import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/projects_state.dart';
@@ -17,6 +18,7 @@ class _FakeApi extends PlankaApi {
   _FakeApi() : super('http://x', 'tok');
   int getCalls = 0;
   final calls = <String>[];
+  final patchBodies = <String, Object?>{};
 
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
@@ -33,6 +35,7 @@ class _FakeApi extends PlankaApi {
   @override
   Future<Envelope> patch(String path, Object? body) async {
     calls.add('PATCH $path');
+    patchBodies[path] = body;
     return Envelope.parse({'item': <String, dynamic>{}});
   }
 
@@ -61,6 +64,34 @@ void main() {
 
     expect(api.calls, ['POST /projects']);
     expect(api.getCalls, getsBefore + 1);
+  });
+
+  test('setProjectFavorite patches isFavorite then refetches', () async {
+    final (container, notifier, api) = await boot();
+    addTearDown(container.dispose);
+    final getsBefore = api.getCalls;
+
+    await notifier.setProjectFavorite('p1', favorite: true);
+
+    expect(api.calls, ['PATCH /projects/p1']);
+    expect(api.patchBodies['/projects/p1'], {'isFavorite': true});
+    expect(api.getCalls, getsBefore + 1);
+  });
+
+  test('orderedProjects pulls favourites ahead, keeps server order', () {
+    PlankaProject p(String id, {bool favorite = false}) =>
+        PlankaProject(id: id, name: id, isFavorite: favorite);
+    const nullFavorite = PlankaProject(id: 'x', name: 'x');
+    final view = ProjectsView(projects: [
+      p('a'),
+      p('b', favorite: true),
+      p('c'),
+      p('d', favorite: true),
+      nullFavorite,
+    ], boards: const [], backgroundImages: const []);
+
+    expect(view.orderedProjects.map((p) => p.id).toList(),
+        ['b', 'd', 'a', 'c', 'x']);
   });
 
   test('project and board mutations hit the expected endpoints', () async {

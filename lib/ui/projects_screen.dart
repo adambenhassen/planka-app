@@ -221,7 +221,7 @@ class _ProjectList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final boards = view.boards;
-    final projects = view.projects;
+    final projects = view.orderedProjects;
     if (projects.isEmpty) {
       return ListView(
         children: [
@@ -239,11 +239,45 @@ class _ProjectList extends ConsumerWidget {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    p.name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        p.name,
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      // Shown only when the project carries one, and clipped
+                      // to a line so the header row keeps its height.
+                      if (p.description?.isNotEmpty ?? false)
+                        Text(
+                          p.description!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    (p.isFavorite ?? false) ? Icons.star : Icons.star_border,
+                    color: (p.isFavorite ?? false)
+                        ? Colors.amber
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  tooltip: (p.isFavorite ?? false)
+                      ? l10n.projectFavoriteRemoveTooltip
+                      : l10n.projectFavoriteAddTooltip,
+                  onPressed: () => guardMutation(
+                    context,
+                    ref
+                        .read(projectsProvider.notifier)
+                        .setProjectFavorite(p.id,
+                            favorite: !(p.isFavorite ?? false)),
                   ),
                 ),
                 PopupMenuButton<String>(

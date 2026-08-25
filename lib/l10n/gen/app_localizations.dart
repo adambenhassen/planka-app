@@ -406,6 +406,18 @@ abstract class AppLocalizations {
   /// **'Background'**
   String get projectMenuBackground;
 
+  /// Tooltip on the button that marks a project as a favorite
+  ///
+  /// In en, this message translates to:
+  /// **'Add to favorites'**
+  String get projectFavoriteAddTooltip;
+
+  /// Tooltip on the button that clears a project's favorite mark
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from favorites'**
+  String get projectFavoriteRemoveTooltip;
+
   /// Title of the create-board prompt
   ///
   /// In en, this message translates to:
