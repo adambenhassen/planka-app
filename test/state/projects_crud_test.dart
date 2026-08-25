@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -29,6 +30,23 @@ class _FixedAccount extends CurrentAccountNotifier {
   Account build() => _account;
 }
 
+/// A current account the test can switch mid-flight, to simulate the user
+/// changing accounts while a write is in flight.
+class _MutableAccount extends CurrentAccountNotifier {
+  /// The account [build] returns. Set before the provider is first read.
+  Account? account;
+  @override
+  Account? build() => account;
+
+  /// Switches the active account. Only valid once the provider has been read
+  /// (the notifier initialized); a mid-flight account switch does exactly
+  /// this.
+  void switchTo(Account? account) {
+    this.account = account;
+    state = account;
+  }
+}
+
 Map<String, dynamic> _fixture() =>
     jsonDecode(File('test/fixtures/projects_index.json').readAsStringSync())
         as Map<String, dynamic>;
@@ -45,6 +63,10 @@ class _FakeApi extends PlankaApi {
   /// When true, the served fixture marks the first project favourited, so a
   /// post-mutation refresh can be told apart from the initial load.
   bool favorited = false;
+
+  /// When set, [patch] awaits it before responding, so a test can hold a write
+  /// in flight (e.g. to switch the active account mid-write).
+  Completer<void>? patchGate;
 
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
@@ -65,6 +87,8 @@ class _FakeApi extends PlankaApi {
   Future<Envelope> patch(String path, Object? body) async {
     calls.add('PATCH $path');
     patchBodies[path] = body;
+    final gate = patchGate;
+    if (gate != null) await gate.future;
     return Envelope.parse({'item': <String, dynamic>{}});
   }
 
@@ -309,6 +333,62 @@ void main() {
     expect(await cache.get(keyB), isNotNull);
   });
 
+  test('a write in flight across an account switch cleans up the write\'s '
+      'account, not the newly active one', () async {
+    final api = _FakeApi();
+    final cacheDir =
+        Directory.systemTemp.createTempSync('projects_crud_switch');
+    addTearDown(() => cacheDir.deleteSync(recursive: true));
+    final accountA = Account(
+        serverUrl: 'https://a.example.com',
+        token: 'tok',
+        userId: 'u1',
+        displayName: 'A');
+    final accountB = Account(
+        serverUrl: 'https://b.example.com',
+        token: 'tok',
+        userId: 'u1',
+        displayName: 'B');
+    final keyA = '${accountA.id}-projects';
+    final keyB = '${accountB.id}-projects';
+    final cache = EnvelopeCache(directory: cacheDir);
+    final good = Envelope.parse(_fixture());
+    // Both accounts start with a good cached copy.
+    await cache.put(keyA, good);
+    await cache.put(keyB, good);
+
+    final mutable = _MutableAccount()..account = accountA;
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(() => mutable),
+      envelopeCacheProvider
+          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
+    ]);
+    addTearDown(container.dispose);
+    container.read(currentAccountProvider); // build the notifier
+    await container.read(projectsProvider.future); // initial load as A
+
+    // Hold A's write in flight, then switch the active account to B while it
+    // is pending. The confirming refresh and cache cleanup must still target
+    // A (the account the write was made against), never B.
+    final gate = Completer<void>();
+    api.patchGate = gate;
+    final mutation = container
+        .read(projectsProvider.notifier)
+        .setProjectFavorite('p1', favorite: true);
+    // Let the write reach the gate before switching accounts.
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    mutable.switchTo(accountB);
+    api.failGets = true; // A's confirming refresh now fails
+    gate.complete();
+    await expectLater(mutation, throwsA(isA<ApiException>()));
+
+    // A's stale copy is gone (its confirming refresh failed); B's valid copy
+    // survives — the account switch did not redirect the cleanup to B's key.
+    expect(await cache.get(keyA), isNull);
+    expect(await cache.get(keyB), isNotNull);
+  });
+
   test('a still-offline retry after a failed mutation refresh stays in '
       'error, then recovers on a live fetch', () async {
     final (container, notifier, api) = await boot();
@@ -327,8 +407,7 @@ void main() {
     await settle(container);
     expect(container.read(projectsProvider).hasError, isTrue);
 
-    // Once the server answers, the same retry path recovers with fresh data
-    // and the pending-mutation state is cleared.
+    // Once the server answers, the same retry path recovers with fresh data.
     api.failGets = false;
     container.invalidate(projectsProvider);
     await settle(container);

@@ -100,17 +100,24 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
   // ponytail: no optimistic updates here — project/board CRUD is rare, so each
   // mutation awaits the server then refetches the (small) projects payload.
   Future<void> _mutate(Future<Object?> Function() call) async {
-    await call();
-    final accountId = ref.read(currentAccountProvider)?.id;
+    // Capture the account and its API client before the write: the confirming
+    // refresh and any cache cleanup must act on the account the write targeted,
+    // not whichever account is active when the write happens to return. If the
+    // user switches accounts mid-write, acting on the new account would delete
+    // its valid cache entry while the old account's stale copy survives.
+    final account = ref.read(currentAccountProvider);
+    final accountId = account?.id;
+    final repo = PlankaRepo(ref.read(apiProvider));
     final cache = ref.read(envelopeCacheProvider);
+    await call();
     try {
       // The confirming refresh must hit the server, never the cache: the
       // cached copy is the pre-mutation state. On success it is replaced with
       // the post-mutation result (fetchAndCache), so the next offline start
       // sees the new values.
       final env = accountId == null
-          ? await _repo.projects()
-          : await cache.fetchAndCache('$accountId-projects', _repo.projects);
+          ? await repo.projects()
+          : await cache.fetchAndCache('$accountId-projects', repo.projects);
       state = AsyncData(_view(env));
     } catch (e, s) {
       // The write landed but the confirming refresh failed. The cached copy
@@ -119,7 +126,13 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
       // serve it as fresh truth. The next load must reach the server, so
       // while it is down the list stays an error instead of reverting.
       if (accountId != null) await cache.delete('$accountId-projects');
-      state = AsyncError(e, s);
+      // The account may have switched during the write, in which case this
+      // notifier is already disposed and the state write is a no-op that
+      // throws; swallow that, but always reject the mutation's own future
+      // with the real refresh error so the caller surfaces it.
+      try {
+        state = AsyncError(e, s);
+      } catch (_) {}
       rethrow;
     }
   }
