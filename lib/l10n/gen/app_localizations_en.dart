@@ -169,6 +169,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get projectMenuBackground => 'Background';
 
   @override
+  String get projectFavoriteAddTooltip => 'Add to favorites';
+
+  @override
+  String get projectFavoriteRemoveTooltip => 'Remove from favorites';
+
+  @override
   String get boardNewTitle => 'New board';
 
   @override
@@ -363,6 +369,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get taskDeleteTitle => 'Delete task?';
+
+  @override
+  String get taskAssign => 'Assign member…';
+
+  @override
+  String get taskUnassign => 'Unassign';
+
+  @override
+  String get cardClosed => 'Closed';
 
   @override
   String get attachmentAdd => 'Add attachment';

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../api/models.dart';
 import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
+import '../l10n/gen/app_localizations.dart';
 import '../state/board_state.dart';
 import 'theme/app_theme.dart';
 import 'widgets/label_colors.dart';
@@ -52,7 +53,7 @@ class CardTile extends ConsumerWidget {
     final creator =
         state.users.where((u) => u.id == card.creatorUserId).firstOrNull;
     final tasks = state.tasksOfCard(card.id);
-    final done = tasks.where((t) => t.isCompleted).length;
+    final done = tasks.where(state.isTaskCompleted).length;
     final attachmentCount = state.attachmentsOf(card.id).length;
     final customFields = state.frontOfCardCustomFieldsOf(card.id);
     final due = card.dueDate;
@@ -62,11 +63,17 @@ class CardTile extends ConsumerWidget {
     final showAge = state.board.displayCardAges == true;
     final expandTaskLists = state.board.expandTaskListsByDefault == true;
     final commentsTotal = card.commentsTotal ?? 0;
+    // The server derives this from the list type; derive it locally too so a
+    // move whose broadcast has not landed yet still shows the right state.
+    final isClosed = card.isClosed == true ||
+        state.lists.where((l) => l.id == card.listId).firstOrNull?.type ==
+            PlankaListType.closed;
     final hasBottomRow = due != null ||
         (tasks.isNotEmpty && !expandTaskLists) ||
         attachmentCount > 0 ||
         members.isNotEmpty ||
         commentsTotal > 0 ||
+        isClosed ||
         (showCreator && card.creatorUserId != null) ||
         (showAge && card.createdAt != null);
 
@@ -183,6 +190,11 @@ class CardTile extends ConsumerWidget {
                                 _Chip(
                                   icon: Icons.history,
                                   label: cardAgeLabel(card.createdAt!),
+                                ),
+                              if (isClosed)
+                                _Chip(
+                                  icon: Icons.inventory_2_outlined,
+                                  label: AppLocalizations.of(context).cardClosed,
                                 ),
                             ],
                           ),

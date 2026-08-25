@@ -5,18 +5,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
+import 'package:planka_app/api/models.dart';
 import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/ui/card_sheet.dart';
 
 class FakeBoardNotifier extends BoardNotifier {
-  FakeBoardNotifier(super.boardId);
+  FakeBoardNotifier(super.boardId, {this.seed});
   final calls = <(String, Object?)>[];
+  final BoardState Function(BoardState)? seed;
 
   @override
-  Future<BoardState> build() async => BoardState.fromEnvelope(Envelope.parse(
-      jsonDecode(File('test/fixtures/board_show.json').readAsStringSync())
-          as Map<String, dynamic>));
+  Future<BoardState> build() async {
+    final base = BoardState.fromEnvelope(Envelope.parse(
+        jsonDecode(File('test/fixtures/board_show.json').readAsStringSync())
+            as Map<String, dynamic>));
+    return seed?.call(base) ?? base;
+  }
 
   @override
   Future<void> setTaskCompleted(String taskId, bool isCompleted) async =>
@@ -36,7 +41,7 @@ void main() {
   late String boardId;
   late String cardId;
 
-  Widget app() {
+  Widget app([BoardState Function(BoardState)? seed]) {
     final fixture =
         jsonDecode(File('test/fixtures/board_show.json').readAsStringSync())
             as Map<String, dynamic>;
@@ -47,7 +52,7 @@ void main() {
     return ProviderScope(
       overrides: [
         boardProvider.overrideWith2((arg) {
-          notifier = FakeBoardNotifier(arg);
+          notifier = FakeBoardNotifier(arg, seed: seed);
           return notifier;
         }),
       ],
@@ -63,6 +68,40 @@ void main() {
       ),
     );
   }
+
+  testWidgets('assignee picker offers board members only, not card creators',
+      (tester) async {
+    // The board response's users are a union of members and card creators;
+    // seed a user who is in the response but has no board membership.
+    final stranger = PlankaUser(id: 'stranger', name: 'Stranger');
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final fixture =
+        jsonDecode(File('test/fixtures/board_show.json').readAsStringSync())
+            as Map<String, dynamic>;
+    final taskId =
+        (((fixture['included'] as Map)['tasks'] as List).first as Map)['id']
+            as String;
+
+    await tester.pumpWidget(app(
+        (state) => state.copyWith(users: [...state.users, stranger])));
+    await tester.pumpAndSettle();
+
+    // Open the item's menu and the picker.
+    await tester.tap(find.byKey(Key('task-menu-$taskId')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Assign member…'));
+    await tester.pumpAndSettle();
+
+    // Scope to the picker dialog: the members section also renders 'Demo'.
+    final dialog = find.byType(SimpleDialog);
+    expect(find.descendant(of: dialog, matching: find.text('Demo')),
+        findsOneWidget);
+    expect(find.descendant(of: dialog, matching: find.text('Stranger')),
+        findsNothing);
+  });
 
   testWidgets('renders title; task toggle, comment send, label toggle',
       (tester) async {

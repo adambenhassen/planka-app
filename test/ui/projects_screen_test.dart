@@ -14,8 +14,13 @@ import 'package:planka_app/ui/projects_screen.dart';
 class _FakeProjectsNotifier extends ProjectsNotifier {
   _FakeProjectsNotifier(this.view);
   final ProjectsView view;
+  final favoriteCalls = <(String, bool)>[];
   @override
   Future<ProjectsView> build() async => view;
+  @override
+  Future<void> setProjectFavorite(String id, {required bool favorite}) async {
+    favoriteCalls.add((id, favorite));
+  }
 }
 
 void main() {
@@ -61,5 +66,73 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('BOARD'), findsOneWidget);
     expect(navigatedTo, isNotNull);
+  });
+
+  Widget wrap(_FakeProjectsNotifier notifier) => ProviderScope(
+        overrides: [projectsProvider.overrideWith(() => notifier)],
+        child: MaterialApp.router(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          routerConfig: GoRouter(initialLocation: '/projects', routes: [
+            GoRoute(
+                path: '/projects', builder: (_, _) => const ProjectsScreen()),
+            GoRoute(
+                path: '/notifications',
+                builder: (_, _) => const Scaffold(body: Text('NOTIF'))),
+          ]),
+        ),
+      );
+
+  testWidgets('favourite project sorts first and shows a star', (tester) async {
+    final view = ProjectsView(
+      projects: [
+        const PlankaProject(id: 'p1', name: 'Plain'),
+        const PlankaProject(id: 'p2', name: 'Starred', isFavorite: true),
+        const PlankaProject(
+            id: 'p3', name: 'Described', description: 'Some words'),
+      ],
+      boards: const [],
+      backgroundImages: const [],
+    );
+    final notifier = _FakeProjectsNotifier(view);
+    await tester.pumpWidget(wrap(notifier));
+    await tester.pumpAndSettle();
+
+    // Favourites first, then the rest in their given order.
+    final nameOrder = ['Starred', 'Plain', 'Described'];
+    final positions = {
+      for (final name in nameOrder)
+        name: tester.getTopLeft(find.text(name)).dy,
+    };
+    expect(positions.values.toList()..sort(), positions.values.toList());
+    expect(positions['Starred'], lessThan(positions['Plain']!));
+    expect(positions['Plain'], lessThan(positions['Described']!));
+
+    // The favourite carries a filled star, the others do not.
+    expect(find.byIcon(Icons.star), findsOneWidget);
+    expect(find.byIcon(Icons.star_border), findsNWidgets(2));
+    // Descriptions show under the project name.
+    expect(find.text('Some words'), findsOneWidget);
+  });
+
+  testWidgets('tapping the star toggles the favourite flag', (tester) async {
+    final view = ProjectsView(
+      projects: [
+        const PlankaProject(id: 'p1', name: 'Plain'),
+        const PlankaProject(id: 'p2', name: 'Starred', isFavorite: true),
+      ],
+      boards: const [],
+      backgroundImages: const [],
+    );
+    final notifier = _FakeProjectsNotifier(view);
+    await tester.pumpWidget(wrap(notifier));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.star_border));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.star));
+    await tester.pumpAndSettle();
+
+    expect(notifier.favoriteCalls, [('p1', true), ('p2', false)]);
   });
 }

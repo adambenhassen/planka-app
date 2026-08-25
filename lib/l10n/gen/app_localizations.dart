@@ -406,6 +406,18 @@ abstract class AppLocalizations {
   /// **'Background'**
   String get projectMenuBackground;
 
+  /// Tooltip on the button that marks a project as a favorite
+  ///
+  /// In en, this message translates to:
+  /// **'Add to favorites'**
+  String get projectFavoriteAddTooltip;
+
+  /// Tooltip on the button that clears a project's favorite mark
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from favorites'**
+  String get projectFavoriteRemoveTooltip;
+
   /// Title of the create-board prompt
   ///
   /// In en, this message translates to:
@@ -783,6 +795,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Delete task?'**
   String get taskDeleteTitle;
+
+  /// Menu entry that opens the checklist-item assignee picker
+  ///
+  /// In en, this message translates to:
+  /// **'Assign member…'**
+  String get taskAssign;
+
+  /// Menu entry that clears a checklist item's assignee
+  ///
+  /// In en, this message translates to:
+  /// **'Unassign'**
+  String get taskUnassign;
+
+  /// Chip on a card tile marking the card as closed (in a closed-type list)
+  ///
+  /// In en, this message translates to:
+  /// **'Closed'**
+  String get cardClosed;
 
   /// Button that picks a file to attach to the card
   ///

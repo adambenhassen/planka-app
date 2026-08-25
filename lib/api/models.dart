@@ -57,6 +57,9 @@ abstract class PlankaProject with _$PlankaProject {
   const factory PlankaProject({
     required String id,
     required String name,
+    String? description,
+    // Planka 2 favourite flag: favourites pin to the top of the projects list.
+    bool? isFavorite,
     // Planka background: type is null | 'gradient' | 'image'. For 'gradient' the
     // name resolves to a gradient; for 'image', backgroundImageId points at a
     // PlankaBackgroundImage in the response's `included.backgroundImages`.
@@ -136,6 +139,9 @@ abstract class PlankaCard with _$PlankaCard {
     String? creatorUserId,
     DateTime? listChangedAt,
     @JsonKey(fromJson: _toIntOrNull) int? commentsTotal,
+
+    /// Server-derived: true while the card sits in a `closed`-type list.
+    bool? isClosed,
   }) = _PlankaCard;
   factory PlankaCard.fromJson(Map<String, dynamic> json) =>
       _$PlankaCardFromJson(json);
@@ -231,6 +237,14 @@ abstract class PlankaTask with _$PlankaTask {
     required String name,
     required bool isCompleted,
     @JsonKey(fromJson: _toDouble) double? position,
+
+    /// The board member assigned to this item, if any.
+    String? assigneeUserId,
+
+    /// When set, the item mirrors a card: its name is that card's and its
+    /// completion state comes from the card's [PlankaCard.isClosed], not from
+    /// [isCompleted] here.
+    String? linkedCardId,
   }) = _PlankaTask;
   factory PlankaTask.fromJson(Map<String, dynamic> json) =>
       _$PlankaTaskFromJson(json);
