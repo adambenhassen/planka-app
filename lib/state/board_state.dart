@@ -26,6 +26,15 @@ class BoardState {
   final List<PlankaTask> tasks;
   final List<PlankaAttachment> attachments;
   final List<PlankaComment> comments;
+
+  /// Comment ids whose decrement has already been applied to a card's
+  /// `commentsTotal` in this session (see [applyCommentDelete]). The board
+  /// response carries no comment rows, so a delete arrives with the row
+  /// absent whether it is the app's own echo or a remote delete of a comment
+  /// the app never loaded — only this ledger tells them apart. Cleared on
+  /// every load/refetch: a fresh board envelope's counts are server truth
+  /// again, so no decrement may apply on top of it.
+  final Set<String> deletedCommentIds;
   final List<PlankaCustomFieldGroup> customFieldGroups;
 
   /// Fields of both kinds of group: those keyed by a board/card group come from
@@ -47,6 +56,7 @@ class BoardState {
     this.tasks = const [],
     this.attachments = const [],
     this.comments = const [],
+    this.deletedCommentIds = const {},
     this.customFieldGroups = const [],
     this.customFields = const [],
     this.customFieldValues = const [],
@@ -295,6 +305,7 @@ class BoardState {
     List<PlankaTask>? tasks,
     List<PlankaAttachment>? attachments,
     List<PlankaComment>? comments,
+    Set<String>? deletedCommentIds,
     List<PlankaCustomFieldGroup>? customFieldGroups,
     List<PlankaCustomField>? customFields,
     List<PlankaCustomFieldValue>? customFieldValues,
@@ -313,6 +324,7 @@ class BoardState {
         tasks: tasks ?? this.tasks,
         attachments: attachments ?? this.attachments,
         comments: comments ?? this.comments,
+        deletedCommentIds: deletedCommentIds ?? this.deletedCommentIds,
         customFieldGroups: customFieldGroups ?? this.customFieldGroups,
         customFields: customFields ?? this.customFields,
         customFieldValues: customFieldValues ?? this.customFieldValues,
@@ -324,6 +336,51 @@ class BoardState {
 /// Merge a partial socket payload into an existing card (e.g. `{id, position}`).
 PlankaCard _mergeCard(PlankaCard existing, Map<String, dynamic> patch) =>
     PlankaCard.fromJson({...existing.toJson(), ...patch});
+
+/// The card tile's comment count, kept live by the comment transitions below:
+/// Planka broadcasts `commentCreate`/`commentDelete` without touching the card
+/// row, so the server-stored count moves only there. The count is a delta over
+/// the server-seeded `commentsTotal`, never derived from [BoardState.comments]
+/// (the app holds rows only for cards it opened), and the floor is zero.
+Map<String, PlankaCard> _bumpCommentCounts(
+    BoardState s, String? cardId, int delta) {
+  final card = cardId == null ? null : s.cards[cardId];
+  if (card == null) return s.cards;
+  final next = (card.commentsTotal ?? 0) + delta;
+  final updated = PlankaCard.fromJson(
+      {...card.toJson(), 'commentsTotal': next < 0 ? 0 : next});
+  return {...s.cards, card.id: updated};
+}
+
+/// The commentCreate transition, shared by the socket event and the app's own
+/// create-response fold. The row is upserted, and the count moves only when
+/// the transition actually adds a row that was not there: the optimistic fold
+/// counts, and its echo — or any replay of the same create — is a no-op on the
+/// count. `commentUpdate` needs no count move at all.
+BoardState applyCommentCreate(BoardState s, PlankaComment comment) {
+  final rowKnown = s.comments.any((c) => c.id == comment.id);
+  return s.copyWith(
+    comments: _upsert(s.comments, comment, (c) => c.id),
+    cards: rowKnown ? s.cards : _bumpCommentCounts(s, comment.cardId, 1),
+  );
+}
+
+/// The commentDelete transition, shared by the socket event and the app's own
+/// optimistic delete. The row is removed, and the count decrements unless the
+/// ledger already holds [commentId] — the app's own delete echo and a replayed
+/// remote delete both arrive with the row already gone, and only the ledger
+/// tells them apart from a genuine delete of a comment the app never loaded,
+/// which still decrements. Bounded by the deletes seen in one session: it is
+/// never persisted and dies with the state on load/refetch.
+BoardState applyCommentDelete(BoardState s, String commentId, String? cardId) {
+  final already = s.deletedCommentIds.contains(commentId);
+  return s.copyWith(
+    comments: s.comments.where((c) => c.id != commentId).toList(),
+    cards: already ? s.cards : _bumpCommentCounts(s, cardId, -1),
+    deletedCommentIds:
+        already ? s.deletedCommentIds : {...s.deletedCommentIds, commentId},
+  );
+}
 
 /// Replaces the item with a matching id in place (preserving list order), or
 /// appends it when absent. In-place replacement matters for collections that
@@ -485,13 +542,16 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
     case 'attachmentDelete':
       return s.copyWith(
           attachments: s.attachments.where((a) => a.id != id).toList());
-    case 'commentCreate' || 'commentUpdate':
+    case 'commentCreate':
+      return applyCommentCreate(s, PlankaComment.fromJson(item));
+    case 'commentUpdate':
+      // Text changes; the count stays.
       return s.copyWith(
           comments:
               _upsert(s.comments, PlankaComment.fromJson(item), (c) => c.id));
     case 'commentDelete':
-      return s.copyWith(
-          comments: s.comments.where((c) => c.id != id).toList());
+      if (id == null) return s;
+      return applyCommentDelete(s, id, item['cardId'] as String?);
     case 'boardMembershipCreate' || 'boardMembershipUpdate':
       return s.copyWith(
           boardMemberships: _upsert(s.boardMemberships,
@@ -1745,15 +1805,26 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     await _createInto(
       _repo.createComment(cardId, text: text),
       PlankaComment.fromJson,
-      (b, c) => b.copyWith(comments: _upsert(b.comments, c, (x) => x.id)),
+      // The same transition the socket event folds: the count moves only when
+      // the row is new, so the response fold and its echo — in either order —
+      // move it exactly once.
+      applyCommentCreate,
     );
   }
 
   Future<void> deleteComment(String commentId) async {
     final s = state.value;
     if (s == null) return;
+    final cardId = s.comments
+        .where((c) => c.id == commentId)
+        .firstOrNull
+        ?.cardId;
+    // The same transition the socket event folds: the decrement is recorded in
+    // the ledger, so the echo of this write no-ops on the count, and the row's
+    // removal is what a genuine remote delete of a never-loaded comment still
+    // decrements on.
     await _optimistic(
-      s.copyWith(comments: s.comments.where((c) => c.id != commentId).toList()),
+      applyCommentDelete(s, commentId, cardId),
       () => _repo.deleteComment(commentId),
     );
   }
