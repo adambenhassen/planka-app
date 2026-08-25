@@ -61,4 +61,16 @@ class EnvelopeCache {
       return cached;
     }
   }
+
+  /// Fetches via [fetch] and caches the result under [key], rethrowing on
+  /// failure. Unlike [fetchOrCached] there is no fallback to the cached copy:
+  /// the caller already knows the cached state is stale (a mutation landed),
+  /// so serving it would be wrong. A successful fetch still refreshes the
+  /// cache, so the next offline start sees the post-mutation state.
+  Future<Envelope> fetchAndCache(
+      String key, Future<Envelope> Function() fetch) async {
+    final env = await fetch();
+    await put(key, env);
+    return env;
+  }
 }

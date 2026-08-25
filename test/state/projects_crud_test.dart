@@ -34,11 +34,17 @@ class _FakeApi extends PlankaApi {
 
   bool failGets = false;
 
+  /// When true, the served fixture marks the first project favourited, so a
+  /// post-mutation refresh can be told apart from the initial load.
+  bool favorited = false;
+
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     getCalls++;
     if (failGets) throw ApiException(503, 'server unavailable');
-    return Envelope.parse(_fixture());
+    final fixture = jsonDecode(jsonEncode(_fixture())) as Map<String, dynamic>;
+    if (favorited) fixture['items'][0]['isFavorite'] = true;
+    return Envelope.parse(fixture);
   }
 
   @override
@@ -79,6 +85,12 @@ void main() {
     await container.read(projectsProvider.future);
     return (container, container.read(projectsProvider.notifier), api);
   }
+
+  /// The envelope the on-disk offline cache currently holds.
+  Future<Envelope?> cached(ProviderContainer container) =>
+      container
+          .read(envelopeCacheProvider)
+          .get('https://planka.example.com#u1-projects');
 
   test('createProject posts then refetches the projects list', () async {
     final (container, notifier, api) = await boot();
@@ -139,6 +151,39 @@ void main() {
     expect(state.hasError, isTrue);
     // The mutation's own write succeeded, so the failure is the refresh's.
     expect(state.error, isA<ApiException>());
+  });
+
+  test('a successful mutation leaves the offline cache holding the '
+      'post-mutation state', () async {
+    final (container, notifier, api) = await boot();
+    addTearDown(container.dispose);
+
+    // Before the mutation the cache holds the initial load, unfavourited.
+    expect((await cached(container))!.items[0]['isFavorite'], isFalse);
+
+    // The server now reports the project favourited, so the post-mutation
+    // refresh is distinguishable from the initial load.
+    api.favorited = true;
+    await notifier.setProjectFavorite('p1', favorite: true);
+
+    // The next offline start must be served the post-mutation state, not the
+    // pre-mutation copy the cache held before the refresh.
+    final cachedEnv = await cached(container);
+    expect(cachedEnv!.items[0]['isFavorite'], isTrue);
+  });
+
+  test('a failed mutation refresh leaves the cache untouched', () async {
+    final (container, notifier, api) = await boot();
+    addTearDown(container.dispose);
+
+    api.failGets = true;
+    await expectLater(
+        notifier.setProjectFavorite('p1', favorite: true),
+        throwsA(isA<ApiException>()));
+
+    // No partial refresh: the cache still holds the last good copy.
+    final cachedEnv = await cached(container);
+    expect(cachedEnv!.items[0]['isFavorite'], isFalse);
   });
 
   test('an ordinary list load still falls back to the offline cache',

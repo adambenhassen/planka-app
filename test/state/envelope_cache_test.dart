@@ -59,4 +59,21 @@ void main() {
     expect(cache.fetchOrCached('k', () async => throw Exception('offline')),
         throwsException);
   });
+
+  test('fetchAndCache caches the fetch result without falling back',
+      () async {
+    await cache.put('k', env('stale'));
+    final got = await cache.fetchAndCache('k', () async => env('fresh'));
+    expect(got.item['name'], 'fresh');
+    expect((await cache.get('k'))!.item['name'], 'fresh');
+  });
+
+  test('fetchAndCache rethrows on failure and leaves the cache untouched',
+      () async {
+    await cache.put('k', env('stale'));
+    await expectLater(
+        cache.fetchAndCache('k', () async => throw Exception('offline')),
+        throwsException);
+    expect((await cache.get('k'))!.item['name'], 'stale');
+  });
 }

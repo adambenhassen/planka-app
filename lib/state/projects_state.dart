@@ -72,15 +72,21 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
 
   Future<ProjectsView> _fetch({bool useCache = true}) async {
     final accountId = ref.read(currentAccountProvider)?.id;
-    // Serve the last good copy when the network is down (offline read cache).
-    // Only the ordinary load path uses it: a refresh that follows a
-    // successful mutation must never present the pre-mutation copy as fresh
-    // server truth, so there a fetch failure rethrows.
-    final env = accountId == null || !useCache
-        ? await _repo.projects()
-        : await ref
-            .read(envelopeCacheProvider)
-            .fetchOrCached('$accountId-projects', _repo.projects);
+    // Ordinary loads serve the last good copy when the network is down
+    // (offline read cache). A refresh that follows a successful mutation
+    // must never present the pre-mutation copy as fresh server truth, so it
+    // fetches directly, still persists the new result, and rethrows on
+    // failure (fetchAndCache) — the write already landed, so a stale read
+    // would be wrong.
+    final env = switch ((accountId, useCache)) {
+      (null, _) => await _repo.projects(),
+      (_, true) => await ref
+          .read(envelopeCacheProvider)
+          .fetchOrCached('$accountId-projects', _repo.projects),
+      (_, false) => await ref
+          .read(envelopeCacheProvider)
+          .fetchAndCache('$accountId-projects', _repo.projects),
+    };
     return ProjectsView(
       projects: env.items.map(PlankaProject.fromJson).toList(),
       boards: env.included.boards,
