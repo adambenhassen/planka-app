@@ -523,6 +523,38 @@ void main() {
     ]));
   });
 
+  test('fetchComments reconciles the count before a delayed socket echo',
+      () async {
+    final (container, notifier, boardId) = await boot(seed: (s) {
+      final card = s.cards.values.first;
+      final zeroCount =
+          PlankaCard.fromJson({...card.toJson(), 'commentsTotal': 0});
+      return s.copyWith(cards: {...s.cards, card.id: zeroCount});
+    });
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+
+    await notifier.fetchComments(cardId);
+
+    final board = container.read(boardProvider(boardId)).value!;
+    expect(board.commentsOf(cardId), hasLength(1));
+    expect(board.cards[cardId]!.commentsTotal, 1);
+
+    notifier.applySocketEvent(SocketEvent.parse('commentCreate', {
+      'item': {
+        'id': 'c-server',
+        'cardId': cardId,
+        'userId': 'u1',
+        'text': 'from server',
+      }
+    }));
+    expect(
+      container.read(boardProvider(boardId)).value!.cards[cardId]!.commentsTotal,
+      1,
+    );
+  });
+
   test('refetch preserves comments already loaded for an open card', () async {
     final api = _FakeApi(fail: true);
     final (container, notifier, boardId) = await boot(

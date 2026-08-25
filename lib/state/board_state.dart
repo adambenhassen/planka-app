@@ -1859,7 +1859,22 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       if (current.deletedCommentIds.contains(comment.id)) continue;
       comments = _upsert(comments, comment, (c) => c.id);
     }
-    state = AsyncData(current.copyWith(comments: comments, users: users));
+    var cards = current.cards;
+    final card = cards[cardId];
+    if (card != null) {
+      final loadedCount = comments.where((c) => c.cardId == cardId).length;
+      if (loadedCount > (card.commentsTotal ?? 0)) {
+        cards = {
+          ...cards,
+          cardId: _mergeCard(card, {'commentsTotal': loadedCount}),
+        };
+      }
+    }
+    state = AsyncData(current.copyWith(
+      comments: comments,
+      users: users,
+      cards: cards,
+    ));
     return fetched;
   }
 
