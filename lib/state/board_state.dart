@@ -73,6 +73,15 @@ class BoardState {
       .nonNulls
       .toList();
 
+  /// The board's members, resolved from [users]. The board response's users
+  /// are a union of members and card creators, so only the boardMemberships
+  /// junction marks who is actually a member — the checklist assignee picker
+  /// offers exactly this list, since the server rejects a non-member.
+  List<PlankaUser> get boardMembers => [
+        for (final m in boardMemberships)
+          ...users.where((u) => u.id == m.userId),
+      ];
+
   /// The users assigned to a card (cardMemberships junction joined to users).
   List<PlankaUser> membersOf(String cardId) => cardMemberships
       .where((m) => m.cardId == cardId)
@@ -89,6 +98,22 @@ class BoardState {
     final ids =
         taskLists.where((t) => t.cardId == cardId).map((t) => t.id).toSet();
     return tasks.where((t) => ids.contains(t.taskListId)).toList();
+  }
+
+  /// Whether a checklist item renders completed. A linked item mirrors its
+  /// card: completed exactly while the card is closed — the same rule the
+  /// card tile uses, so a stale stored flag and the list type never disagree
+  /// — regardless of the task's stored flag. An item linked to a card this
+  /// state does not hold (another board's) falls back to that flag, and an
+  /// unlinked one is just [PlankaTask.isCompleted].
+  bool isTaskCompleted(PlankaTask task) {
+    final linkedId = task.linkedCardId;
+    if (linkedId == null) return task.isCompleted;
+    final card = cards[linkedId];
+    if (card == null) return task.isCompleted;
+    final listClosed = lists.where((l) => l.id == card.listId).firstOrNull?.type ==
+        PlankaListType.closed;
+    return card.isClosed == true || listClosed;
   }
 
   List<PlankaAttachment> attachmentsOf(String cardId) =>
@@ -443,8 +468,14 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
         tasks: s.tasks.where((t) => t.taskListId != id).toList(),
       );
     case 'taskCreate' || 'taskUpdate':
+      // Merged like every other upserted row: a reposition can broadcast a
+      // partial payload, which must not blank the assignee or linked card.
       return s.copyWith(
-          tasks: _upsert(s.tasks, PlankaTask.fromJson(item), (t) => t.id));
+          tasks: _upsert(
+              s.tasks,
+              _mergeById(s.tasks.where((t) => t.id == id).firstOrNull, item,
+                  (PlankaTask t) => t.toJson(), PlankaTask.fromJson),
+              (t) => t.id));
     case 'taskDelete':
       return s.copyWith(tasks: s.tasks.where((t) => t.id != id).toList());
     case 'attachmentCreate' || 'attachmentUpdate':
@@ -1645,6 +1676,18 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     await _optimistic(
       s.copyWith(tasks: _upsert(s.tasks, toggled, (t) => t.id)),
       () => _repo.updateTask(taskId, {'isCompleted': isCompleted}),
+    );
+  }
+
+  Future<void> setTaskAssignee(String taskId, String? userId) async {
+    final s = state.value;
+    final task = s?.tasks.where((t) => t.id == taskId).firstOrNull;
+    if (s == null || task == null) return;
+    final updated =
+        PlankaTask.fromJson({...task.toJson(), 'assigneeUserId': userId});
+    await _optimistic(
+      s.copyWith(tasks: _upsert(s.tasks, updated, (t) => t.id)),
+      () => _repo.updateTask(taskId, {'assigneeUserId': userId}),
     );
   }
 

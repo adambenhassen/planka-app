@@ -124,6 +124,9 @@ abstract class PlankaCard with _$PlankaCard {
     PlankaStopwatch? stopwatch,
     DateTime? createdAt,
     String? prevListId,
+
+    /// Server-derived: true while the card sits in a `closed`-type list.
+    bool? isClosed,
   }) = _PlankaCard;
   factory PlankaCard.fromJson(Map<String, dynamic> json) =>
       _$PlankaCardFromJson(json);
@@ -219,6 +222,14 @@ abstract class PlankaTask with _$PlankaTask {
     required String name,
     required bool isCompleted,
     @JsonKey(fromJson: _toDouble) double? position,
+
+    /// The board member assigned to this item, if any.
+    String? assigneeUserId,
+
+    /// When set, the item mirrors a card: its name is that card's and its
+    /// completion state comes from the card's [PlankaCard.isClosed], not from
+    /// [isCompleted] here.
+    String? linkedCardId,
   }) = _PlankaTask;
   factory PlankaTask.fromJson(Map<String, dynamic> json) =>
       _$PlankaTaskFromJson(json);

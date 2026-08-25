@@ -502,6 +502,18 @@
   "@taskDeleteTitle": {
     "description": "Title of the delete-task confirmation"
   },
+  "taskAssign": "Assign member…",
+  "@taskAssign": {
+    "description": "Menu entry that opens the checklist-item assignee picker"
+  },
+  "taskUnassign": "Unassign",
+  "@taskUnassign": {
+    "description": "Menu entry that clears a checklist item's assignee"
+  },
+  "cardClosed": "Closed",
+  "@cardClosed": {
+    "description": "Chip on a card tile marking the card as closed (in a closed-type list)"
+  },
 
   "attachmentAdd": "Add attachment",
   "@attachmentAdd": {
