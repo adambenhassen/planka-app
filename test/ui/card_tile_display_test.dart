@@ -168,7 +168,13 @@ void main() {
     final s = state(
       c,
       b: board(expandTaskListsByDefault: true),
-      taskLists: const [PlankaTaskList(id: 'tl1', cardId: 'c1', name: 'Checklist')],
+      taskLists: const [
+        PlankaTaskList(
+            id: 'tl1',
+            cardId: 'c1',
+            name: 'Checklist',
+            showOnFrontOfCard: true)
+      ],
       tasks: const [
         PlankaTask(id: 't1', taskListId: 'tl1', name: 'task 1', isCompleted: false),
       ],
@@ -218,7 +224,11 @@ void main() {
         PlankaAttachment(id: 'a1', cardId: 'c1', type: 'file', name: 'p.png'),
       ],
       taskLists: const [
-        PlankaTaskList(id: 'tl1', cardId: 'c1', name: 'Checklist')
+        PlankaTaskList(
+            id: 'tl1',
+            cardId: 'c1',
+            name: 'Checklist',
+            showOnFrontOfCard: true)
       ],
       tasks: const [
         PlankaTask(id: 't1', taskListId: 'tl1', name: 'task 1', isCompleted: false),
@@ -260,7 +270,11 @@ void main() {
             isClosed: true),
       },
       taskLists: const [
-        PlankaTaskList(id: 'tl1', cardId: 'c1', name: 'Checklist')
+        PlankaTaskList(
+            id: 'tl1',
+            cardId: 'c1',
+            name: 'Checklist',
+            showOnFrontOfCard: true)
       ],
       tasks: const [
         PlankaTask(
@@ -278,11 +292,128 @@ void main() {
     expect(style?.decoration, TextDecoration.lineThrough);
   });
 
+  testWidgets('showOnFrontOfCard unset keeps the list off the tile',
+      (tester) async {
+    // Planka only draws a checklist on the card front when the list opts in
+    // with showOnFrontOfCard; the board's expansion setting does not change
+    // that. The collapsed progress chip is unaffected.
+    final c = card();
+    final s = state(
+      c,
+      b: board(expandTaskListsByDefault: true),
+      taskLists: const [
+        PlankaTaskList(id: 'tl1', cardId: 'c1', name: 'Checklist')
+      ],
+      tasks: const [
+        PlankaTask(id: 't1', taskListId: 'tl1', name: 'task 1', isCompleted: false),
+      ],
+    );
+    await tester.pumpWidget(host(c, s));
+    expect(find.text('task 1'), findsNothing);
+    expect(find.byKey(const ValueKey('tile-tasklist-toggle-tl1')), findsNothing);
+    // The board expands by default, so there is no collapsed chip either:
+    // the list contributes nothing to the tile at all.
+    expect(find.text('0/1'), findsNothing);
+
+    // Same with the board's expansion setting off: the list still does not
+    // appear, and the chip does not count it.
+    await tester.pumpWidget(host(
+        c,
+        state(
+          c,
+          taskLists: s.taskLists,
+          tasks: s.tasks,
+        )));
+    expect(find.text('task 1'), findsNothing);
+    expect(find.byKey(const ValueKey('tile-tasklist-toggle-tl1')), findsNothing);
+    expect(find.text('0/1'), findsNothing);
+  });
+
+  testWidgets('showOnFrontOfCard true puts the list on the tile',
+      (tester) async {
+    final c = card();
+    final s = state(
+      c,
+      b: board(expandTaskListsByDefault: true),
+      taskLists: const [
+        PlankaTaskList(
+            id: 'tl1',
+            cardId: 'c1',
+            name: 'Checklist',
+            showOnFrontOfCard: true)
+      ],
+      tasks: const [
+        PlankaTask(id: 't1', taskListId: 'tl1', name: 'task 1', isCompleted: false),
+      ],
+    );
+    await tester.pumpWidget(host(c, s));
+    expect(find.text('task 1'), findsOneWidget);
+  });
+
+  testWidgets('hideCompletedTasks shows only incomplete tasks on the tile',
+      (tester) async {
+    final c = card();
+    final s = state(
+      c,
+      b: board(expandTaskListsByDefault: true),
+      taskLists: const [
+        PlankaTaskList(
+            id: 'tl1',
+            cardId: 'c1',
+            name: 'Checklist',
+            showOnFrontOfCard: true,
+            hideCompletedTasks: true)
+      ],
+      tasks: const [
+        PlankaTask(id: 't1', taskListId: 'tl1', name: 'done', isCompleted: true),
+        PlankaTask(
+            id: 't2', taskListId: 'tl1', name: 'open', isCompleted: false),
+      ],
+    );
+    await tester.pumpWidget(host(c, s));
+    expect(find.text('open'), findsOneWidget);
+    expect(find.text('done'), findsNothing);
+    // The progress row counts the whole list, like the web client.
+    expect(find.text('1/2'), findsOneWidget);
+  });
+
+  testWidgets('collapsed chip counts only front-of-card lists', (tester) async {
+    // The web client draws no progress row for a checklist that is not on
+    // the card front, so the collapsed chip must not count its tasks either.
+    final c = card();
+    final s = state(
+      c,
+      taskLists: const [
+        PlankaTaskList(
+            id: 'tl1',
+            cardId: 'c1',
+            name: 'Checklist',
+            showOnFrontOfCard: true),
+        PlankaTaskList(id: 'tl2', cardId: 'c1', name: 'Hidden'),
+      ],
+      tasks: const [
+        PlankaTask(id: 't1', taskListId: 'tl1', name: 'a', isCompleted: true),
+        PlankaTask(id: 't2', taskListId: 'tl1', name: 'b', isCompleted: false),
+        PlankaTask(
+            id: 't3', taskListId: 'tl2', name: 'c', isCompleted: false),
+      ],
+    );
+    await tester.pumpWidget(host(c, s));
+    expect(find.text('1/2'), findsOneWidget);
+    expect(find.text('1/3'), findsNothing);
+  });
+
   testWidgets('checklists stay off the tile without the setting', (tester) async {
     final c = card();
     final s = state(
       c,
-      taskLists: const [PlankaTaskList(id: 'tl1', cardId: 'c1', name: 'Checklist')],
+      taskLists: const [
+        PlankaTaskList(
+            id: 'tl1',
+            cardId: 'c1',
+            name: 'Checklist',
+            showOnFrontOfCard: true)
+      ],
       tasks: const [
         PlankaTask(id: 't1', taskListId: 'tl1', name: 'task 1', isCompleted: false),
       ],

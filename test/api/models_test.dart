@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
+import 'package:planka_app/api/models.dart';
 
 Map<String, dynamic> fixture(String name) =>
     jsonDecode(File('test/fixtures/$name.json').readAsStringSync())
@@ -19,6 +20,8 @@ void main() {
     expect(env.included.tasks, isNotEmpty);
     expect(env.included.tasks.first.linkedCardId, isNull);
     expect(env.included.tasks.first.assigneeUserId, isNull);
+    expect(env.included.taskLists.first.showOnFrontOfCard, isTrue);
+    expect(env.included.taskLists.first.hideCompletedTasks, isFalse);
     expect(env.included.labels.first.color, isNotEmpty);
   });
 
@@ -51,6 +54,26 @@ void main() {
     expect(env.included.tasks.single.assigneeUserId, 'u9');
     expect(env.included.tasks.single.linkedCardId, 'c9');
     expect(env.included.cards.single.isClosed, isTrue);
+  });
+
+  test('task list display flags parse and survive a round trip', () {
+    const tl = PlankaTaskList(
+      id: 'tl1',
+      cardId: 'c1',
+      name: 'Checklist',
+      showOnFrontOfCard: true,
+      hideCompletedTasks: true,
+    );
+    expect(tl.toJson()['showOnFrontOfCard'], isTrue);
+    expect(tl.toJson()['hideCompletedTasks'], isTrue);
+    expect(PlankaTaskList.fromJson(tl.toJson()), tl);
+
+    // Unset flags stay null through the round trip, matching the server,
+    // which omits them rather than defaulting them.
+    const bare = PlankaTaskList(id: 'tl2', cardId: 'c1', name: 'Bare');
+    expect(bare.showOnFrontOfCard, isNull);
+    expect(bare.hideCompletedTasks, isNull);
+    expect(PlankaTaskList.fromJson(bare.toJson()), bare);
   });
 
   test('parses projects index', () {
