@@ -116,8 +116,29 @@ void main() {
   });
 
   testWidgets('zero or missing commentsTotal shows no chip', (tester) async {
+    await tester.pumpWidget(host(card(commentsTotal: 0), state(card())));
+    expect(find.text('0'), findsNothing);
     await tester.pumpWidget(host(card(), state(card())));
     expect(find.text('0'), findsNothing);
+  });
+
+  testWidgets('creator setting with no creator id adds no empty bottom row',
+      (tester) async {
+    // A card the server has no creator for must not leave an empty Spacer
+    // row on the tile when alwaysDisplayCardCreator is set.
+    final c = card(creatorUserId: null);
+    await tester.pumpWidget(host(
+        c, state(c, b: board(alwaysDisplayCardCreator: true))));
+    expect(find.byType(Spacer), findsNothing);
+
+    // Control: a resolvable creator does render the row.
+    final c2 = card();
+    await tester.pumpWidget(host(
+        c2,
+        state(c2,
+            b: board(alwaysDisplayCardCreator: true),
+            users: [const PlankaUser(id: 'u1', name: 'Demo')])));
+    expect(find.byType(Spacer), findsOneWidget);
   });
 
   testWidgets('expandTaskListsByDefault expands checklists on the tile; '

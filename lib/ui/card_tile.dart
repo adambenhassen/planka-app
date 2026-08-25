@@ -67,7 +67,7 @@ class CardTile extends ConsumerWidget {
         attachmentCount > 0 ||
         members.isNotEmpty ||
         commentsTotal > 0 ||
-        showCreator ||
+        (showCreator && card.creatorUserId != null) ||
         (showAge && card.createdAt != null);
 
     // Downloads authenticate via the accessToken cookie, not a Bearer header.

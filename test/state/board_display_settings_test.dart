@@ -75,8 +75,22 @@ void main() {
     expect(card.creatorUserId, isNotEmpty);
     expect(card.listChangedAt, isNotNull);
     expect(card.commentsTotal, 1);
-    final colored = s.lists.first.copyWith(color: 'berry-red');
-    expect(colored.color, 'berry-red');
+    // Parsing, not just freezed round-tripping: the fixture's list rows carry
+    // explicit colours, and a payload with none leaves the field null.
+    final fixtureList = jsonDecode(
+        File('test/fixtures/board_show.json').readAsStringSync())
+        as Map<String, dynamic>;
+    expect(PlankaList.fromJson((fixtureList['included']['lists'] as List).first
+        .cast<String, dynamic>()).color, isNull);
+    expect(
+        PlankaList.fromJson({
+          'id': 'l1',
+          'boardId': 'b1',
+          'type': 'active',
+          'color': 'lagoon-blue',
+        }).color,
+        'lagoon-blue',
+    );
   });
 
   test('boardUpdate folds new display settings in', () {
