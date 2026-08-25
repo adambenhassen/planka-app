@@ -167,6 +167,21 @@ void main() {
     expect(next.cards, s.cards);
   });
 
+  test('an unresolved commentDelete does not poison the delete ledger', () {
+    final s = seed();
+    final cardId = s.cards.values.first.id;
+    const commentId = 'cm9';
+
+    final unresolved = applyEvent(s,
+        ev('commentDelete', {'item': {'id': commentId, 'cardId': 'missing'}}));
+    expect(unresolved.deletedCommentIds, isEmpty);
+
+    final addressed = applyEvent(unresolved,
+        ev('commentDelete', {'item': {'id': commentId, 'cardId': cardId}}));
+    expect(addressed.cards[cardId]!.commentsTotal, 0);
+    expect(addressed.deletedCommentIds, contains(commentId));
+  });
+
   test('a duplicate commentCreate or commentDelete echo moves the count once',
       () {
     final s = seed();

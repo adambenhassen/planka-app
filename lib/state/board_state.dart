@@ -366,19 +366,24 @@ BoardState applyCommentCreate(BoardState s, PlankaComment comment) {
 }
 
 /// The commentDelete transition, shared by the socket event and the app's own
-/// optimistic delete. The row is removed, and the count decrements unless the
-/// ledger already holds [commentId] — the app's own delete echo and a replayed
-/// remote delete both arrive with the row already gone, and only the ledger
-/// tells them apart from a genuine delete of a comment the app never loaded,
-/// which still decrements. Bounded by the deletes seen in one session: it is
-/// never persisted and dies with the state on load/refetch.
+/// optimistic delete. The row is removed, and a resolved positive count is
+/// decremented unless the ledger already holds [commentId]. The app's own
+/// delete echo and a replayed remote delete both arrive with the row already
+/// gone, and only the ledger tells them apart from a genuine delete of a
+/// comment the app never loaded, which still decrements. An unresolved delete
+/// leaves the id out of the ledger so a later addressed event can decrement.
+/// Bounded by the deletes seen in one session: it is never persisted and dies
+/// with the state on load/refetch.
 BoardState applyCommentDelete(BoardState s, String commentId, String? cardId) {
   final already = s.deletedCommentIds.contains(commentId);
+  final countMoved = !already &&
+      cardId != null && (s.cards[cardId]?.commentsTotal ?? 0) > 0;
   return s.copyWith(
     comments: s.comments.where((c) => c.id != commentId).toList(),
     cards: already ? s.cards : _bumpCommentCounts(s, cardId, -1),
-    deletedCommentIds:
-        already ? s.deletedCommentIds : {...s.deletedCommentIds, commentId},
+    deletedCommentIds: countMoved
+        ? {...s.deletedCommentIds, commentId}
+        : s.deletedCommentIds,
   );
 }
 
@@ -1819,10 +1824,10 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
         .where((c) => c.id == commentId)
         .firstOrNull
         ?.cardId;
-    // The same transition the socket event folds: the decrement is recorded in
-    // the ledger, so the echo of this write no-ops on the count, and the row's
-    // removal is what a genuine remote delete of a never-loaded comment still
-    // decrements on.
+    // The same transition the socket event folds: when the count moves, the
+    // decrement is recorded in the ledger, so the echo of this write no-ops on
+    // the count, and the row's removal is what a genuine remote delete of a
+    // never-loaded comment still decrements on.
     await _optimistic(
       applyCommentDelete(s, commentId, cardId),
       () => _repo.deleteComment(commentId),
