@@ -11,6 +11,10 @@ const _devicePixelRatio = 3;
 const _cornerRadius = 72;
 
 Future<void> main() async {
+  final outputDir = Platform.environment['SCREENSHOT_OUTPUT_DIR'] ??
+      '.github/assets/screenshots';
+  final storeCapture = Platform.environment['STORE_SCREENSHOTS'] == '1';
+
   await integrationDriver(
     onScreenshot: (String name, List<int> bytes,
         [Map<String, Object?>? args]) async {
@@ -19,13 +23,25 @@ Future<void> main() async {
         stderr.writeln('screenshot $name: could not decode PNG');
         return false;
       }
-      final polished = _polish(decoded);
-      final file = File('.github/assets/screenshots/$name.png');
+      // Store captures must keep the device's native dimensions. Flattening
+      // the PNG only removes an unused alpha channel; it does not resize or
+      // letterbox the device output.
+      final output = storeCapture ? _flatten(decoded) : _polish(decoded);
+      final file = File('$outputDir/$name.png');
       await file.parent.create(recursive: true);
-      await file.writeAsBytes(img.encodePng(polished));
+      await file.writeAsBytes(img.encodePng(output));
       return true;
     },
   );
+}
+
+/// Converts a capture to an opaque RGB PNG without changing its dimensions.
+img.Image _flatten(img.Image src) {
+  final out = img.Image(width: src.width, height: src.height, numChannels: 3);
+  for (final p in src) {
+    out.setPixelRgb(p.x, p.y, p.r, p.g, p.b);
+  }
+  return out;
 }
 
 /// Crops the blank status-bar strip and rounds the corners (transparent).
