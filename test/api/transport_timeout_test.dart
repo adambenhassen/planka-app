@@ -27,6 +27,11 @@ void main() {
     // The bound is real at 10 s; a short test value keeps the suite fast.
     final bound = const Duration(milliseconds: 500);
 
+    // Margin over the bound for timer scheduling and socket teardown; a
+    // multi-second regression in the actual bound must fail this.
+    const margin = Duration(seconds: 2);
+    final limit = bound + margin;
+
     setUp(() async {
       // Accepts every connection, reads the request, sends nothing.
       server = await HttpServer.bind('127.0.0.1', 0);
@@ -56,7 +61,10 @@ void main() {
         expect(e.toString(), isNot(contains('sometoken')));
       }
       sw.stop();
-      expect(sw.elapsed, lessThan(const Duration(seconds: 30)));
+      // The failure must come from the bound, not an immediate error: it
+      // waited at least the bound and no more than the bound plus margin.
+      expect(sw.elapsed, greaterThanOrEqualTo(bound));
+      expect(sw.elapsed, lessThan(limit));
       // No session exists here that could be misread as expired.
       expect(api.token, 'sometoken');
     });
@@ -75,7 +83,8 @@ void main() {
         expect(e.toString(), isNot(contains('demo@demo.demo')));
       }
       sw.stop();
-      expect(sw.elapsed, lessThan(const Duration(seconds: 30)));
+      expect(sw.elapsed, greaterThanOrEqualTo(bound));
+      expect(sw.elapsed, lessThan(limit));
       expect(api.token, isNull);
     });
 
@@ -84,6 +93,7 @@ void main() {
       final api = PlankaApi('http://127.0.0.1:${server.port}', null);
       api.dio.options.connectTimeout = bound;
       api.dio.options.receiveTimeout = bound;
+      final sw = Stopwatch()..start();
       try {
         await api.verifyTotp('pt-hang', '123456');
         fail('expected the request to time out');
@@ -91,6 +101,9 @@ void main() {
         expect(e.toString(), isNot(contains('pt-hang')));
         expect(e.toString(), isNot(contains('123456')));
       }
+      sw.stop();
+      expect(sw.elapsed, greaterThanOrEqualTo(bound));
+      expect(sw.elapsed, lessThan(limit));
       expect(api.token, isNull);
     });
 
@@ -99,12 +112,16 @@ void main() {
       final api = PlankaApi('http://127.0.0.1:${server.port}', 'dl-token');
       api.dio.options.connectTimeout = bound;
       api.dio.options.receiveTimeout = bound;
+      final sw = Stopwatch()..start();
       try {
         await api.download('/files/1', '/tmp/never-written');
         fail('expected the download to time out');
       } on ApiException catch (e) {
         expect(e.toString(), isNot(contains('dl-token')));
       }
+      sw.stop();
+      expect(sw.elapsed, greaterThanOrEqualTo(bound));
+      expect(sw.elapsed, lessThan(limit));
       expect(File('/tmp/never-written').existsSync(), isFalse);
     });
   });
@@ -160,8 +177,14 @@ void main() {
       // The transfer takes at least 1.05 s — well past the 300 ms bound —
       // and it must still have succeeded.
       expect(sw.elapsed, greaterThan(bound));
+      // Validate against the fixed sequence the server sent — never a
+      // sequence built from what came back, which a truncated or empty
+      // download would also match.
+      final expected = List<int>.generate(chunk.length * chunkCount,
+          (i) => i & 0xff);
       final saved = File(path).readAsBytesSync();
-      expect(saved, List<int>.generate(saved.length, (i) => i & 0xff));
+      expect(saved.length, expected.length);
+      expect(saved, expected);
       dir.deleteSync(recursive: true);
     });
   });
