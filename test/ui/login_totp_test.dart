@@ -639,7 +639,10 @@ void main() {
     // An explicit retry is the user's action, not the app's: one request per
     // tap, and a retry that reaches the server this time still signs in.
     await submitCode(tester, '123456');
-    expect(api.verifyCalls, hasLength(2));
+    expect(api.verifyCalls, [
+      (_pendingToken, '123456'),
+      (_pendingToken, '123456'),
+    ]);
     expect(find.text('PROJECTS'), findsOneWidget);
     expectNoPendingTokenStored();
   });
@@ -661,7 +664,7 @@ void main() {
     gate.complete();
     await tester.pumpAndSettle();
 
-    expect(api.verifyCalls, hasLength(1));
+    expect(api.verifyCalls, [(_pendingToken, '123456')]);
     expect(find.text('ELSEWHERE'), findsOneWidget);
     expect(storage.data['accounts'], isNull);
     expectNoPendingTokenStored();
