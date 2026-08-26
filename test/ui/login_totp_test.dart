@@ -594,4 +594,79 @@ void main() {
     expectNoPendingTokenStored();
     await tester.pumpAndSettle(const Duration(seconds: 5));
   });
+
+  testWidgets('a verification that times out releases the form and keeps the step',
+      (tester) async {
+    // Stage 1's real PlankaApi maps a transport timeout to ApiException. Use
+    // that already-sanitized boundary value here so this widget test focuses
+    // on releasing loading and allowing the explicit retry.
+    await reachCodeStep(tester, [
+      ApiException(
+          null, 'The request timed out before a response was received'),
+      'realtok',
+    ]);
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Authentication code'), '123456');
+    await tester.tap(find.text('Verify'));
+    await tester.pumpAndSettle();
+
+    // The existing sanitized error path rendered the transport failure, and
+    // nothing of the pending token reached the snackbar or the fields.
+    expect(find.byType(SnackBar), findsOneWidget);
+    final errorText = tester.widget<Text>(find.descendant(
+        of: find.byType(SnackBar), matching: find.byType(Text)));
+    expect(errorText.data, isNot(contains(_pendingToken)));
+    expect(find.text(_pendingToken), findsNothing);
+    expect(find.text('Two-factor authentication'), findsOneWidget);
+    expect(find.text('PROJECTS'), findsNothing);
+    expect(api.token, isNull);
+    expectNoPendingTokenStored();
+
+    // Remove the error snackbar before the explicit retry so its dismissal
+    // timer cannot keep this widget test alive after the successful route.
+    ScaffoldMessenger.of(tester.element(find.byType(SnackBar)))
+        .hideCurrentSnackBar();
+    await tester.pump();
+
+    // The step is usable again: no spinner, and the buttons are enabled.
+    final verify =
+        tester.widget<FilledButton>(find.byType(FilledButton).first);
+    final cancel = tester
+        .widget<TextButton>(find.widgetWithText(TextButton, 'Cancel'));
+    expect(verify.onPressed, isNotNull);
+    expect(cancel.onPressed, isNotNull);
+
+    // An explicit retry is the user's action, not the app's: one request per
+    // tap, and a retry that reaches the server this time still signs in.
+    await submitCode(tester, '123456');
+    expect(api.verifyCalls, [
+      (_pendingToken, '123456'),
+      (_pendingToken, '123456'),
+    ]);
+    expect(find.text('PROJECTS'), findsOneWidget);
+    expectNoPendingTokenStored();
+  });
+
+  testWidgets('disposing the screen mid-verification signs nobody in',
+      (tester) async {
+    await reachCodeStep(tester, ['realtok']);
+    final gate = Completer<void>();
+    api.gate = gate;
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Authentication code'), '123456');
+
+    await tester.tap(find.text('Verify'));
+    // The step is torn down by disposal, not by a button: the widget tree is
+    // replaced while the verification is still in flight.
+    await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: Text('ELSEWHERE'))));
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(api.verifyCalls, [(_pendingToken, '123456')]);
+    expect(find.text('ELSEWHERE'), findsOneWidget);
+    expect(storage.data['accounts'], isNull);
+    expectNoPendingTokenStored();
+  });
 }
