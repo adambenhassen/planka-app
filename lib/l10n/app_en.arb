@@ -165,6 +165,14 @@
   "@loginTotpExpired": {
     "description": "Message shown when the two-factor window closed and the user is back on the credentials step"
   },
+  "privacyPolicy": "Privacy policy",
+  "@privacyPolicy": {
+    "description": "Link label that opens the app's published privacy policy"
+  },
+  "privacyPolicyLaunchFailed": "Could not open privacy policy.",
+  "@privacyPolicyLaunchFailed": {
+    "description": "Snackbar shown when the system cannot open the privacy policy"
+  },
 
   "projectsTitle": "Projects",
   "@projectsTitle": {

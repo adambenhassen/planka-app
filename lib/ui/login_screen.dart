@@ -6,10 +6,13 @@ import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
 import '../l10n/gen/app_localizations.dart';
 import 'error_handling.dart';
+import 'privacy_policy.dart';
 import 'widgets/confirm_dialog.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.privacyPolicyLauncher});
+
+  final PrivacyPolicyLauncher? privacyPolicyLauncher;
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -378,6 +381,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     )
                   : Text(l10n.loginSubmit),
             ),
+            const SizedBox(height: 8),
+            _privacyPolicyLink(l10n),
           ],
         ),
       ),
@@ -461,6 +466,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   : Text(l10n.loginTotpVerify),
             ),
             const SizedBox(height: 8),
+            _privacyPolicyLink(l10n),
+            const SizedBox(height: 8),
             TextButton(
               onPressed: _loading ? null : _cancelCode,
               child: Text(l10n.actionCancel),
@@ -485,6 +492,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
     ];
   }
+
+  Widget _privacyPolicyLink(AppLocalizations l10n) => TextButton(
+        style: TextButton.styleFrom(
+          minimumSize: const Size.fromHeight(48),
+        ),
+        onPressed: () => openPrivacyPolicy(
+          context,
+          launcher: widget.privacyPolicyLauncher,
+        ),
+        child: Text(l10n.privacyPolicy),
+      );
 }
 
 /// Discord-style ambient backdrop: soft translucent circles and floating
