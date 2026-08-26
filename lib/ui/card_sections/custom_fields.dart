@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../api/models.dart';
+import '../card_sheet_edit_guard.dart';
 
 /// The longest value the server stores — its create/update endpoint rejects
 /// anything past it, so the field stops taking characters there.
@@ -13,6 +14,7 @@ class CardCustomFieldsSection extends StatelessWidget {
     super.key,
     required this.entries,
     required this.onChanged,
+    this.dismissalGuard,
   });
 
   /// The group's fields in position order, each with the card's value or null.
@@ -21,6 +23,7 @@ class CardCustomFieldsSection extends StatelessWidget {
   /// Hands a field its new content. Blank content clears the value: the server
   /// stores no empty string, so a cleared field is one that holds no value.
   final void Function(PlankaCustomField field, String content) onChanged;
+  final CardSheetDismissalGuard? dismissalGuard;
 
   @override
   Widget build(BuildContext context) {
@@ -34,14 +37,20 @@ class CardCustomFieldsSection extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(field.name,
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                Text(
+                  field.name,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
                 _CustomFieldValueField(
                   key: ValueKey('custom-field-${field.id}'),
+                  id: field.id,
                   content: value?.content,
                   style: theme.textTheme.bodyMedium,
                   onSubmit: (content) => onChanged(field, content),
+                  dismissalGuard: dismissalGuard,
+                  accessibilityLabel: field.name,
                 ),
               ],
             ),
@@ -55,14 +64,20 @@ class CardCustomFieldsSection extends StatelessWidget {
 class _CustomFieldValueField extends StatefulWidget {
   const _CustomFieldValueField({
     super.key,
+    required this.id,
     required this.content,
     required this.onSubmit,
+    required this.dismissalGuard,
+    required this.accessibilityLabel,
     this.style,
   });
 
   /// The value the server holds, or null when the field has none.
+  final String id;
   final String? content;
   final ValueChanged<String> onSubmit;
+  final CardSheetDismissalGuard? dismissalGuard;
+  final String accessibilityLabel;
   final TextStyle? style;
 
   @override
@@ -70,12 +85,17 @@ class _CustomFieldValueField extends StatefulWidget {
 }
 
 class _CustomFieldValueFieldState extends State<_CustomFieldValueField> {
-  late final _controller = TextEditingController(text: widget.content ?? '');
+  late final TextEditingController _controller;
   final _focus = FocusNode();
+  late String _committedContent;
+  bool _dirty = false;
 
   @override
   void initState() {
     super.initState();
+    _controller = TextEditingController(text: widget.content ?? '')
+      ..addListener(_onChanged);
+    _committedContent = _normalise(widget.content);
     _focus.addListener(_onFocusChanged);
   }
 
@@ -89,47 +109,77 @@ class _CustomFieldValueFieldState extends State<_CustomFieldValueField> {
     // Holding focus is not itself a change: a field tapped into and left alone
     // must still show what the other client wrote, or leaving it would hand
     // back a value nobody typed.
-    if (_controller.text == (oldWidget.content ?? '')) {
+    if (!_dirty) {
+      _committedContent = _normalise(widget.content);
       _controller.text = widget.content ?? '';
+      _setDirty(false);
     }
   }
 
   @override
   void dispose() {
     // The listener goes before the node it is attached to.
+    widget.dismissalGuard?.removeEditor('custom-field-${widget.id}', _focus);
     _focus.removeListener(_onFocusChanged);
+    _controller.removeListener(_onChanged);
     _focus.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   void _onFocusChanged() {
+    _notifyEditor();
     if (_focus.hasFocus) return;
-    final content = _controller.text.trim();
-    // What the field shows on the way out is what it would send. Whitespace
-    // around a value is not an edit, so normalising has to happen on the path
-    // that writes nothing too: leave it un-normalised there and the dirty test
-    // in didUpdateWidget reads the field as modified for the life of the
-    // sheet, ignores every later edit from elsewhere, and hands the stale text
-    // back on the next blur.
+    if (!(widget.dismissalGuard?.shouldCommitOnBlur ?? true)) return;
+    _commit();
+  }
+
+  void _onChanged() =>
+      _setDirty(_normalise(_controller.text) != _committedContent);
+
+  void _setDirty(bool dirty) {
+    if (_dirty == dirty) return;
+    _dirty = dirty;
+    _notifyEditor();
+  }
+
+  void _notifyEditor() {
+    widget.dismissalGuard?.updateEditor(
+      'custom-field-${widget.id}',
+      _dirty,
+      _focus,
+      _focus.hasFocus,
+    );
+  }
+
+  void _commit() {
+    final content = _normalise(_controller.text);
+    if (content == _committedContent) {
+      if (_controller.text != content) _controller.text = content;
+      _setDirty(false);
+      return;
+    }
+    _committedContent = content;
     if (_controller.text != content) _controller.text = content;
-    // Leaving a field alone writes nothing, so opening a card and scrolling
-    // past its custom fields costs no requests.
-    if (content == (widget.content ?? '')) return;
+    _setDirty(false);
     widget.onSubmit(content);
   }
 
+  String _normalise(String? content) => content?.trim() ?? '';
+
   @override
-  Widget build(BuildContext context) => TextField(
-        controller: _controller,
-        focusNode: _focus,
-        style: widget.style,
-        inputFormatters: [
-          LengthLimitingTextInputFormatter(kCustomFieldValueMaxLength),
-        ],
-        decoration: const InputDecoration(isDense: true),
-        // Enter submits by dropping focus rather than by its own path, so the
-        // edit is handed in exactly once however the field is left.
-        onSubmitted: (_) => _focus.unfocus(),
-      );
+  Widget build(BuildContext context) => Semantics(
+    label: widget.accessibilityLabel,
+    textField: true,
+    child: TextField(
+      controller: _controller,
+      focusNode: _focus,
+      style: widget.style,
+      inputFormatters: [
+        LengthLimitingTextInputFormatter(kCustomFieldValueMaxLength),
+      ],
+      decoration: const InputDecoration(isDense: true),
+      onSubmitted: (_) => _focus.unfocus(),
+    ),
+  );
 }

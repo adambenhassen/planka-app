@@ -136,6 +136,12 @@ abstract class AppLocalizations {
   /// **'Delete'**
   String get actionDelete;
 
+  /// Destructive button that discards unsaved card-sheet text
+  ///
+  /// In en, this message translates to:
+  /// **'Discard'**
+  String get actionDiscard;
+
   /// Menu entry that edits the selected item
   ///
   /// In en, this message translates to:
@@ -147,6 +153,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Move'**
   String get actionMove;
+
+  /// Button that cancels leaving a card with unsaved text
+  ///
+  /// In en, this message translates to:
+  /// **'Keep editing'**
+  String get actionKeepEditing;
 
   /// Button that removes a member, manager or avatar
   ///
@@ -633,6 +645,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add a description…'**
   String get cardDescriptionHint;
+
+  /// Title of the card-sheet unsaved-text confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Discard unsaved changes?'**
+  String get cardUnsavedChangesTitle;
+
+  /// Body of the card-sheet unsaved-text confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Text you entered will be lost if you leave this card.'**
+  String get cardUnsavedChangesMessage;
 
   /// Error shown when the platform cannot open a downloaded attachment
   ///
