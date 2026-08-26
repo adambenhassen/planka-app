@@ -334,6 +334,18 @@ abstract class AppLocalizations {
   /// **'Sign-in timed out. Enter your password again.'**
   String get loginTotpExpired;
 
+  /// Link label that opens the app's published privacy policy
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy policy'**
+  String get privacyPolicy;
+
+  /// Snackbar shown when the system cannot open the privacy policy
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open privacy policy.'**
+  String get privacyPolicyLaunchFailed;
+
   /// Title of the projects screen
   ///
   /// In en, this message translates to:

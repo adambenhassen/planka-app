@@ -8,6 +8,8 @@ import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/ui/login_screen.dart';
+import 'package:planka_app/ui/privacy_policy.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class RecordingApi extends PlankaApi {
   RecordingApi(super.serverUrl, super.token);
@@ -65,9 +67,12 @@ void main() {
   late RecordingApi api;
   late GoRouter router;
 
-  Widget app() {
+  Widget app({PrivacyPolicyLauncher? privacyPolicyLauncher}) {
     router = GoRouter(initialLocation: '/login', routes: [
-      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(
+          path: '/login',
+          builder: (_, _) => LoginScreen(
+              privacyPolicyLauncher: privacyPolicyLauncher)),
       GoRoute(
           path: '/projects',
           builder: (_, _) => const Scaffold(body: Text('PROJECTS'))),
@@ -165,5 +170,40 @@ void main() {
     await tester.tap(find.text('Log in'));
     await tester.pump();
     expect(find.text('Required'), findsNWidgets(3));
+  });
+
+  testWidgets('privacy policy is available before sign-in', (tester) async {
+    await tester.pumpWidget(app());
+
+    final link = find.widgetWithText(TextButton, 'Privacy policy');
+    expect(link, findsOneWidget);
+    expect(tester.getSize(link).height, greaterThanOrEqualTo(48));
+  });
+
+  testWidgets('privacy policy opens externally without changing credentials',
+      (tester) async {
+    Uri? openedUri;
+    LaunchMode? openedMode;
+    await tester.pumpWidget(app(
+      privacyPolicyLauncher: (uri, mode) async {
+        openedUri = uri;
+        openedMode = mode;
+        return true;
+      },
+    ));
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Server URL'), 'http://x');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Email or username'), 'demo@d.d');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Password'), 'pw');
+
+    await tester.tap(find.text('Privacy policy'));
+    await tester.pumpAndSettle();
+
+    expect(openedUri, Uri.parse(privacyPolicyUrl));
+    expect(openedMode, LaunchMode.externalApplication);
+    expect(tester.widgetList<EditableText>(find.byType(EditableText))
+        .map((field) => field.controller.text), ['http://x', 'demo@d.d', 'pw']);
   });
 }

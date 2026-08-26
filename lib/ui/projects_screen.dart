@@ -15,6 +15,7 @@ import '../state/projects_state.dart';
 import '../update/update_service.dart';
 import 'custom_fields_manager_sheet.dart';
 import 'error_handling.dart';
+import 'privacy_policy.dart';
 import 'widgets/async_retry.dart';
 import 'widgets/board_background.dart';
 import 'widgets/confirm_dialog.dart';
@@ -70,7 +71,9 @@ Future<void> _runUpdate(
 }
 
 class ProjectsScreen extends ConsumerWidget {
-  const ProjectsScreen({super.key});
+  const ProjectsScreen({super.key, this.privacyPolicyLauncher});
+
+  final PrivacyPolicyLauncher? privacyPolicyLauncher;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -132,7 +135,7 @@ class ProjectsScreen extends ConsumerWidget {
             ),
             onPressed: () => context.push('/notifications'),
           ),
-          const _AccountSwitcher(),
+          _AccountSwitcher(privacyPolicyLauncher: privacyPolicyLauncher),
         ],
       ),
       body: asyncRetry(
@@ -393,7 +396,9 @@ class _BoardTile extends StatelessWidget {
 }
 
 class _AccountSwitcher extends ConsumerWidget {
-  const _AccountSwitcher();
+  const _AccountSwitcher({this.privacyPolicyLauncher});
+
+  final PrivacyPolicyLauncher? privacyPolicyLauncher;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -414,6 +419,10 @@ class _AccountSwitcher extends ConsumerWidget {
         }
         if (id == '_manageUsers') {
           showUserManagementDialog(context);
+          return;
+        }
+        if (id == '_privacyPolicy') {
+          await openPrivacyPolicy(context, launcher: privacyPolicyLauncher);
           return;
         }
         final account = accounts.where((a) => a.id == id).firstOrNull;
@@ -454,6 +463,14 @@ class _AccountSwitcher extends ConsumerWidget {
               title: Text(l10n.manageUsersTitle),
             ),
           ),
+        PopupMenuItem(
+          value: '_privacyPolicy',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: Text(l10n.privacyPolicy),
+          ),
+        ),
         PopupMenuItem(
           value: '_add',
           child: ListTile(

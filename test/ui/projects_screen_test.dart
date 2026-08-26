@@ -9,6 +9,7 @@ import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/models.dart';
 import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/state/projects_state.dart';
+import 'package:planka_app/ui/privacy_policy.dart';
 import 'package:planka_app/ui/projects_screen.dart';
 
 class _FakeProjectsNotifier extends ProjectsNotifier {
@@ -68,14 +69,18 @@ void main() {
     expect(navigatedTo, isNotNull);
   });
 
-  Widget wrap(_FakeProjectsNotifier notifier) => ProviderScope(
+  Widget wrap(_FakeProjectsNotifier notifier,
+          {PrivacyPolicyLauncher? privacyPolicyLauncher}) =>
+      ProviderScope(
         overrides: [projectsProvider.overrideWith(() => notifier)],
         child: MaterialApp.router(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: GoRouter(initialLocation: '/projects', routes: [
             GoRoute(
-                path: '/projects', builder: (_, _) => const ProjectsScreen()),
+                path: '/projects',
+                builder: (_, _) => ProjectsScreen(
+                    privacyPolicyLauncher: privacyPolicyLauncher)),
             GoRoute(
                 path: '/notifications',
                 builder: (_, _) => const Scaffold(body: Text('NOTIF'))),
@@ -134,5 +139,32 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(notifier.favoriteCalls, [('p1', true), ('p2', false)]);
+  });
+
+  testWidgets('account menu exposes the privacy policy', (tester) async {
+    final view = ProjectsView(
+      projects: const [],
+      boards: const [],
+      backgroundImages: const [],
+    );
+    Uri? openedUri;
+    await tester.pumpWidget(
+      wrap(
+        _FakeProjectsNotifier(view),
+        privacyPolicyLauncher: (uri, _) async {
+          openedUri = uri;
+          return true;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.account_circle_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Privacy policy'), findsOneWidget);
+    await tester.tap(find.text('Privacy policy'));
+    await tester.pumpAndSettle();
+    expect(openedUri, Uri.parse(privacyPolicyUrl));
   });
 }

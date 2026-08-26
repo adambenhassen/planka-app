@@ -132,6 +132,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'Sign-in timed out. Enter your password again.';
 
   @override
+  String get privacyPolicy => 'Privacy policy';
+
+  @override
+  String get privacyPolicyLaunchFailed => 'Could not open privacy policy.';
+
+  @override
   String get projectsTitle => 'Projects';
 
   @override
