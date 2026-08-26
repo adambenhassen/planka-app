@@ -39,8 +39,13 @@ Tagging `v*` runs `.github/workflows/release.yml`:
 
 ## Store graphics
 
-None of these exist yet, and all three are mandatory to submit — tracked in
-MAIN-475 along with the screenshots:
+The manual Store assets workflow generates all three from `assets/icon/icon.png`:
+
+- `fastlane/metadata/android/en-US/images/icon.png`
+- `fastlane/metadata/android/en-US/images/featureGraphic.png`
+- `fastlane/metadata/app_icon.png`
+
+All three are mandatory to submit:
 
 - **Play hi-res icon** — 512x512 PNG, 32-bit, no alpha.
 - **Play feature graphic** — 1024x500 PNG or JPEG, no alpha. Shown at the top
@@ -51,10 +56,9 @@ MAIN-475 along with the screenshots:
 
 ## Screenshots
 
-Not committed yet — the ones in `.github/assets/screenshots/` are 1206x2436
-(iPhone 16 Pro) and are the wrong size for the App Store. The destination
-directories exist (each with a `.gitkeep`) so the captures have somewhere to
-land.
+The ones in `.github/assets/screenshots/` are 1206x2436 (iPhone 16 Pro) and
+are the README captures, not store assets. The destination directories exist
+so the store captures have somewhere to land.
 
 - **Play:** 2–8 phone screenshots, 16:9 or 9:16, each side 320–3840 px. Capture
   on an Android emulator. Drop them in
@@ -70,6 +74,15 @@ Both come from the existing driver — change the `-d` device:
 flutter drive --driver=test_driver/screenshots_driver.dart \
   --target=integration_test/screenshots_test.dart -d "iPhone 16 Pro Max"
 ```
+
+Run `.github/workflows/store-assets.yml` with **Run workflow**. It is manual
+only, so it adds no work to the pull-request gate. The Android job uses a
+Pixel 2 emulator (1080x1920); the Apple job uses an iPhone 16 Pro Max
+(1320x2868) and an iPad Pro 13-inch (M4) (2064x2752). The Apple runner starts
+the pinned Planka server natively with its hosted PostgreSQL service because
+hosted macOS runners do not provide Docker. The workflow waits for both
+device jobs, validates every PNG's dimensions and alpha channel, then opens a
+PR containing the files under the fastlane trees above.
 
 ## Google Play, first release
 
