@@ -8,6 +8,8 @@ import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/ui/login_screen.dart';
+import 'package:planka_app/ui/privacy_policy.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class RecordingApi extends PlankaApi {
   RecordingApi(super.serverUrl, super.token);
@@ -65,9 +67,12 @@ void main() {
   late RecordingApi api;
   late GoRouter router;
 
-  Widget app() {
+  Widget app({PrivacyPolicyLauncher? privacyPolicyLauncher}) {
     router = GoRouter(initialLocation: '/login', routes: [
-      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(
+          path: '/login',
+          builder: (_, _) =>
+              LoginScreen(privacyPolicyLauncher: privacyPolicyLauncher)),
       GoRoute(
           path: '/projects',
           builder: (_, _) => const Scaffold(body: Text('PROJECTS'))),
@@ -165,5 +170,70 @@ void main() {
     await tester.tap(find.text('Log in'));
     await tester.pump();
     expect(find.text('Required'), findsNWidgets(3));
+  });
+
+  testWidgets('privacy policy action is available on the credentials step', (
+    tester,
+  ) async {
+    await tester.pumpWidget(app());
+
+    final action = find.widgetWithText(TextButton, 'Privacy policy');
+    expect(action, findsOneWidget);
+    expect(tester.getSize(action).height, greaterThanOrEqualTo(48));
+  });
+
+  testWidgets('privacy policy action fits a narrow login screen', (
+    tester,
+  ) async {
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    await tester.binding.setSurfaceSize(const Size(240, 480));
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Privacy policy'), findsOneWidget);
+  });
+
+  testWidgets('privacy policy launch preserves typed credentials', (
+    tester,
+  ) async {
+    Uri? openedUri;
+    LaunchMode? openedMode;
+    await tester.pumpWidget(
+      app(
+        privacyPolicyLauncher: (uri, mode) async {
+          openedUri = uri;
+          openedMode = mode;
+          return true;
+        },
+      ),
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Server URL'),
+      'https://server',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Email or username'),
+      'user@example.com',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Password'),
+      'pw',
+    );
+
+    await tester.tap(find.text('Privacy policy'));
+    await tester.pumpAndSettle();
+
+    expect(openedUri, Uri.parse(privacyPolicyUrl));
+    expect(openedMode, LaunchMode.externalApplication);
+    expect(
+      tester
+          .widgetList<EditableText>(find.byType(EditableText))
+          .map((field) => field.controller.text),
+      ['https://server', 'user@example.com', 'pw'],
+    );
+    expect(find.text('Log in'), findsOneWidget);
   });
 }

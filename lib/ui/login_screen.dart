@@ -6,10 +6,13 @@ import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
 import '../l10n/gen/app_localizations.dart';
 import 'error_handling.dart';
+import 'privacy_policy.dart';
 import 'widgets/confirm_dialog.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.privacyPolicyLauncher});
+
+  final PrivacyPolicyLauncher? privacyPolicyLauncher;
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -245,9 +248,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   child: Card(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-                      child: _pendingToken == null
-                          ? _credentialsStep(l10n, theme, scheme)
-                          : _codeStep(l10n, theme, scheme),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _pendingToken == null
+                              ? _credentialsStep(l10n, theme, scheme)
+                              : _codeStep(l10n, theme, scheme),
+                          const SizedBox(height: 8),
+                          PrivacyPolicyButton(
+                            launcher: widget.privacyPolicyLauncher,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

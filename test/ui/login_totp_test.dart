@@ -10,6 +10,7 @@ import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/ui/login_screen.dart';
+import 'package:planka_app/ui/privacy_policy.dart';
 
 /// Distinctive so an assertion can scan the whole store for it.
 const _pendingToken = 'pt-secret-must-never-persist';
@@ -83,11 +84,15 @@ void main() {
 
   int totalLogins() => apis.fold(0, (sum, a) => sum + a.loginCalls);
 
-  Widget app(List<Object> outcomes, {Completer<void>? gate}) {
+  Widget app(List<Object> outcomes,
+      {Completer<void>? gate, PrivacyPolicyLauncher? privacyPolicyLauncher}) {
     storage = MemStorage();
     apis = [];
     final router = GoRouter(initialLocation: '/login', routes: [
-      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(
+          path: '/login',
+          builder: (_, _) =>
+              LoginScreen(privacyPolicyLauncher: privacyPolicyLauncher)),
       GoRoute(
           path: '/projects',
           builder: (_, _) => const Scaffold(body: Text('PROJECTS'))),
@@ -145,10 +150,50 @@ void main() {
       (tester) async {
     await reachCodeStep(tester, ['realtok']);
     expect(find.text('Two-factor authentication'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Privacy policy'), findsOneWidget);
     // The credentials are replaced, not merely covered.
     expect(find.widgetWithText(TextFormField, 'Password'), findsNothing);
     expect(find.text('PROJECTS'), findsNothing);
     expectNoPendingTokenStored();
+  });
+
+  testWidgets('privacy policy stays enabled while login is loading', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    var launches = 0;
+    await tester.pumpWidget(
+      app(
+        ['realtok'],
+        gate: gate,
+        privacyPolicyLauncher: (_, _) async {
+          launches++;
+          return true;
+        },
+      ),
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Server URL'),
+      'http://x',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Email or username'),
+      'demo@d.d',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Password'),
+      'pw',
+    );
+    await tester.tap(find.text('Log in'));
+    await tester.pump();
+
+    await tester.tap(find.text('Privacy policy'));
+    await tester.pump();
+    expect(launches, 1);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Two-factor authentication'), findsOneWidget);
   });
 
   testWidgets('a valid code signs in and stores only the access token',
