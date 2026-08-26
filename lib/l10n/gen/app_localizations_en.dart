@@ -30,10 +30,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get actionDelete => 'Delete';
 
   @override
+  String get actionDiscard => 'Discard';
+
+  @override
   String get actionEdit => 'Edit';
 
   @override
   String get actionMove => 'Move';
+
+  @override
+  String get actionKeepEditing => 'Keep editing';
 
   @override
   String get actionRemove => 'Remove';
@@ -290,6 +296,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get cardDescriptionHint => 'Add a description…';
+
+  @override
+  String get cardUnsavedChangesTitle => 'Discard unsaved changes?';
+
+  @override
+  String get cardUnsavedChangesMessage =>
+      'Text you entered will be lost if you leave this card.';
 
   @override
   String cardOpenAttachmentFailed(String name, String message) {

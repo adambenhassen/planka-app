@@ -9,6 +9,7 @@ import 'custom_fields_manager_sheet.dart';
 import '../auth/auth_providers.dart';
 import '../l10n/gen/app_localizations.dart';
 import 'error_handling.dart';
+import 'card_sheet_edit_guard.dart';
 import 'widgets/confirm_dialog.dart';
 import 'widgets/move_card_dialog.dart';
 import '../state/board_state.dart';
@@ -24,36 +25,153 @@ import 'card_sections/stopwatch.dart';
 import 'card_sections/task_lists.dart';
 
 Future<void> showCardSheet(
-    BuildContext context, String boardId, String cardId) {
-  return showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (_) => DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.9,
-      minChildSize: 0.5,
-      maxChildSize: 1,
-      builder: (context, scrollController) => CardSheet(
-        boardId: boardId,
-        cardId: cardId,
-        scrollController: scrollController,
+  BuildContext context,
+  String boardId,
+  String cardId,
+) {
+  final navigator = Navigator.of(context);
+  final materialL10n = MaterialLocalizations.of(context);
+  final dismissalGuard = CardSheetDismissalGuard(navigator);
+  final sheetController = DraggableScrollableController();
+  final route = _GuardedModalBottomSheetRoute(
+    dismissalGuard: dismissalGuard,
+    builder: (_) => NotificationListener<Notification>(
+      onNotification: (notification) {
+        if (notification case ScrollStartNotification(
+          :final depth,
+          :final metrics,
+        ) when depth == 0) {
+          dismissalGuard.captureDragPosition(
+            extent: sheetController.size,
+            scrollOffset: metrics.pixels,
+          );
+        } else if (notification case ScrollEndNotification(
+          :final depth,
+        ) when depth == 0) {
+          dismissalGuard.finishDrag();
+        } else if (notification case DraggableScrollableNotification(
+          :final depth,
+          :final extent,
+          :final minExtent,
+        ) when depth == 0 && extent <= minExtent) {
+          dismissalGuard.requestDismiss();
+        }
+        return false;
+      },
+      child: DraggableScrollableSheet(
+        controller: sheetController,
+        expand: false,
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 1,
+        shouldCloseOnMinExtent: false,
+        builder: (context, scrollController) {
+          dismissalGuard.attachSheetControllers(
+            sheetController: sheetController,
+            scrollController: scrollController,
+          );
+          return CardSheet(
+            boardId: boardId,
+            cardId: cardId,
+            scrollController: scrollController,
+            dismissalGuard: dismissalGuard,
+          );
+        },
       ),
     ),
+    capturedThemes: InheritedTheme.capture(
+      from: context,
+      to: navigator.context,
+    ),
+    barrierLabel: materialL10n.scrimLabel,
+    barrierOnTapHint: materialL10n.scrimOnTapHint(
+      materialL10n.bottomSheetLabel,
+    ),
+    isScrollControlled: true,
+    isDismissible: true,
+    enableDrag: false,
+    useSafeArea: true,
   );
+  return navigator.push(route).then<void>((_) => sheetController.dispose());
 }
 
-class CardSheet extends ConsumerWidget {
+class _GuardedModalBottomSheetRoute extends ModalBottomSheetRoute<dynamic> {
+  _GuardedModalBottomSheetRoute({
+    required this.dismissalGuard,
+    required super.builder,
+    super.capturedThemes,
+    super.barrierLabel,
+    super.barrierOnTapHint,
+    required super.isScrollControlled,
+    super.isDismissible,
+    super.enableDrag,
+    super.useSafeArea,
+  });
+
+  final CardSheetDismissalGuard dismissalGuard;
+
+  @override
+  bool didPop(dynamic result) {
+    if (dismissalGuard.consumeAllowedPop() || !dismissalGuard.isDirty) {
+      return super.didPop(result);
+    }
+    dismissalGuard.requestDismiss(result);
+    return false;
+  }
+}
+
+class CardSheet extends ConsumerStatefulWidget {
   const CardSheet({
     super.key,
     required this.boardId,
     required this.cardId,
     this.scrollController,
+    this.dismissalGuard,
   });
 
   final String boardId;
   final String cardId;
   final ScrollController? scrollController;
+  final CardSheetDismissalGuard? dismissalGuard;
+
+  @override
+  ConsumerState<CardSheet> createState() => _CardSheetState();
+}
+
+class _CardSheetState extends ConsumerState<CardSheet> {
+  late final CardSheetDismissalGuard _dismissalGuard;
+  late final bool _ownsDismissalGuard;
+  final _contentKey = GlobalKey();
+
+  String get boardId => widget.boardId;
+  String get cardId => widget.cardId;
+
+  bool _isTapInsideSheet(Offset position) {
+    final renderObject = _contentKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    return (topLeft & renderObject.size).contains(position);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsDismissalGuard = widget.dismissalGuard == null;
+    _dismissalGuard = widget.dismissalGuard ?? CardSheetDismissalGuard();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _dismissalGuard.attach(context);
+  }
+
+  @override
+  void dispose() {
+    _dismissalGuard.detach();
+    if (_ownsDismissalGuard) _dismissalGuard.dispose();
+    super.dispose();
+  }
 
   /// Closes the sheet, then runs [run] detached, surfacing any failure via a
   /// snackbar on the messenger captured before the pop (this sheet's context is
@@ -61,7 +179,100 @@ class CardSheet extends ConsumerWidget {
   void _popAndRun(BuildContext context, Future<void> Function() run) {
     final messenger = ScaffoldMessenger.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
-    Navigator.pop(context);
+    _dismissalGuard.close();
+    _runDetached(messenger, errorColor, run);
+  }
+
+  /// Downloads an attachment to the temp dir (cookie-authenticated, root-level
+  /// download route) and opens it with the platform default app.
+  Future<void> _openAttachment(
+    AppLocalizations l10n,
+    PlankaApi api,
+    PlankaAttachment a,
+  ) async {
+    final dir = await getTemporaryDirectory();
+    // Attachment names are user-supplied; strip path separators so they can't
+    // escape the temp directory.
+    final safeName = a.name.replaceAll(RegExp(r'[/\\]'), '_');
+    final path = '${dir.path}/planka-${a.id}-$safeName';
+    await api.download(
+      '/attachments/${a.id}/download/${Uri.encodeComponent(a.name)}',
+      path,
+    );
+    final result = await OpenFilex.open(path);
+    if (result.type != ResultType.done) {
+      throw ApiException(
+        null,
+        l10n.cardOpenAttachmentFailed(a.name, result.message),
+      );
+    }
+  }
+
+  /// Opens the move dialog; if the card left this board, closes the sheet too
+  /// since it no longer has anything to show.
+  Future<void> _showMoveDialog(BuildContext context) async {
+    final hadUnsavedChanges = _dismissalGuard.isDirty;
+    if (hadUnsavedChanges) {
+      if (!await _dismissalGuard.confirmBeforeAction() || !mounted) {
+        return;
+      }
+      final actionContext = _dismissalGuard.navigatorContext;
+      _dismissalGuard.close();
+      // Let the sheet's exit start before placing the move dialog over the
+      // page beneath it. The action itself still owns its existing mutation.
+      await Future<void>.delayed(Duration.zero);
+      if (!actionContext.mounted) return;
+      await showMoveCardDialog(actionContext, boardId, cardId);
+      return;
+    }
+    final moved = await showMoveCardDialog(context, boardId, cardId);
+    if (moved && context.mounted) _dismissalGuard.close();
+  }
+
+  /// Confirms, then optimistically deletes the card and closes the sheet.
+  Future<void> _confirmDelete(
+    BuildContext context,
+    BoardNotifier notifier,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    if (_dismissalGuard.isDirty) {
+      final messenger = ScaffoldMessenger.of(context);
+      final errorColor = Theme.of(context).colorScheme.error;
+      if (!await _dismissalGuard.confirmBeforeAction() || !mounted) return;
+
+      final actionContext = _dismissalGuard.navigatorContext;
+      _dismissalGuard.close();
+      await Future<void>.delayed(Duration.zero);
+      if (!actionContext.mounted) return;
+
+      final confirmed = await confirmDialog(
+        actionContext,
+        title: l10n.cardDeleteTitle,
+        message: l10n.cardDeleteMessage,
+        confirmLabel: l10n.actionDelete,
+      );
+      if (!confirmed || !actionContext.mounted) return;
+      _runDetached(messenger, errorColor, () => notifier.deleteCard(cardId));
+      return;
+    }
+
+    _dismissalGuard.temporarilySuppressBlur(true);
+    final confirmed = await confirmDialog(
+      context,
+      title: l10n.cardDeleteTitle,
+      message: l10n.cardDeleteMessage,
+      confirmLabel: l10n.actionDelete,
+    );
+    _dismissalGuard.temporarilySuppressBlur(false);
+    if (!confirmed || !context.mounted) return;
+    _popAndRun(context, () => notifier.deleteCard(cardId));
+  }
+
+  void _runDetached(
+    ScaffoldMessengerState messenger,
+    Color errorColor,
+    Future<void> Function() run,
+  ) {
     run().catchError((Object e) {
       final message = e is ApiException ? e.message : '$e';
       messenger.showSnackBar(
@@ -70,51 +281,13 @@ class CardSheet extends ConsumerWidget {
     });
   }
 
-  /// Downloads an attachment to the temp dir (cookie-authenticated, root-level
-  /// download route) and opens it with the platform default app.
-  Future<void> _openAttachment(
-      AppLocalizations l10n, PlankaApi api, PlankaAttachment a) async {
-    final dir = await getTemporaryDirectory();
-    // Attachment names are user-supplied; strip path separators so they can't
-    // escape the temp directory.
-    final safeName = a.name.replaceAll(RegExp(r'[/\\]'), '_');
-    final path = '${dir.path}/planka-${a.id}-$safeName';
-    await api.download(
-        '/attachments/${a.id}/download/${Uri.encodeComponent(a.name)}', path);
-    final result = await OpenFilex.open(path);
-    if (result.type != ResultType.done) {
-      throw ApiException(
-          null, l10n.cardOpenAttachmentFailed(a.name, result.message));
-    }
-  }
-
-  /// Opens the move dialog; if the card left this board, closes the sheet too
-  /// since it no longer has anything to show.
-  Future<void> _showMoveDialog(BuildContext context) async {
-    final moved = await showMoveCardDialog(context, boardId, cardId);
-    if (moved && context.mounted) Navigator.pop(context);
-  }
-
-  /// Confirms, then optimistically deletes the card and closes the sheet.
-  Future<void> _confirmDelete(
-      BuildContext context, BoardNotifier notifier) async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await confirmDialog(context,
-        title: l10n.cardDeleteTitle,
-        message: l10n.cardDeleteMessage,
-        confirmLabel: l10n.actionDelete);
-    if (!confirmed || !context.mounted) return;
-    _popAndRun(context, () => notifier.deleteCard(cardId));
-  }
-
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(boardProvider(boardId)).value;
     final card = state?.cards[cardId];
     if (state == null || card == null) {
-      return SizedBox(
-          height: 200, child: Center(child: Text(l10n.cardGone)));
+      return SizedBox(height: 200, child: Center(child: Text(l10n.cardGone)));
     }
     final notifier = ref.read(boardProvider(boardId).notifier);
     final account = ref.watch(currentAccountProvider);
@@ -123,19 +296,20 @@ class CardSheet extends ConsumerWidget {
     final commentsLoad = ref.watch(cardCommentsProvider((boardId, cardId)));
 
     Widget section(String title, Widget child) => Padding(
-          padding: const EdgeInsets.only(top: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 8),
-              child,
-            ],
-          ),
-        );
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    );
 
-    return ListView(
-      controller: scrollController,
+    final content = ListView(
+      key: _contentKey,
+      controller: widget.scrollController,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
         Row(
@@ -154,20 +328,24 @@ class CardSheet extends ConsumerWidget {
               ),
             ),
             IconButton(
-              icon: Icon(card.isSubscribed == true
-                  ? Icons.notifications_active
-                  : Icons.notifications_none),
+              icon: Icon(
+                card.isSubscribed == true
+                    ? Icons.notifications_active
+                    : Icons.notifications_none,
+              ),
               tooltip: card.isSubscribed == true
                   ? l10n.cardUnwatch
                   : l10n.cardWatch,
-              onPressed: () => guardMutation(context,
-                  notifier.setSubscribed(cardId, card.isSubscribed != true)),
+              onPressed: () => guardMutation(
+                context,
+                notifier.setSubscribed(cardId, card.isSubscribed != true),
+              ),
             ),
             IconButton(
               icon: const Icon(Icons.copy_outlined),
               tooltip: l10n.cardDuplicate,
-              onPressed: () => guardMutation(
-                  context, notifier.duplicateCard(cardId)),
+              onPressed: () =>
+                  guardMutation(context, notifier.duplicateCard(cardId)),
             ),
             IconButton(
               icon: const Icon(Icons.drive_file_move_outlined),
@@ -179,14 +357,16 @@ class CardSheet extends ConsumerWidget {
                 icon: const Icon(Icons.archive_outlined),
                 tooltip: l10n.cardArchive,
                 onPressed: () =>
-                    _popAndRun(context, () => notifier.archiveCard(cardId)),
+                    _closeAndRun(context, () => notifier.archiveCard(cardId)),
               ),
             if (state.lists.any((l) => l.type == PlankaListType.trash))
               IconButton(
                 icon: const Icon(Icons.delete_sweep_outlined),
                 tooltip: l10n.cardMoveToTrash,
-                onPressed: () => _popAndRun(
-                    context, () => notifier.moveCardToTrash(cardId)),
+                onPressed: () => _closeAndRun(
+                  context,
+                  () => notifier.moveCardToTrash(cardId),
+                ),
               ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
@@ -197,13 +377,17 @@ class CardSheet extends ConsumerWidget {
         ),
         CardHeaderSection(
           card: card,
-          onRename: (name) => guardMutation(context, notifier.renameCard(cardId, name)),
+          onRename: (name) =>
+              guardMutation(context, notifier.renameCard(cardId, name)),
           onDescriptionChanged: (desc) =>
               guardMutation(context, notifier.setDescription(cardId, desc)),
+          isTapInsideSheet: _isTapInsideSheet,
+          dismissalGuard: _dismissalGuard,
         ),
         CardDueDateSection(
           card: card,
-          onChanged: (d) => guardMutation(context, notifier.setDueDate(cardId, d)),
+          onChanged: (d) =>
+              guardMutation(context, notifier.setDueDate(cardId, d)),
           onCompletedToggle: (v) =>
               guardMutation(context, notifier.setDueCompleted(cardId, v)),
         ),
@@ -212,11 +396,17 @@ class CardSheet extends ConsumerWidget {
           CardStopwatchSection(
             stopwatch: card.stopwatch,
             onStart: (total) => guardMutation(
-                context,
-                notifier.setStopwatch(cardId,
-                    startedAt: DateTime.now().toUtc(), total: total)),
+              context,
+              notifier.setStopwatch(
+                cardId,
+                startedAt: DateTime.now().toUtc(),
+                total: total,
+              ),
+            ),
             onPause: (total) => guardMutation(
-                context, notifier.setStopwatch(cardId, total: total)),
+              context,
+              notifier.setStopwatch(cardId, total: total),
+            ),
             onReset: () =>
                 guardMutation(context, notifier.clearStopwatch(cardId)),
           ),
@@ -225,13 +415,13 @@ class CardSheet extends ConsumerWidget {
           l10n.sectionLabels,
           CardLabelsSection(
             boardLabels: state.labels,
-            activeLabelIds:
-                state.labelsOf(cardId).map((l) => l.id).toSet(),
+            activeLabelIds: state.labelsOf(cardId).map((l) => l.id).toSet(),
             onToggle: (labelId) =>
                 guardMutation(context, notifier.toggleLabel(cardId, labelId)),
             onCreate: (name, color) => guardMutation(
-                context,
-                notifier.createLabel(color, name: name.isEmpty ? null : name)),
+              context,
+              notifier.createLabel(color, name: name.isEmpty ? null : name),
+            ),
             onEditLabel: (id, name) =>
                 guardMutation(context, notifier.editLabel(id, name: name)),
             onDeleteLabel: (id) =>
@@ -258,11 +448,15 @@ class CardSheet extends ConsumerWidget {
                   (field, state.customFieldValueOf(cardId, group.id, field.id)),
               ],
               onChanged: (field, content) => guardMutation(
-                  context,
-                  notifier.setCustomFieldValue(cardId,
-                      groupId: group.id,
-                      fieldId: field.id,
-                      content: content)),
+                context,
+                notifier.setCustomFieldValue(
+                  cardId,
+                  groupId: group.id,
+                  fieldId: field.id,
+                  content: content,
+                ),
+              ),
+              dismissalGuard: _dismissalGuard,
             ),
           ),
         Align(
@@ -270,8 +464,11 @@ class CardSheet extends ConsumerWidget {
           child: TextButton.icon(
             icon: const Icon(Icons.tune, size: 18),
             label: Text(l10n.customFieldsTitle),
-            onPressed: () => showCustomFieldsManagerSheet(context,
-                boardId: boardId, cardId: cardId),
+            onPressed: () => showCustomFieldsManagerSheet(
+              context,
+              boardId: boardId,
+              cardId: cardId,
+            ),
           ),
         ),
         section(
@@ -287,7 +484,9 @@ class CardSheet extends ConsumerWidget {
             onToggleTask: (taskId, v) =>
                 guardMutation(context, notifier.setTaskCompleted(taskId, v)),
             onSetAssignee: (taskId, userId) => guardMutation(
-                context, notifier.setTaskAssignee(taskId, userId)),
+              context,
+              notifier.setTaskAssignee(taskId, userId),
+            ),
             onOpenLinkedCard: (linkedCardId) =>
                 showCardSheet(context, boardId, linkedCardId),
             onAddTask: (taskListId, name) =>
@@ -313,11 +512,15 @@ class CardSheet extends ConsumerWidget {
             onSetCover: (id) =>
                 guardMutation(context, notifier.setCover(cardId, id)),
             onOpen: (a) => guardMutation(
-                context, _openAttachment(l10n, ref.read(apiProvider), a)),
-            onUpload: (path, name) =>
-                guardMutation(context,
-                    notifier.uploadAttachment(cardId, filePath: path, name: name)),
-            onDelete: (id) => guardMutation(context, notifier.deleteAttachment(id)),
+              context,
+              _openAttachment(l10n, ref.read(apiProvider), a),
+            ),
+            onUpload: (path, name) => guardMutation(
+              context,
+              notifier.uploadAttachment(cardId, filePath: path, name: name),
+            ),
+            onDelete: (id) =>
+                guardMutation(context, notifier.deleteAttachment(id)),
           ),
         ),
         section(
@@ -327,8 +530,10 @@ class CardSheet extends ConsumerWidget {
               padding: EdgeInsets.all(8),
               child: Center(child: CircularProgressIndicator()),
             ),
-            error: (_, _) => Text(l10n.commentsLoadError,
-                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            error: (_, _) => Text(
+              l10n.commentsLoadError,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
             data: (_) => CardCommentsSection(
               comments: comments,
               users: state.users,
@@ -339,6 +544,7 @@ class CardSheet extends ConsumerWidget {
                   guardMutation(context, notifier.editComment(id, text)),
               onDelete: (id) =>
                   guardMutation(context, notifier.deleteComment(id)),
+              dismissalGuard: _dismissalGuard,
             ),
           ),
         ),
@@ -348,5 +554,27 @@ class CardSheet extends ConsumerWidget {
         ),
       ],
     );
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: _dismissalGuard.hasUnsavedChanges,
+      builder: (context, hasUnsavedChanges, child) => PopScope<dynamic>(
+        canPop: !hasUnsavedChanges,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) _dismissalGuard.requestDismiss(result);
+        },
+        child: child!,
+      ),
+      child: content,
+    );
+  }
+
+  Future<void> _closeAndRun(
+    BuildContext context,
+    Future<void> Function() run,
+  ) async {
+    if (!await _dismissalGuard.confirmBeforeAction() || !context.mounted) {
+      return;
+    }
+    _popAndRun(context, run);
   }
 }

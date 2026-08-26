@@ -30,6 +30,10 @@
   "@actionDelete": {
     "description": "Menu entry and button that deletes the selected item"
   },
+  "actionDiscard": "Discard",
+  "@actionDiscard": {
+    "description": "Destructive button that discards unsaved card-sheet text"
+  },
   "actionEdit": "Edit",
   "@actionEdit": {
     "description": "Menu entry that edits the selected item"
@@ -37,6 +41,10 @@
   "actionMove": "Move",
   "@actionMove": {
     "description": "Button that confirms moving a card to another list"
+  },
+  "actionKeepEditing": "Keep editing",
+  "@actionKeepEditing": {
+    "description": "Button that cancels leaving a card with unsaved text"
   },
   "actionRemove": "Remove",
   "@actionRemove": {
@@ -386,6 +394,14 @@
   "cardDescriptionHint": "Add a description…",
   "@cardDescriptionHint": {
     "description": "Placeholder shown in place of an empty card description"
+  },
+  "cardUnsavedChangesTitle": "Discard unsaved changes?",
+  "@cardUnsavedChangesTitle": {
+    "description": "Title of the card-sheet unsaved-text confirmation"
+  },
+  "cardUnsavedChangesMessage": "Text you entered will be lost if you leave this card.",
+  "@cardUnsavedChangesMessage": {
+    "description": "Body of the card-sheet unsaved-text confirmation"
   },
   "cardOpenAttachmentFailed": "Could not open {name}: {message}",
   "@cardOpenAttachmentFailed": {
