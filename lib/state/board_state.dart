@@ -917,13 +917,13 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   /// it is in flight — a group create is usually followed by its fields.
   bool _fillingBaseCustomFields = false;
 
-  /// Bumped for every event off the user room that actually changed this
-  /// board's state — cross-project events pass through untouched and must not
-  /// count. The reconciliation fetch below compares counts across its await:
-  /// a state-changing event landing mid-fetch is newer than the response that
-  /// just answered, and installing that response would clobber or resurrect
-  /// what the event changed — so it is discarded and fetched again instead.
-  int _userRoomEventsSeen = 0;
+  /// Bumped for every event, either room, that actually changed this board's
+  /// state — cross-project events pass through untouched and must not count.
+  /// The reconciliation fetch below and [_refetch] compare counts across their
+  /// awaits: a state-changing event landing mid-fetch is newer than the
+  /// response that just answered, and installing that response would clobber
+  /// or resurrect what the event changed — so it is discarded instead.
+  int _stateChangesSeen = 0;
 
   /// Same fetch as [_withBaseCustomFields], for a group instantiated while the
   /// board is open — it arrives over the socket with neither its name nor its
@@ -937,11 +937,11 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       while (true) {
         final projectId = state.value?.board.projectId;
         if (projectId == null) return;
-        final seenBeforeFetch = _userRoomEventsSeen;
+        final seenBeforeFetch = _stateChangesSeen;
         final env = await _freshProjectEnvelope(projectId);
         final cur = state.value;
         if (env == null || cur == null) return;
-        if (_userRoomEventsSeen != seenBeforeFetch) continue;
+        if (_stateChangesSeen != seenBeforeFetch) continue;
         state = AsyncData(cur.withBaseCustomFields(env));
         return;
       }
@@ -962,15 +962,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       Stream<SocketEvent> events) {
     final pending = <SocketEvent>[];
     var live = false;
-    void apply(SocketEvent e) {
-      final before = state.value;
-      applySocketEvent(e);
-      // Only an event that actually changed this board invalidates an
-      // in-flight reconciliation — the room carries every project the account
-      // can see, and a busy one must not starve this board's resync by
-      // discarding valid responses it had nothing to do with.
-      if (!identical(state.value, before)) _userRoomEventsSeen++;
-    }
+    void apply(SocketEvent e) => applySocketEvent(e);
 
     late final StreamSubscription<SocketEvent> sub;
     sub = events
@@ -988,7 +980,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       for (final e in pending) {
         final before = s;
         s = applyEvent(s, e);
-        if (!identical(s, before)) _userRoomEventsSeen++;
+        if (!identical(s, before)) _stateChangesSeen++;
       }
       pending.clear();
       // A template instantiated during the buffer needs the project fetch that
@@ -1056,7 +1048,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     if (lastRefetch == null ||
         now.difference(lastRefetch) >= const Duration(seconds: 30)) {
       _lastRealtimeRecovery = now;
-      unawaited(_refetch());
+      unawaited(_refetch(discardOnEvent: true));
     }
     final lastJoin = userRoom ? _lastUserJoinRetry : _lastBoardJoinRetry;
     if (lastJoin != null &&
@@ -1103,7 +1095,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     });
     socket.connected.listen((c) {
       // On reconnect the socket re-subscribes itself; refetch to fill the gap.
-      if (c) _refetch();
+      if (c) _refetch(discardOnEvent: true);
     });
     await socket.connect();
     await socket.subscribeBoard(boardId);
@@ -1122,6 +1114,11 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     final s = state.value;
     if (s == null) return;
     final next = applyEvent(s, event);
+    // Only an event that actually changed this board bumps the counter —
+    // the user room carries every project the account can see, and a busy one
+    // must not starve this board's resync by discarding valid responses it
+    // had nothing to do with.
+    if (!identical(next, s)) _stateChangesSeen++;
     state = AsyncData(next);
     // A group instantiated from a base group is pushed without the name and
     // fields it borrows, so it needs the project the board response omits.
@@ -1146,7 +1143,18 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     }
   }
 
-  Future<void> _refetch() async {
+  /// Refetches the board and installs the answer. With [discardOnEvent], the
+  /// freshness rule recovery lives by applies: an event changing this board
+  /// while the fetches below are in flight is newer than the response
+  /// answering them, so the install is dropped — the event itself proves the
+  /// transport delivers again, and the next edge or event heals any residual
+  /// gap from the outage. Recovery-only: the rollback paths ([_optimistic],
+  /// [sortList]'s empty-response refetch) must install unconditionally, or a
+  /// rejected mutation's unconfirmed optimistic state survives forever — the
+  /// server pushes no event for a mutation it refused, so nothing would heal
+  /// it.
+  Future<void> _refetch({bool discardOnEvent = false}) async {
+    final seenBeforeFetch = _stateChangesSeen;
     try {
       final env = await _repo.board(boardId);
       final account = ref.read(currentAccountProvider);
@@ -1168,6 +1176,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       if (prev != null && next.needsBaseCustomFields) {
         next = next.withBaseDataFrom(prev);
       }
+      if (discardOnEvent && _stateChangesSeen != seenBeforeFetch) return;
       final activeCardIds = _activeCommentProviders.keys.toSet();
       state = AsyncData(next);
       // Comments live outside the board envelope; an open sheet must refold

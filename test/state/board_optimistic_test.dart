@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/planka_api.dart';
+import 'package:planka_app/api/planka_socket.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
 
@@ -24,8 +26,13 @@ class _FakeApi extends PlankaApi {
   final bool failMove;
   int getCalls = 0;
 
+  /// Holds every GET while open, so events can land mid-rollback.
+  Completer<void>? gate;
+
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
+    final g = gate;
+    if (g != null && !g.isCompleted) await g.future;
     getCalls++;
     return Envelope.parse(_fixture());
   }
@@ -99,6 +106,44 @@ void main() {
         reason: 'failed move is healed back to the server-truth list');
     expect(api.getCalls, greaterThan(getsBefore),
         reason: 'failure triggers a refetch');
+  });
+
+  test('moveCard heals back even when an unrelated event lands mid-rollback',
+      () async {
+    // The server pushes no event for a mutation it refused, so nothing would
+    // ever heal the unconfirmed optimistic move if the rollback let a
+    // mid-fetch event discard its install — unlike recovery, the rollback
+    // must install unconditionally.
+    final api = _FakeApi(failMove: true)..gate = Completer<void>();
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      boardProvider.overrideWith2((arg) => _SocketlessNotifier(arg)),
+    ]);
+    addTearDown(container.dispose);
+    final boardId = _fixture()['item']['id'] as String;
+    final notifier = container.read(boardProvider(boardId).notifier);
+    await container.read(boardProvider(boardId).future);
+    // A bystander list rename: the fixture's third list, touched by neither
+    // the move nor the rollback.
+
+    final move = notifier.moveCard(_cardId, _toListId);
+    await pumpEventQueue(); // PATCH rejected; the rollback GET now waits
+    expect(container.read(boardProvider(boardId)).value!.cards[_cardId]!.listId,
+        _toListId); // still optimistic
+    final lists = (_fixture()['included']['lists'] as List)
+        .cast<Map<String, dynamic>>();
+    final bystander = lists
+        .firstWhere((l) => l['id'] != _fromListId && l['id'] != _toListId);
+    notifier.applySocketEvent(SocketEvent.parse('listUpdate',
+        {'item': {...bystander, 'name': 'Renamed mid-rollback'}}));
+    api.gate!.complete();
+    await expectLater(move, throwsA(isA<ApiException>()));
+
+    final state = container.read(boardProvider(boardId)).value!;
+    expect(state.cards[_cardId]!.listId, _fromListId,
+        reason: 'the failed move heals back despite the mid-fetch event');
+    // Unlike recovery, the rollback may lose the event itself — installing
+    // server truth unconditionally is the older contract here.
   });
 
   test('createCard folds the server-created card into state (_createInto)',

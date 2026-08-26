@@ -452,13 +452,36 @@ void main() {
         isNot(contains(_baseFieldId)), reason: 'stale cache must not feed it');
 
     // The failure path must carry base-derived state forward, not regress:
-    // the template's name stays on the instantiated group and its remaining
-    // value keeps rendering, while the deleted field stays gone.
+    // the template's name stays on the instantiated group and the deleted
+    // field stays gone. The value below is present because the board fixture
+    // still lists it — its field definition is gone, so nothing renders it.
     final s = _stateOf(container);
     expect(_groupNames(s), ['Base', 'BG', 'CG']);
     expect(s.customFieldValueOf(_cardId, _basedGroupId, _baseFieldId)?.content,
         'based');
     expect(s.customFields.map((f) => f.id), isNot(contains(_baseFieldId)));
+  });
+
+  test('an event landing mid-recovery-refetch is not reverted by the install',
+      () async {
+    final api = _FakeApi();
+    final (container, room, _) = await _boot(api);
+
+    // Hold the recovery's board refetch open, land a rename on the open board
+    // while it waits, then let the refetch answer with the pre-rename fixture:
+    // installing unconditionally reverts what the event changed until
+    // something else heals it.
+    api.gate = Completer<void>();
+    room.addError(StateError('user subscribe failed'));
+    await pumpEventQueue();
+    await _push(room, 'baseCustomFieldGroupUpdate',
+        {'id': _baseGroupId, 'projectId': _projectId, 'name': 'Renamed base'});
+    expect(_groupNames(_stateOf(container)), ['Renamed base', 'BG', 'CG']);
+    api.gate!.complete();
+    await pumpEventQueue();
+
+    expect(api.boardFetches, greaterThanOrEqualTo(2)); // recovery settled
+    expect(_groupNames(_stateOf(container)), ['Renamed base', 'BG', 'CG']);
   });
 
   test('one room\'s error does not suppress the other\'s join retry',
