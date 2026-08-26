@@ -598,6 +598,38 @@ void main() {
     expect(comments.map((comment) => comment.id), ['c-loaded']);
   });
 
+  test('refetch invalidates an open empty comments provider', () async {
+    final api = _FakeApi(fail: true);
+    final (container, notifier, boardId) = await boot(api: api);
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+    api.commentsItems = [];
+    final commentsProvider = cardCommentsProvider((boardId, cardId));
+    final subscription = container.listen(commentsProvider, (_, _) {});
+    addTearDown(subscription.close);
+    await container.read(commentsProvider.future);
+    expect(container.read(boardProvider(boardId)).value!.commentsOf(cardId),
+        isEmpty);
+
+    api.commentsItems = [
+      {
+        'id': 'c-server',
+        'cardId': cardId,
+        'userId': 'u1',
+        'text': 'from server',
+      },
+    ];
+    final listId =
+        container.read(boardProvider(boardId)).value!.columns.first.id;
+    await expectLater(notifier.renameList(listId, 'rejected'),
+        throwsA(isA<ApiException>()));
+
+    await container.read(commentsProvider.future);
+    expect(container.read(boardProvider(boardId)).value!.commentsOf(cardId),
+        hasLength(1));
+  });
+
   test('createComment leaves the count untouched on failure, then rethrows',
       () async {
     final (container, notifier, boardId) = await boot(fail: true);

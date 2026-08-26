@@ -675,6 +675,8 @@ final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState,
 final cardCommentsProvider = FutureProvider.autoDispose
     .family<List<PlankaComment>, (String, String)>((ref, args) async {
   final notifier = ref.read(boardProvider(args.$1).notifier);
+  notifier._registerCommentProvider(args.$2);
+  ref.onDispose(() => notifier._unregisterCommentProvider(args.$2));
   return notifier.fetchComments(args.$2);
 });
 
@@ -686,6 +688,24 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   PlankaRepo get _repo => PlankaRepo(ref.read(apiProvider));
   PlankaSocket? _socket;
+  final Map<String, int> _activeCommentProviders = {};
+
+  void _registerCommentProvider(String cardId) {
+    _activeCommentProviders.update(
+      cardId,
+      (count) => count + 1,
+      ifAbsent: () => 1,
+    );
+  }
+
+  void _unregisterCommentProvider(String cardId) {
+    final count = _activeCommentProviders[cardId];
+    if (count == null || count <= 1) {
+      _activeCommentProviders.remove(cardId);
+    } else {
+      _activeCommentProviders[cardId] = count - 1;
+    }
+  }
 
   /// Loads the board, serving the last good copy when the network is down
   /// (offline read cache); the socket reconnect refetch heals it once we're
@@ -1008,14 +1028,11 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       if (prev != null && next.needsBaseCustomFields) {
         next = next.withBaseDataFrom(prev);
       }
-      final loadedCardIds = prev?.comments
-              .map((comment) => comment.cardId)
-              .toSet() ??
-          const <String>{};
+      final activeCardIds = _activeCommentProviders.keys.toSet();
       state = AsyncData(next);
       // Comments live outside the board envelope; an open sheet must refold
       // them after the board snapshot is replaced during recovery.
-      for (final cardId in loadedCardIds) {
+      for (final cardId in activeCardIds) {
         ref.invalidate(cardCommentsProvider((boardId, cardId)));
       }
     } on ApiException {
