@@ -141,9 +141,17 @@ class CardSheet extends ConsumerStatefulWidget {
 class _CardSheetState extends ConsumerState<CardSheet> {
   late final CardSheetDismissalGuard _dismissalGuard;
   late final bool _ownsDismissalGuard;
+  final _contentKey = GlobalKey();
 
   String get boardId => widget.boardId;
   String get cardId => widget.cardId;
+
+  bool _isTapInsideSheet(Offset position) {
+    final renderObject = _contentKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    return (topLeft & renderObject.size).contains(position);
+  }
 
   @override
   void initState() {
@@ -300,6 +308,7 @@ class _CardSheetState extends ConsumerState<CardSheet> {
     );
 
     final content = ListView(
+      key: _contentKey,
       controller: widget.scrollController,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
@@ -372,6 +381,7 @@ class _CardSheetState extends ConsumerState<CardSheet> {
               guardMutation(context, notifier.renameCard(cardId, name)),
           onDescriptionChanged: (desc) =>
               guardMutation(context, notifier.setDescription(cardId, desc)),
+          isTapInsideSheet: _isTapInsideSheet,
           dismissalGuard: _dismissalGuard,
         ),
         CardDueDateSection(

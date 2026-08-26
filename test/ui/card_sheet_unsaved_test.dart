@@ -175,10 +175,30 @@ void main() {
       find.byKey(ValueKey('desc-$_cardId')),
       'Changed description',
     );
-    await tester.tap(find.text('Stopwatch'));
-    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Stopwatch')),
+    );
+    await gesture.up();
 
     expect(notifier.calls, [('setDescription', 'Changed description')]);
+  });
+
+  testWidgets('a scrim tap spanning a frame still prompts', (tester) async {
+    await openSheet(tester);
+
+    await tester.tap(find.text('Add a description…'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(ValueKey('desc-$_cardId')),
+      'Changed description',
+    );
+    final gesture = await tester.startGesture(const Offset(12, 40));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    await expectDiscardDialog(tester);
+    expect(notifier.calls, isEmpty);
   });
 
   testWidgets('custom field text is protected from barrier dismissal', (

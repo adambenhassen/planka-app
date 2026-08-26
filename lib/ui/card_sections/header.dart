@@ -11,12 +11,14 @@ class CardHeaderSection extends StatefulWidget {
     required this.card,
     required this.onRename,
     required this.onDescriptionChanged,
+    this.isTapInsideSheet,
     this.dismissalGuard,
   });
 
   final PlankaCard card;
   final ValueChanged<String> onRename;
   final ValueChanged<String> onDescriptionChanged;
+  final bool Function(Offset position)? isTapInsideSheet;
   final CardSheetDismissalGuard? dismissalGuard;
 
   @override
@@ -174,14 +176,10 @@ class _CardHeaderSectionState extends State<CardHeaderSection> {
               controller: _descriptionController,
               focusNode: _descriptionFocus,
               autofocus: true,
-              onTapOutside: (_) {
-                // Give the sheet's route-level dismissal guard first chance
-                // to inspect the dirty editor before blurring it.
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && _descriptionFocus.hasFocus) {
-                    FocusManager.instance.primaryFocus?.unfocus();
-                  }
-                });
+              onTapOutside: (event) {
+                if (widget.isTapInsideSheet?.call(event.position) ?? true) {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                }
               },
               maxLines: null,
               minLines: 2,
