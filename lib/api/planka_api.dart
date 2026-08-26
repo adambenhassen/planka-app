@@ -65,6 +65,17 @@ Map<String, String> imageAuthHeaders(String token) =>
 String bearerAuth(String token) => 'Bearer $token';
 
 class PlankaApi {
+  /// A self-hosted Planka over a home network or VPN can accept the TCP
+  /// handshake and then never send a byte; an unbounded client sits there
+  /// forever, and on the login screen that is a spinner with no way back.
+  /// Every request through this client therefore gets a finite connect bound.
+  static const Duration connectTimeout = Duration(seconds: 10);
+
+  /// The receive bound is an *idle* bound, not a total transfer deadline: it
+  /// fires only when no bytes arrive for the whole window, so a large
+  /// attachment over a poor connection that keeps making progress survives.
+  static const Duration receiveTimeout = Duration(seconds: 10);
+
   final String serverUrl;
   String? token;
   late final Dio dio;
@@ -73,7 +84,11 @@ class PlankaApi {
   final void Function()? onUnauthorized;
 
   PlankaApi(this.serverUrl, this.token, {this.onUnauthorized}) {
-    dio = Dio(BaseOptions(baseUrl: '$serverUrl/api'));
+    dio = Dio(BaseOptions(
+      baseUrl: '$serverUrl/api',
+      connectTimeout: connectTimeout,
+      receiveTimeout: receiveTimeout,
+    ));
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
         final t = token;
