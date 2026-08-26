@@ -32,6 +32,12 @@ class FakeBoardNotifier extends BoardNotifier {
       calls.add(('createComment', text));
 
   @override
+  Future<List<PlankaComment>> fetchComments(String cardId) async {
+    calls.add(('fetchComments', cardId));
+    return const [];
+  }
+
+  @override
   Future<void> toggleLabel(String cardId, String labelId) async =>
       calls.add(('toggleLabel', labelId));
 }
@@ -111,6 +117,8 @@ void main() {
 
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
+
+    expect(notifier.calls, contains(('fetchComments', cardId)));
 
     // Title rendered in editable field.
     expect(find.widgetWithText(TextFormField, 'Fixture card'), findsOneWidget);

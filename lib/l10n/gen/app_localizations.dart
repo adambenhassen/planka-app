@@ -862,6 +862,12 @@ abstract class AppLocalizations {
   /// **'Delete comment?'**
   String get commentDeleteTitle;
 
+  /// Shown in the comments section when its request fails
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load comments'**
+  String get commentsLoadError;
+
   /// Shown in the activity section when its request failed
   ///
   /// In en, this message translates to:

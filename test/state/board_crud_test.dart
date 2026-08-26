@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -23,11 +24,32 @@ class _FakeApi extends PlankaApi {
   final List<String> getPaths = [];
   final List<String> patchPaths = [];
   final List<Map<String, dynamic>> patchBodies = [];
+  Completer<Envelope>? commentsResponse;
+  Envelope? commentsEnvelope;
+  List<Map<String, dynamic>>? commentsItems;
 
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     getCalls++;
     getPaths.add(path);
+    if (path.endsWith('/comments')) {
+      final pending = commentsResponse;
+      if (pending != null) return pending.future;
+      final envelope = commentsEnvelope;
+      if (envelope != null) return envelope;
+      final cardId = path.split('/')[2];
+      return Envelope.parse({
+        'items': commentsItems ??
+            [
+              {
+                'id': 'c-server',
+                'cardId': cardId,
+                'userId': 'u1',
+                'text': 'from server',
+              },
+            ],
+      });
+    }
     final listCards = RegExp(r'^/lists/(.+)/cards$').firstMatch(path);
     if (listCards != null) {
       return Envelope.parse({
@@ -104,9 +126,11 @@ class _SocketlessNotifier extends BoardNotifier {
 Future<(ProviderContainer, BoardNotifier, String)> boot({
   bool fail = false,
   BoardState Function(BoardState)? seed,
+  _FakeApi? api,
 }) async {
+  final client = api ?? _FakeApi(fail: fail);
   final container = ProviderContainer(overrides: [
-    apiProvider.overrideWithValue(_FakeApi(fail: fail)),
+    apiProvider.overrideWithValue(client),
     boardProvider.overrideWith2((arg) => _SocketlessNotifier(arg, seed: seed)),
   ]);
   final boardId = _fixture()['item']['id'] as String;
@@ -386,6 +410,224 @@ void main() {
     final s1 = container.read(boardProvider(boardId)).value!;
     expect(s1.cards[cardId]!.commentsTotal, 2);
     expect(s1.comments.map((c) => c.cardId), contains(cardId));
+  });
+
+  test('fetchComments populates an empty card from the server', () async {
+    final (container, notifier, boardId) = await boot();
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+
+    await notifier.fetchComments(cardId);
+
+    final s = container.read(boardProvider(boardId)).value!;
+    expect((container.read(apiProvider) as _FakeApi).getPaths,
+        contains('/cards/$cardId/comments'));
+    expect(s.commentsOf(cardId).map((c) => c.id), ['c-server']);
+    expect(s.commentsOf(cardId).single.text, 'from server');
+    expect(s.cards[cardId]!.commentsTotal, s.commentsOf(cardId).length);
+  });
+
+  test('fetchComments folds authors supplied by the comments response', () async {
+    final api = _FakeApi();
+    final (container, notifier, boardId) = await boot(api: api);
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+    api.commentsEnvelope = Envelope.parse({
+      'items': [
+        {
+          'id': 'c-removed-user',
+          'cardId': cardId,
+          'userId': 'u-removed',
+          'text': 'from a removed member',
+        },
+      ],
+      'included': {
+        'users': [
+          {'id': 'u-removed', 'name': 'Removed member'},
+        ],
+      },
+    });
+
+    await notifier.fetchComments(cardId);
+
+    final users = container.read(boardProvider(boardId)).value!.users;
+    expect(users.where((user) => user.id == 'u-removed'), hasLength(1));
+    expect(users.singleWhere((user) => user.id == 'u-removed').name,
+        'Removed member');
+  });
+
+  test('fetchComments does not duplicate a comment already in state', () async {
+    final (container, notifier, boardId) = await boot(seed: (s) {
+      final cardId = s.cards.values.first.id;
+      return s.copyWith(comments: [
+        PlankaComment.fromJson({
+          'id': 'c-server',
+          'cardId': cardId,
+          'userId': 'u1',
+          'text': 'from socket',
+        }),
+      ]);
+    });
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+
+    await notifier.fetchComments(cardId);
+
+    final comments =
+        container.read(boardProvider(boardId)).value!.commentsOf(cardId);
+    expect(comments, hasLength(1));
+    expect(comments.single.text, 'from server');
+  });
+
+  test('fetchComments preserves a socket comment that arrives in flight',
+      () async {
+    final api = _FakeApi();
+    final (container, notifier, boardId) = await boot(api: api);
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+    final response = Completer<Envelope>();
+    api.commentsResponse = response;
+
+    final fetch = notifier.fetchComments(cardId);
+    notifier.applySocketEvent(SocketEvent.parse('commentCreate', {
+      'item': {
+        'id': 'c-socket',
+        'cardId': cardId,
+        'userId': 'u1',
+        'text': 'from socket',
+      }
+    }));
+    response.complete(Envelope.parse({
+      'items': [
+        {
+          'id': 'c-server',
+          'cardId': cardId,
+          'userId': 'u1',
+          'text': 'from server',
+        },
+      ],
+    }));
+
+    await fetch;
+
+    final comments =
+        container.read(boardProvider(boardId)).value!.commentsOf(cardId);
+    expect(comments, hasLength(2));
+    expect(comments.map((comment) => comment.id), containsAll(<String>[
+      'c-socket',
+      'c-server',
+    ]));
+  });
+
+  test('fetchComments reconciles the count before a delayed socket echo',
+      () async {
+    final (container, notifier, boardId) = await boot(seed: (s) {
+      final card = s.cards.values.first;
+      final zeroCount =
+          PlankaCard.fromJson({...card.toJson(), 'commentsTotal': 0});
+      return s.copyWith(cards: {...s.cards, card.id: zeroCount});
+    });
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+
+    await notifier.fetchComments(cardId);
+
+    final board = container.read(boardProvider(boardId)).value!;
+    expect(board.commentsOf(cardId), hasLength(1));
+    expect(board.cards[cardId]!.commentsTotal, 1);
+
+    notifier.applySocketEvent(SocketEvent.parse('commentCreate', {
+      'item': {
+        'id': 'c-server',
+        'cardId': cardId,
+        'userId': 'u1',
+        'text': 'from server',
+      }
+    }));
+    expect(
+      container.read(boardProvider(boardId)).value!.cards[cardId]!.commentsTotal,
+      1,
+    );
+  });
+
+  test('refetch preserves comments already loaded for an open card', () async {
+    final api = _FakeApi(fail: true);
+    final (container, notifier, boardId) = await boot(
+      fail: true,
+      api: api,
+      seed: (s) {
+        final cardId = s.cards.values.first.id;
+        return s.copyWith(comments: [
+          PlankaComment.fromJson({
+            'id': 'c-loaded',
+            'cardId': cardId,
+            'userId': 'u1',
+            'text': 'already loaded',
+          }),
+        ]);
+      },
+    );
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+    api.commentsItems = [
+      {
+        'id': 'c-loaded',
+        'cardId': cardId,
+        'userId': 'u1',
+        'text': 'already loaded',
+      },
+    ];
+    final commentsProvider = cardCommentsProvider((boardId, cardId));
+    final subscription = container.listen(commentsProvider, (_, _) {});
+    addTearDown(subscription.close);
+    await container.read(commentsProvider.future);
+
+    await expectLater(notifier.createComment(cardId, 'rejected'),
+        throwsA(isA<ApiException>()));
+
+    await container.read(commentsProvider.future);
+
+    final comments =
+        container.read(boardProvider(boardId)).value!.commentsOf(cardId);
+    expect(comments.map((comment) => comment.id), ['c-loaded']);
+  });
+
+  test('refetch invalidates an open empty comments provider', () async {
+    final api = _FakeApi(fail: true);
+    final (container, notifier, boardId) = await boot(api: api);
+    addTearDown(container.dispose);
+    final cardId =
+        container.read(boardProvider(boardId)).value!.cards.values.first.id;
+    api.commentsItems = [];
+    final commentsProvider = cardCommentsProvider((boardId, cardId));
+    final subscription = container.listen(commentsProvider, (_, _) {});
+    addTearDown(subscription.close);
+    await container.read(commentsProvider.future);
+    expect(container.read(boardProvider(boardId)).value!.commentsOf(cardId),
+        isEmpty);
+
+    api.commentsItems = [
+      {
+        'id': 'c-server',
+        'cardId': cardId,
+        'userId': 'u1',
+        'text': 'from server',
+      },
+    ];
+    final listId =
+        container.read(boardProvider(boardId)).value!.columns.first.id;
+    await expectLater(notifier.renameList(listId, 'rejected'),
+        throwsA(isA<ApiException>()));
+
+    await container.read(commentsProvider.future);
+    expect(container.read(boardProvider(boardId)).value!.commentsOf(cardId),
+        hasLength(1));
   });
 
   test('createComment leaves the count untouched on failure, then rethrows',

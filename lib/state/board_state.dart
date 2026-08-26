@@ -669,6 +669,17 @@ final allUsersProvider = FutureProvider.autoDispose<List<PlankaUser>>(
 final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState,
     String>(BoardNotifier.new);
 
+/// Comments are not part of the board response, so load them when a card
+/// detail sheet opens. The notifier folds the result into the board state so
+/// socket events and comment mutations continue to share one collection.
+final cardCommentsProvider = FutureProvider.autoDispose
+    .family<List<PlankaComment>, (String, String)>((ref, args) async {
+  final notifier = ref.read(boardProvider(args.$1).notifier);
+  notifier._registerCommentProvider(args.$2);
+  ref.onDispose(() => notifier._unregisterCommentProvider(args.$2));
+  return notifier.fetchComments(args.$2);
+});
+
 class BoardNotifier extends AsyncNotifier<BoardState> {
   BoardNotifier(this.boardId);
 
@@ -677,6 +688,24 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   PlankaRepo get _repo => PlankaRepo(ref.read(apiProvider));
   PlankaSocket? _socket;
+  final Map<String, int> _activeCommentProviders = {};
+
+  void _registerCommentProvider(String cardId) {
+    _activeCommentProviders.update(
+      cardId,
+      (count) => count + 1,
+      ifAbsent: () => 1,
+    );
+  }
+
+  void _unregisterCommentProvider(String cardId) {
+    final count = _activeCommentProviders[cardId];
+    if (count == null || count <= 1) {
+      _activeCommentProviders.remove(cardId);
+    } else {
+      _activeCommentProviders[cardId] = count - 1;
+    }
+  }
 
   /// Loads the board, serving the last good copy when the network is down
   /// (offline read cache); the socket reconnect refetch heals it once we're
@@ -999,7 +1028,13 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       if (prev != null && next.needsBaseCustomFields) {
         next = next.withBaseDataFrom(prev);
       }
+      final activeCardIds = _activeCommentProviders.keys.toSet();
       state = AsyncData(next);
+      // Comments live outside the board envelope; an open sheet must refold
+      // them after the board snapshot is replaced during recovery.
+      for (final cardId in activeCardIds) {
+        ref.invalidate(cardCommentsProvider((boardId, cardId)));
+      }
     } on ApiException {
       // Keep current state; next socket event or user retry will heal it.
     }
@@ -1810,6 +1845,54 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       // move it exactly once.
       applyCommentCreate,
     );
+  }
+
+  /// Loads a card's comments and merges them into the current board snapshot.
+  /// The merge is against the state that exists when the request answers, so a
+  /// socket comment arriving while the request is in flight is preserved. The
+  /// id-based upsert also folds the REST row and a socket row into one item.
+  Future<List<PlankaComment>> fetchComments(String cardId) async {
+    final env = await _repo.comments(cardId);
+    final fetched = <PlankaComment>[];
+    final rows = env.items.isNotEmpty
+        ? env.items
+        : env.included.comments.map((comment) => comment.toJson()).toList();
+    for (final row in rows) {
+      final comment = PlankaComment.fromJson(row);
+      if (comment.cardId != cardId) continue;
+      if (!fetched.any((existing) => existing.id == comment.id)) {
+        fetched.add(comment);
+      }
+    }
+
+    final current = state.value;
+    if (current == null) return fetched;
+    var users = current.users;
+    for (final user in env.included.users) {
+      users = _upsert(users, user, (u) => u.id);
+    }
+    var comments = current.comments;
+    for (final comment in fetched) {
+      if (current.deletedCommentIds.contains(comment.id)) continue;
+      comments = _upsert(comments, comment, (c) => c.id);
+    }
+    var cards = current.cards;
+    final card = cards[cardId];
+    if (card != null) {
+      final loadedCount = comments.where((c) => c.cardId == cardId).length;
+      if (loadedCount > (card.commentsTotal ?? 0)) {
+        cards = {
+          ...cards,
+          cardId: _mergeCard(card, {'commentsTotal': loadedCount}),
+        };
+      }
+    }
+    state = AsyncData(current.copyWith(
+      comments: comments,
+      users: users,
+      cards: cards,
+    ));
+    return fetched;
   }
 
   Future<void> deleteComment(String commentId) async {

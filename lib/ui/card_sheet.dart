@@ -120,6 +120,7 @@ class CardSheet extends ConsumerWidget {
     final account = ref.watch(currentAccountProvider);
     final cardTaskLists = state.taskListsOf(cardId);
     final comments = state.commentsOf(cardId);
+    final commentsLoad = ref.watch(cardCommentsProvider((boardId, cardId)));
 
     Widget section(String title, Widget child) => Padding(
           padding: const EdgeInsets.only(top: 16),
@@ -321,14 +322,24 @@ class CardSheet extends ConsumerWidget {
         ),
         section(
           l10n.sectionComments,
-          CardCommentsSection(
-            comments: comments,
-            users: state.users,
-            currentUserId: account?.userId ?? '',
-            onSend: (text) => guardMutation(context, notifier.createComment(cardId, text)),
-            onEdit: (id, text) =>
-                guardMutation(context, notifier.editComment(id, text)),
-            onDelete: (id) => guardMutation(context, notifier.deleteComment(id)),
+          commentsLoad.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.all(8),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (_, _) => Text(l10n.commentsLoadError,
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            data: (_) => CardCommentsSection(
+              comments: comments,
+              users: state.users,
+              currentUserId: account?.userId ?? '',
+              onSend: (text) =>
+                  guardMutation(context, notifier.createComment(cardId, text)),
+              onEdit: (id, text) =>
+                  guardMutation(context, notifier.editComment(id, text)),
+              onDelete: (id) =>
+                  guardMutation(context, notifier.deleteComment(id)),
+            ),
           ),
         ),
         section(

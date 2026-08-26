@@ -404,6 +404,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commentDeleteTitle => 'Delete comment?';
 
   @override
+  String get commentsLoadError => 'Could not load comments';
+
+  @override
   String get activityLoadError => 'Could not load activity';
 
   @override
