@@ -174,6 +174,15 @@ class _CardHeaderSectionState extends State<CardHeaderSection> {
               controller: _descriptionController,
               focusNode: _descriptionFocus,
               autofocus: true,
+              onTapOutside: (_) {
+                // Give the sheet's route-level dismissal guard first chance
+                // to inspect the dirty editor before blurring it.
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && _descriptionFocus.hasFocus) {
+                    FocusManager.instance.primaryFocus?.unfocus();
+                  }
+                });
+              },
               maxLines: null,
               minLines: 2,
               decoration: InputDecoration(

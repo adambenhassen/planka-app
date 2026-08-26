@@ -166,6 +166,21 @@ void main() {
     expect(notifier.calls, isEmpty);
   });
 
+  testWidgets('tapping outside the description commits it', (tester) async {
+    await openSheet(tester);
+
+    await tester.tap(find.text('Add a description…'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(ValueKey('desc-$_cardId')),
+      'Changed description',
+    );
+    await tester.tap(find.text('Stopwatch'));
+    await tester.pumpAndSettle();
+
+    expect(notifier.calls, [('setDescription', 'Changed description')]);
+  });
+
   testWidgets('custom field text is protected from barrier dismissal', (
     tester,
   ) async {
