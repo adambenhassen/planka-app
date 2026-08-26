@@ -74,6 +74,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// cancel racing an in-flight submit still ends in a signed-in session.
   int _pendingEpoch = 0;
 
+  /// True from the moment verification returns a real access token until the
+  /// resulting sign-in has fully finished (profile fetch, account upsert,
+  /// current-account selection). While it is true the step is "accepted and
+  /// finalizing": the pending token has been spent, the screen stays on the
+  /// code step with its spinner, and Cancel must be inert. It is what keeps a
+  /// stale Cancel callback captured before acceptance from tearing down an
+  /// already-accepted session and from swallowing the error an in-flight
+  /// finalization throws.
+  bool _finalizing = false;
+
   /// Drops the pending token and everything that could still spend it. Called
   /// on every exit from the code step — success, expiry, cancel and dispose.
   void _clearPending() {
@@ -133,17 +143,39 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // A cancel dispatched in the same frame as the submit gets here. The
       // request cannot be unsent, but a cancelled step must not sign anyone in.
       if (!mounted || _pendingEpoch != epoch) return;
-      // Spent: drop it before signIn can persist anything, then finish exactly
-      // as a password-only login does.
-      _clearPending();
-      // Re-sample: that teardown was ours, not a cancel. Without this the
-      // generic catch below reads its own bump as "the step went away" and
-      // swallows anything signIn throws — a spent code, back on the
-      // credentials screen, and no word of why.
-      epoch = _pendingEpoch;
+      // Spent: a real access token is now in hand, so the step is accepted and
+      // finalizing. Keep the pending fields (and the code step) alive through
+      // the finalization — clearing them now would flip the screen back to
+      // credentials while signIn is still running and would make a Cancel
+      // landing in that window look like a real teardown. The token itself is
+      // still never persisted from here; signIn persists only the full access
+      // token.
       _codeCtrl.clear();
-      await ref.read(currentAccountProvider.notifier).signIn(api, serverUrl);
-      if (mounted) context.go('/projects');
+      setState(() => _finalizing = true);
+      try {
+        await ref.read(currentAccountProvider.notifier).signIn(api, serverUrl);
+      } catch (e) {
+        // A failure during an accepted finalization must still be surfaced:
+        // the code is spent and the user is entitled to know why the sign-in
+        // did not finish. _cancelCode is inert while finalizing, so no Cancel
+        // can have changed the epoch here — this is always a real failure.
+        // The step is over (the code cannot be retried), so tear it down and
+        // report, exactly as a failed password-only login does.
+        _clearPending();
+        if (mounted) {
+          setState(() => _finalizing = false);
+          showApiError(context, e);
+        }
+        return;
+      }
+      // Finalization is done. Drop the step and the finalizing flag together,
+      // then navigate. A Cancel that arrives after this point is just a cancel
+      // of a finished login — nothing to tear down.
+      _clearPending();
+      if (mounted) {
+        setState(() => _finalizing = false);
+        context.go('/projects');
+      }
     } on TotpCodeRejectedException {
       // The pending token survives a rejected code, so stay on the step and
       // let the user try again — unless that step is already gone, in which
@@ -172,7 +204,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   /// Abandons the second factor and returns to credentials, keeping nothing
   /// from the attempt.
+  ///
+  /// Once verification has accepted a real token, cancellation no longer
+  /// applies: the step is finalizing, and a Cancel landing here — whether from
+  /// a live tap or a stale callback captured before acceptance — must be
+  /// inert. There is no rollback or logout; the accepted flow runs to
+  /// completion on its own.
   void _cancelCode() {
+    if (_finalizing) return;
     setState(() {
       _clearPending();
       _codeCtrl.clear();
@@ -245,7 +284,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   child: Card(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-                      child: _pendingToken == null
+                      child: _pendingToken == null && !_finalizing
                           ? _credentialsStep(l10n, theme, scheme)
                           : _codeStep(l10n, theme, scheme),
                     ),

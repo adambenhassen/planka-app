@@ -53,8 +53,15 @@ class TotpApi extends PlankaApi {
   /// projects screen (a 500, or a keychain write the store rejects).
   bool failProfile = false;
 
+  /// When set, the profile fetch blocks on it — lets a test hold finalization
+  /// open (between an accepted code and the projects screen) long enough to
+  /// poke at the UI from inside the window.
+  Completer<void>? profileGate;
+
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
+    final g = profileGate;
+    if (g != null) await g.future;
     if (failProfile) throw ApiException(500, 'Profile fetch failed');
     return Envelope.parse({
       'item': {'id': 'u1', 'name': 'Demo', 'username': 'demo'}
@@ -403,6 +410,152 @@ void main() {
     expect(find.text('PROJECTS'), findsNothing);
     expectNoPendingTokenStored();
     // Let the error snackbar time out so no timer outlives the test.
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+  });
+
+  testWidgets(
+      'a stale cancel during finalization is inert and login still completes',
+      (tester) async {
+    await reachCodeStep(tester, ['realtok']);
+    final gate = Completer<void>();
+    final profileGate = Completer<void>();
+    api.gate = gate;
+    api.profileGate = profileGate;
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Authentication code'), '123456');
+
+    // Capture the Cancel callback while the step is idle — before
+    // verification resolves. It is the "stale" callback the fix must
+    // neutralize: it reads the step's state at call time, so invoking it
+    // during finalization must reach _cancelCode with _finalizing already set.
+    final staleCancel = tester
+        .widget<TextButton>(find.widgetWithText(TextButton, 'Cancel'))
+        .onPressed;
+    expect(staleCancel, isNotNull);
+
+    await tester.tap(find.text('Verify'));
+    // Hold the verification in flight so the screen is still on the code step.
+    await tester.pump();
+
+    gate.complete();
+    await tester.pump(); // verification accepted; finalization now in flight,
+                         // the profile fetch held by profileGate
+
+    // Vacuity assertion: the captured callback is real and reaches the
+    // handler.
+    staleCancel!();
+    await tester.pump();
+
+    // The cancel demonstrably ran, but the accepted flow is untouched: still
+    // on the code step, visibly finalizing, not back on credentials.
+    expect(find.text('Two-factor authentication'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'Password'), findsNothing);
+    expect(find.text('PROJECTS'), findsNothing);
+    expect(storage.data['accounts'], isNull);
+
+    // Finalization finishes on its own: profile fetch, upsert, select, then
+    // the projects screen with the accepted account selected and stored.
+    profileGate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('PROJECTS'), findsOneWidget);
+    expect(storage.data['accounts'], contains('realtok'));
+    expectNoPendingTokenStored();
+  });
+
+  /// Taps Verify and pumps a bounded number of frames. Used while a gate is
+  /// holding finalization open: the indeterminate spinner animates forever, so
+  /// `pumpAndSettle` (as in [submitCode]) would time out.
+  Future<void> tapVerify(WidgetTester tester) async {
+    await tester.tap(find.text('Verify'));
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+  }
+
+  testWidgets('the code step stays visibly finalizing until the account is stored',
+      (tester) async {
+    await reachCodeStep(tester, ['realtok']);
+    final profileGate = Completer<void>();
+    api.profileGate = profileGate;
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Authentication code'), '123456');
+    await tapVerify(tester);
+
+    // Still on the code step, loading, before the profile fetch, the upsert
+    // and the selection have finished.
+    expect(find.text('Two-factor authentication'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('PROJECTS'), findsNothing);
+    expect(storage.data['accounts'], isNull);
+
+    profileGate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('PROJECTS'), findsOneWidget);
+    expect(storage.data['accounts'], contains('realtok'));
+    expectNoPendingTokenStored();
+  });
+
+  testWidgets('a fresh cancel cannot land while finalization is in flight',
+      (tester) async {
+    await reachCodeStep(tester, ['realtok']);
+    final profileGate = Completer<void>();
+    api.profileGate = profileGate;
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Authentication code'), '123456');
+    await tapVerify(tester);
+
+    // While the accepted flow is finalizing the Cancel button is inert: a
+    // held frame, a queued gesture or an OS back press cannot reach a live
+    // handler, and the handler itself refuses to act.
+    final cancel = tester
+        .widget<TextButton>(find.widgetWithText(TextButton, 'Cancel'))
+        .onPressed;
+    expect(cancel, isNull);
+    expect(find.text('Two-factor authentication'), findsOneWidget);
+    expect(storage.data['accounts'], isNull);
+
+    profileGate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('PROJECTS'), findsOneWidget);
+    expect(storage.data['accounts'], contains('realtok'));
+    expectNoPendingTokenStored();
+  });
+
+  testWidgets('a stale cancel during finalization cannot hide a post-acceptance failure',
+      (tester) async {
+    await reachCodeStep(tester, ['realtok']);
+    final gate = Completer<void>();
+    final profileGate = Completer<void>();
+    api.gate = gate;
+    api.profileGate = profileGate;
+    api.failProfile = true;
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Authentication code'), '123456');
+
+    // Stale Cancel, captured while the step is idle, before finalization.
+    final staleCancel = tester
+        .widget<TextButton>(find.widgetWithText(TextButton, 'Cancel'))
+        .onPressed;
+    expect(staleCancel, isNotNull);
+
+    await tester.tap(find.text('Verify'));
+    await tester.pump();
+
+    gate.complete();
+    await tester.pump(); // accepted; the profile fetch is held, about to fail
+
+    staleCancel!(); // vacuity: the callback demonstrably ran
+    await tester.pump();
+
+    profileGate.complete();
+    await tester.pumpAndSettle();
+
+    // The failure of an already-accepted sign-in remains visible: not
+    // swallowed as if the step had been cancelled, not a silent no-op.
+    expect(find.text('Profile fetch failed'), findsOneWidget);
+    expect(find.text('PROJECTS'), findsNothing);
+    expect(storage.data['accounts'], isNull);
+    expectNoPendingTokenStored();
     await tester.pumpAndSettle(const Duration(seconds: 5));
   });
 }
