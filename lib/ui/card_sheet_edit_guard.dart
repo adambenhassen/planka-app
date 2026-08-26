@@ -12,6 +12,8 @@ class CardSheetDismissalGuard {
   NavigatorState? _navigator;
   BuildContext? _context;
   ModalRoute<dynamic>? _route;
+  DraggableScrollableController? _sheetController;
+  ScrollController? _scrollController;
 
   final hasUnsavedChanges = ValueNotifier<bool>(false);
   final _dirtyEditors = <String>{};
@@ -21,6 +23,7 @@ class CardSheetDismissalGuard {
   bool _dismissalRequestPending = false;
   bool _allowNextPop = false;
   bool _suppressBlur = false;
+  _DragPosition? _dragPosition;
 
   bool get shouldCommitOnBlur => !_confirmationPending && !_suppressBlur;
   bool get isDirty => hasUnsavedChanges.value;
@@ -35,6 +38,30 @@ class CardSheetDismissalGuard {
   void detach() {
     _context = null;
     _route = null;
+    _sheetController = null;
+    _scrollController = null;
+    _dragPosition = null;
+  }
+
+  void attachSheetControllers({
+    required DraggableScrollableController sheetController,
+    required ScrollController scrollController,
+  }) {
+    _sheetController = sheetController;
+    _scrollController = scrollController;
+  }
+
+  void captureDragPosition({
+    required double extent,
+    required double scrollOffset,
+  }) {
+    _dragPosition ??= _DragPosition(extent, scrollOffset);
+  }
+
+  void finishDrag() {
+    if (!_dismissalRequestPending && !_confirmationPending) {
+      _dragPosition = null;
+    }
   }
 
   void updateEditor(String id, bool dirty, FocusNode focus, bool focused) {
@@ -60,7 +87,10 @@ class CardSheetDismissalGuard {
   /// Shows the shared discard prompt for an action that will close the sheet.
   /// Returns false when the user keeps editing.
   Future<bool> confirmBeforeAction() async {
-    if (!isDirty) return true;
+    if (!isDirty) {
+      _dragPosition = null;
+      return true;
+    }
     if (_confirmationPending) return false;
     final context = _context;
     if (context == null || !context.mounted) return false;
@@ -76,11 +106,13 @@ class CardSheetDismissalGuard {
     );
     _confirmationPending = false;
     if (discard) {
+      _dragPosition = null;
       _suppressBlur = true;
       _dirtyEditors.clear();
       hasUnsavedChanges.value = false;
     } else {
       _suppressBlur = false;
+      _restoreDragPosition();
       restoreLastFocus();
     }
     return discard;
@@ -125,6 +157,28 @@ class CardSheetDismissalGuard {
 
   void temporarilySuppressBlur(bool suppress) => _suppressBlur = suppress;
 
+  void _restoreDragPosition() {
+    final position = _dragPosition;
+    _dragPosition = null;
+    if (position == null) return;
+
+    final sheetController = _sheetController;
+    if (sheetController?.isAttached == true) {
+      sheetController!.jumpTo(position.extent);
+    }
+
+    final scrollController = _scrollController;
+    if (scrollController?.hasClients == true) {
+      final scrollPosition = scrollController!.position;
+      scrollPosition.jumpTo(
+        position.scrollOffset.clamp(
+          scrollPosition.minScrollExtent,
+          scrollPosition.maxScrollExtent,
+        ),
+      );
+    }
+  }
+
   void restoreLastFocus() {
     final id = _lastFocusedEditor;
     final focus = id == null ? null : _focusNodes[id];
@@ -138,5 +192,15 @@ class CardSheetDismissalGuard {
     hasUnsavedChanges.dispose();
     _dirtyEditors.clear();
     _focusNodes.clear();
+    _sheetController = null;
+    _scrollController = null;
+    _dragPosition = null;
   }
+}
+
+class _DragPosition {
+  const _DragPosition(this.extent, this.scrollOffset);
+
+  final double extent;
+  final double scrollOffset;
 }

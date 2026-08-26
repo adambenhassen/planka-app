@@ -32,28 +32,51 @@ Future<void> showCardSheet(
   final navigator = Navigator.of(context);
   final materialL10n = MaterialLocalizations.of(context);
   final dismissalGuard = CardSheetDismissalGuard(navigator);
+  final sheetController = DraggableScrollableController();
   final route = _GuardedModalBottomSheetRoute(
     dismissalGuard: dismissalGuard,
-    builder: (_) => NotificationListener<DraggableScrollableNotification>(
+    builder: (_) => NotificationListener<Notification>(
       onNotification: (notification) {
-        if (notification.depth == 0 &&
-            notification.extent <= notification.minExtent) {
+        if (notification case ScrollStartNotification(
+          :final depth,
+          :final metrics,
+        ) when depth == 0) {
+          dismissalGuard.captureDragPosition(
+            extent: sheetController.size,
+            scrollOffset: metrics.pixels,
+          );
+        } else if (notification case ScrollEndNotification(
+          :final depth,
+        ) when depth == 0) {
+          dismissalGuard.finishDrag();
+        } else if (notification case DraggableScrollableNotification(
+          :final depth,
+          :final extent,
+          :final minExtent,
+        ) when depth == 0 && extent <= minExtent) {
           dismissalGuard.requestDismiss();
         }
         return false;
       },
       child: DraggableScrollableSheet(
+        controller: sheetController,
         expand: false,
         initialChildSize: 0.9,
         minChildSize: 0.5,
         maxChildSize: 1,
         shouldCloseOnMinExtent: false,
-        builder: (context, scrollController) => CardSheet(
-          boardId: boardId,
-          cardId: cardId,
-          scrollController: scrollController,
-          dismissalGuard: dismissalGuard,
-        ),
+        builder: (context, scrollController) {
+          dismissalGuard.attachSheetControllers(
+            sheetController: sheetController,
+            scrollController: scrollController,
+          );
+          return CardSheet(
+            boardId: boardId,
+            cardId: cardId,
+            scrollController: scrollController,
+            dismissalGuard: dismissalGuard,
+          );
+        },
       ),
     ),
     capturedThemes: InheritedTheme.capture(
@@ -69,7 +92,7 @@ Future<void> showCardSheet(
     enableDrag: false,
     useSafeArea: true,
   );
-  return navigator.push(route).then<void>((_) {});
+  return navigator.push(route).then<void>((_) => sheetController.dispose());
 }
 
 class _GuardedModalBottomSheetRoute extends ModalBottomSheetRoute<dynamic> {

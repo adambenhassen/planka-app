@@ -6,13 +6,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/models.dart';
+import 'package:planka_app/api/planka_socket.dart';
 import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/ui/card_sheet.dart';
 import 'package:planka_app/ui/theme/app_theme.dart';
 
 const _cardId = '1844338625718780953';
+const _groupId = '1844338640356901915';
 const _fieldId = '1844338649919915036';
+const _valueId = '1844338691242198047';
 
 BoardState _board() {
   final board = BoardState.fromEnvelope(
@@ -213,6 +216,29 @@ void main() {
     expect(find.byKey(const Key('open-card')), findsOneWidget);
   });
 
+  testWidgets('keep editing restores the sheet after a dirty drag', (
+    tester,
+  ) async {
+    await openSheet(tester);
+    final sheet = find.byType(CardSheet);
+    final initialHeight = tester.getSize(sheet).height;
+    final scrollPosition = tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position;
+    final initialScrollOffset = scrollPosition.pixels;
+    await tester.enterText(find.byType(TextFormField).first, 'Changed title');
+
+    await tester.dragFrom(const Offset(400, 220), const Offset(0, 1000));
+    await tester.pumpAndSettle();
+    await expectDiscardDialog(tester);
+    await tester.tap(find.text('Keep editing'));
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(sheet).height, closeTo(initialHeight, 0.1));
+    expect(scrollPosition.pixels, closeTo(initialScrollOffset, 0.1));
+    expect(find.text('Changed title'), findsOneWidget);
+  });
+
   testWidgets('submitting the description keeps dismissal free of duplicates', (
     tester,
   ) async {
@@ -246,6 +272,59 @@ void main() {
     expect(find.byKey(const Key('open-card')), findsOneWidget);
     expect(find.text('Discard unsaved changes?'), findsNothing);
     expect(notifier.calls, isEmpty);
+  });
+
+  testWidgets('dirty title survives a remote card update', (tester) async {
+    await openSheet(tester);
+    await tester.enterText(find.byType(TextFormField).first, 'Local title');
+
+    notifier.applySocketEvent(
+      SocketEvent.parse('cardUpdate', {
+        'item': {'id': _cardId, 'name': 'Remote title'},
+      }),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Local title'), findsOneWidget);
+    expect(find.text('Remote title'), findsNothing);
+    expect(notifier.calls, isEmpty);
+
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(notifier.calls, [('renameCard', 'Local title')]);
+  });
+
+  testWidgets('dirty custom field survives a remote board update', (
+    tester,
+  ) async {
+    await openSheet(tester);
+    await tester.enterText(
+      find.byKey(ValueKey('custom-field-$_fieldId')),
+      'Local value',
+    );
+
+    notifier.applySocketEvent(
+      SocketEvent.parse('customFieldValueUpdate', {
+        'item': {
+          'id': _valueId,
+          'cardId': _cardId,
+          'customFieldGroupId': _groupId,
+          'customFieldId': _fieldId,
+          'content': 'Remote value',
+        },
+      }),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Local value'), findsOneWidget);
+    expect(find.text('Remote value'), findsNothing);
+    expect(notifier.calls, isEmpty);
+
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(notifier.calls, [
+      ('setCustomFieldValue', (_groupId, _fieldId, 'Local value')),
+    ]);
   });
 
   testWidgets(
