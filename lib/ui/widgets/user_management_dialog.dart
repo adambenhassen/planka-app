@@ -5,6 +5,7 @@ import '../../api/models.dart';
 import '../../api/repositories.dart';
 import '../../auth/auth_providers.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../state/board_state.dart';
 import '../../state/current_user_state.dart';
 import '../error_handling.dart';
 import 'confirm_dialog.dart';
@@ -26,9 +27,8 @@ Future<void> showUserManagementDialog(BuildContext context) => showDialog(
     );
 
 /// Admin-only user management: list all users, change role, deactivate/
-/// reactivate, delete, and add new users. There's no socket feed for the
-/// users list, so this refetches after every mutation (same fetch-on-open
-/// pattern as project_managers_dialog).
+/// reactivate, delete, and add new users. The shared user-room feed updates the
+/// list while it is open; mutations still refetch to confirm server truth.
 class _UserManagementDialog extends ConsumerStatefulWidget {
   const _UserManagementDialog();
 
@@ -38,33 +38,11 @@ class _UserManagementDialog extends ConsumerStatefulWidget {
 }
 
 class _UserManagementDialogState extends ConsumerState<_UserManagementDialog> {
-  List<PlankaUser>? _users;
-  Object? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final env = await PlankaRepo(ref.read(apiProvider)).users();
-      if (!mounted) return;
-      setState(() {
-        _users = env.items.map(PlankaUser.fromJson).toList();
-        _error = null;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e);
-    }
-  }
-
   Future<void> _mutate(Future<void> Function(PlankaRepo repo) run) async {
     try {
       await run(PlankaRepo(ref.read(apiProvider)));
-      await _load();
+      ref.invalidate(allUsersProvider);
+      await ref.read(allUsersProvider.future);
     } catch (e) {
       if (mounted) showApiError(context, e);
     }
@@ -74,45 +52,45 @@ class _UserManagementDialogState extends ConsumerState<_UserManagementDialog> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final selfId = ref.watch(currentUserProvider).value?.id;
+    final users = ref.watch(allUsersProvider);
 
     return AlertDialog(
       title: Text(l10n.manageUsersTitle),
       content: SizedBox(
         width: 420,
         height: 480,
-        child: _error != null
-            ? Center(child: Text('$_error'))
-            : _users == null
-                ? const Center(child: CircularProgressIndicator())
-                : ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final u in _users!)
-                        _UserTile(
-                          user: u,
-                          isSelf: u.id == selfId,
-                          onChangeRole: (role) => _mutate(
-                              (repo) => repo.updateUser(u.id, {'role': role})),
-                          onToggleDeactivated: () => _mutate((repo) =>
-                              repo.updateUser(u.id,
-                                  {'isDeactivated': u.isDeactivated != true})),
-                          onDelete: () async {
-                            final ok = await confirmDialog(context,
-                                title: l10n.userDeleteTitle,
-                                message: l10n.userDeleteMessage(u.name),
-                                confirmLabel: l10n.actionDelete);
-                            if (!ok || !context.mounted) return;
-                            await _mutate((repo) => repo.deleteUser(u.id));
-                          },
-                        ),
-                      const Divider(),
-                      TextButton.icon(
-                        icon: const Icon(Icons.person_add_alt),
-                        label: Text(l10n.userAdd),
-                        onPressed: () => _showAddUserDialog(context),
-                      ),
-                    ],
-                  ),
+        child: users.when(
+          error: (error, _) => Center(child: Text('$error')),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          data: (users) => ListView(
+            shrinkWrap: true,
+            children: [
+              for (final u in users)
+                _UserTile(
+                  user: u,
+                  isSelf: u.id == selfId,
+                  onChangeRole: (role) => _mutate(
+                      (repo) => repo.updateUser(u.id, {'role': role})),
+                  onToggleDeactivated: () => _mutate((repo) => repo.updateUser(
+                      u.id, {'isDeactivated': u.isDeactivated != true})),
+                  onDelete: () async {
+                    final ok = await confirmDialog(context,
+                        title: l10n.userDeleteTitle,
+                        message: l10n.userDeleteMessage(u.name),
+                        confirmLabel: l10n.actionDelete);
+                    if (!ok || !context.mounted) return;
+                    await _mutate((repo) => repo.deleteUser(u.id));
+                  },
+                ),
+              const Divider(),
+              TextButton.icon(
+                icon: const Icon(Icons.person_add_alt),
+                label: Text(l10n.userAdd),
+                onPressed: () => _showAddUserDialog(context),
+              ),
+            ],
+          ),
+        ),
       ),
       actions: [
         TextButton(

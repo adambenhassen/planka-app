@@ -67,4 +67,20 @@ void main() {
     // baseCustomField* family of its own.
     expect(kPlankaSocketEvents, isNot(contains('baseCustomFieldCreate')));
   });
+
+  test('event name list covers project and user-room surfaces', () {
+    for (final family in [
+      'project',
+      'board',
+      'projectManager',
+      'backgroundImage',
+      'user',
+    ]) {
+      expect(kPlankaSocketEvents, contains('${family}Create'));
+      expect(kPlankaSocketEvents, contains('${family}Delete'));
+    }
+    expect(kPlankaSocketEvents, contains('projectUpdate'));
+    expect(kPlankaSocketEvents, contains('boardUpdate'));
+    expect(kPlankaSocketEvents, contains('userUpdate'));
+  });
 }

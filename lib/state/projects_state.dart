@@ -1,11 +1,16 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/envelope.dart';
 import '../api/models.dart';
+import '../api/planka_socket.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
 import 'envelope_cache.dart';
 import 'positions.dart';
+import 'user_socket.dart';
 
 /// The projects list plus the boards nested under them, translated out of the
 /// raw API envelope so the UI consumes domain types rather than dynamic maps.
@@ -56,6 +61,309 @@ class ProjectsView {
           .where((f) => f.baseCustomFieldGroupId == baseGroupId)
           .toList()
         ..sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
+
+  ProjectsView copyWith({
+    List<PlankaProject>? projects,
+    List<PlankaBoard>? boards,
+    List<PlankaBackgroundImage>? backgroundImages,
+    List<PlankaProjectManager>? managers,
+    List<PlankaUser>? users,
+    List<PlankaBaseCustomFieldGroup>? baseCustomFieldGroups,
+    List<PlankaCustomField>? customFields,
+  }) =>
+      ProjectsView(
+        projects: projects ?? this.projects,
+        boards: boards ?? this.boards,
+        backgroundImages: backgroundImages ?? this.backgroundImages,
+        managers: managers ?? this.managers,
+        users: users ?? this.users,
+        baseCustomFieldGroups:
+            baseCustomFieldGroups ?? this.baseCustomFieldGroups,
+        customFields: customFields ?? this.customFields,
+      );
+}
+
+/// Events delivered on the signed-in user's room that can change the projects
+/// response or the user list. The room is shared with open boards, so the
+/// state consumers each filter this same stream to their own surface.
+const kProjectsUserRoomEvents = {
+  'projectCreate',
+  'projectUpdate',
+  'projectDelete',
+  'boardCreate',
+  'boardUpdate',
+  'boardDelete',
+  'projectManagerCreate',
+  'projectManagerDelete',
+  'backgroundImageCreate',
+  'backgroundImageDelete',
+  'userCreate',
+  'userUpdate',
+  'userDelete',
+  'baseCustomFieldGroupCreate',
+  'baseCustomFieldGroupUpdate',
+  'baseCustomFieldGroupDelete',
+  'customFieldCreate',
+  'customFieldUpdate',
+  'customFieldDelete',
+};
+
+List<T> _upsertProjectRow<T>(
+    List<T> rows, T row, String Function(T row) idOf) {
+  final index = rows.indexWhere((existing) => idOf(existing) == idOf(row));
+  if (index < 0) return [...rows, row];
+  final next = [...rows];
+  next[index] = row;
+  return next;
+}
+
+PlankaProject? _projectFromEvent(ProjectsView view, Map<String, dynamic> item) {
+  final id = item['id'];
+  if (id is! String) return null;
+  final existing = view.projects.where((p) => p.id == id).firstOrNull;
+  return PlankaProject.fromJson({
+    if (existing != null) ...existing.toJson(),
+    ...item,
+  });
+}
+
+PlankaBoard? _boardFromEvent(ProjectsView view, Map<String, dynamic> item) {
+  final id = item['id'];
+  if (id is! String) return null;
+  final existing = view.boards.where((b) => b.id == id).firstOrNull;
+  return PlankaBoard.fromJson({
+    if (existing != null) ...existing.toJson(),
+    ...item,
+  });
+}
+
+PlankaProjectManager? _managerFromEvent(
+    ProjectsView view, Map<String, dynamic> item) {
+  final id = item['id'];
+  if (id is! String) return null;
+  final existing = view.managers.where((m) => m.id == id).firstOrNull;
+  return PlankaProjectManager.fromJson({
+    if (existing != null) ...existing.toJson(),
+    ...item,
+  });
+}
+
+PlankaBackgroundImage? _backgroundImageFromEvent(
+    ProjectsView view, Map<String, dynamic> item) {
+  final id = item['id'];
+  if (id is! String) return null;
+  final existing =
+      view.backgroundImages.where((image) => image.id == id).firstOrNull;
+  return PlankaBackgroundImage.fromJson({
+    if (existing != null) ...existing.toJson(),
+    ...item,
+  });
+}
+
+PlankaUser? _userFromEvent(ProjectsView view, Map<String, dynamic> item) {
+  final id = item['id'];
+  if (id is! String) return null;
+  final existing = view.users.where((u) => u.id == id).firstOrNull;
+  return PlankaUser.fromJson({
+    if (existing != null) ...existing.toJson(),
+    ...item,
+  });
+}
+
+PlankaBaseCustomFieldGroup? _baseGroupFromEvent(
+    ProjectsView view, Map<String, dynamic> item) {
+  final id = item['id'];
+  if (id is! String) return null;
+  final existing = view.baseCustomFieldGroups
+      .where((group) => group.id == id)
+      .firstOrNull;
+  return PlankaBaseCustomFieldGroup.fromJson({
+    if (existing != null) ...existing.toJson(),
+    ...item,
+  });
+}
+
+PlankaCustomField? _customFieldFromEvent(
+    ProjectsView view, Map<String, dynamic> item) {
+  final id = item['id'];
+  if (id is! String) return null;
+  final existing = view.customFields.where((field) => field.id == id).firstOrNull;
+  return PlankaCustomField.fromJson({
+    if (existing != null) ...existing.toJson(),
+    ...item,
+  });
+}
+
+/// Folds one user-room event into the currently visible projects response.
+/// Unknown creates are deliberately ignored: a user-room event is not proof
+/// that the signed-in account can read the referenced project. The notifier
+/// follows every event with a fresh projects request, which is authoritative.
+ProjectsView applyProjectsEvent(ProjectsView view, SocketEvent event) {
+  final item = event.data.item;
+  final id = item['id'];
+  switch (event.name) {
+    case 'projectCreate':
+      // A create payload alone cannot prove that this account can read the
+      // project. The notifier's fresh GET adds it only when the server does.
+      return view;
+    case 'projectUpdate':
+      if (id is! String || !view.projects.any((p) => p.id == id)) return view;
+      final project = _projectFromEvent(view, item);
+      return project == null
+          ? view
+          : view.copyWith(
+              projects: _upsertProjectRow(view.projects, project, (p) => p.id));
+    case 'projectDelete':
+      if (id is! String) return view;
+      final project = view.projects.where((p) => p.id == id).firstOrNull;
+      if (project == null) return view;
+      final removedBaseIds = view.baseCustomFieldGroups
+          .where((group) => group.projectId == id)
+          .map((group) => group.id)
+          .toSet();
+      return view.copyWith(
+        projects: view.projects.where((p) => p.id != id).toList(),
+        boards: view.boards.where((board) => board.projectId != id).toList(),
+        managers:
+            view.managers.where((manager) => manager.projectId != id).toList(),
+        backgroundImages: project.backgroundImageId == null
+            ? view.backgroundImages
+            : view.backgroundImages
+                .where((image) => image.id != project.backgroundImageId)
+                .toList(),
+        baseCustomFieldGroups: view.baseCustomFieldGroups
+            .where((group) => group.projectId != id)
+            .toList(),
+        customFields: view.customFields
+            .where((field) =>
+                field.baseCustomFieldGroupId == null ||
+                !removedBaseIds.contains(field.baseCustomFieldGroupId))
+            .toList(),
+      );
+    case 'boardCreate':
+      final projectId = item['projectId'];
+      if (projectId is! String ||
+          !view.projects.any((project) => project.id == projectId)) {
+        return view;
+      }
+      final board = _boardFromEvent(view, item);
+      return board == null
+          ? view
+          : view.copyWith(boards: _upsertProjectRow(view.boards, board, (b) => b.id));
+    case 'boardUpdate':
+      if (id is! String) return view;
+      final existing = view.boards.where((board) => board.id == id).firstOrNull;
+      if (existing == null) return view;
+      final projectId = item['projectId'] ?? existing.projectId;
+      if (projectId is! String ||
+          !view.projects.any((project) => project.id == projectId)) {
+        return view;
+      }
+      final board = _boardFromEvent(view, item);
+      return board == null
+          ? view
+          : view.copyWith(boards: _upsertProjectRow(view.boards, board, (b) => b.id));
+    case 'boardDelete':
+      if (id is! String) return view;
+      return view.copyWith(
+          boards: view.boards.where((board) => board.id != id).toList());
+    case 'projectManagerCreate':
+      final projectId = item['projectId'];
+      if (projectId is! String ||
+          !view.projects.any((project) => project.id == projectId)) {
+        return view;
+      }
+      final manager = _managerFromEvent(view, item);
+      return manager == null
+          ? view
+          : view.copyWith(
+              managers: _upsertProjectRow(view.managers, manager, (m) => m.id));
+    case 'projectManagerDelete':
+      if (id is! String) return view;
+      return view.copyWith(managers: view.managers
+          .where((manager) => manager.id != id)
+          .toList());
+    case 'backgroundImageCreate':
+      final projectId = item['projectId'];
+      final knownImage = view.backgroundImages.any((image) => image.id == id);
+      if (!knownImage &&
+          (projectId is! String ||
+              !view.projects.any((project) => project.id == projectId))) {
+        return view;
+      }
+      final image = _backgroundImageFromEvent(view, item);
+      return image == null
+          ? view
+          : view.copyWith(
+              backgroundImages:
+                  _upsertProjectRow(view.backgroundImages, image, (i) => i.id));
+    case 'backgroundImageDelete':
+      if (id is! String) return view;
+      return view.copyWith(backgroundImages: view.backgroundImages
+          .where((image) => image.id != id)
+          .toList());
+    case 'userUpdate':
+      if (id is! String || !view.users.any((user) => user.id == id)) return view;
+      final user = _userFromEvent(view, item);
+      return user == null
+          ? view
+          : view.copyWith(users: _upsertProjectRow(view.users, user, (u) => u.id));
+    case 'userDelete':
+      if (id is! String) return view;
+      return view.copyWith(
+          users: view.users.where((user) => user.id != id).toList());
+    case 'baseCustomFieldGroupCreate' || 'baseCustomFieldGroupUpdate':
+      final projectId = item['projectId'];
+      final existing = view.baseCustomFieldGroups
+          .where((group) => group.id == id)
+          .firstOrNull;
+      final knownProject = existing?.projectId ?? projectId;
+      if (knownProject is! String ||
+          !view.projects.any((project) => project.id == knownProject)) {
+        return view;
+      }
+      final group = _baseGroupFromEvent(view, item);
+      return group == null
+          ? view
+          : view.copyWith(baseCustomFieldGroups: _upsertProjectRow(
+              view.baseCustomFieldGroups, group, (g) => g.id));
+    case 'baseCustomFieldGroupDelete':
+      if (id is! String) return view;
+      final group = view.baseCustomFieldGroups
+          .where((candidate) => candidate.id == id)
+          .firstOrNull;
+      if (group == null) return view;
+      return view.copyWith(
+        baseCustomFieldGroups: view.baseCustomFieldGroups
+            .where((candidate) => candidate.id != id)
+            .toList(),
+        customFields: view.customFields
+            .where((field) => field.baseCustomFieldGroupId != id)
+            .toList(),
+      );
+    case 'customFieldCreate' || 'customFieldUpdate':
+      final existing = view.customFields
+          .where((field) => field.id == id)
+          .firstOrNull;
+      final baseId = item['baseCustomFieldGroupId'] ??
+          existing?.baseCustomFieldGroupId;
+      if (baseId is! String ||
+          !view.baseCustomFieldGroups.any((group) => group.id == baseId)) {
+        return view;
+      }
+      final field = _customFieldFromEvent(view, item);
+      return field == null
+          ? view
+          : view.copyWith(
+              customFields: _upsertProjectRow(view.customFields, field, (f) => f.id));
+    case 'customFieldDelete':
+      if (id is! String) return view;
+      return view.copyWith(customFields: view.customFields
+          .where((field) => field.id != id)
+          .toList());
+    default:
+      return view;
+  }
 }
 
 final projectsProvider =
@@ -64,11 +372,65 @@ final projectsProvider =
 class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
   PlankaRepo get _repo => PlankaRepo(ref.read(apiProvider));
 
+  StreamSubscription<SocketEvent>? _userEventsSub;
+  StreamSubscription<bool>? _userConnectedSub;
+  var _ready = false;
+  int? _resyncSession;
+  var _resyncRequested = false;
+  var _eventVersion = 0;
+  var _session = 0;
+
   @override
-  Future<ProjectsView> build() {
+  Future<ProjectsView> build() async {
     // Re-fetch when the active account (and thus the API client) changes.
     ref.watch(apiProvider);
-    return _fetch();
+    final userEvents = ref.watch(userEventsProvider);
+    final userConnected = ref.watch(userConnectedProvider);
+    final session = ++_session;
+    _ready = false;
+    _resyncRequested = false;
+    _eventVersion = 0;
+    _userEventsSub?.cancel();
+    _userConnectedSub?.cancel();
+    _userEventsSub = userEvents.listen(
+      (event) => _onUserEvent(session, event),
+      onError: (Object error) => _onUserRoomError(session, error),
+    );
+    _userConnectedSub = userConnected.listen(
+      (connected) {
+        if (connected) {
+          _eventVersion++;
+          _queueResync(session);
+        }
+      },
+    );
+    ref.onDispose(() {
+      _userEventsSub?.cancel();
+      _userConnectedSub?.cancel();
+    });
+
+    try {
+      var version = _eventVersion;
+      final loaded = await _fetch();
+      var view = loaded;
+      // Events can arrive after the listener is attached but before the initial
+      // REST response completes. Fold no stale snapshot into state: reconcile
+      // from the server until the response covers the latest event edge.
+      while (version != _eventVersion) {
+        version = _eventVersion;
+        view = await _fetch(fresh: true);
+      }
+      if (session != _session) return view;
+      _resyncRequested = false;
+      return view;
+    } finally {
+      if (session == _session) {
+        _ready = true;
+        if (_resyncRequested && _resyncSession == null) {
+          unawaited(_drainResync(session));
+        }
+      }
+    }
   }
 
   /// Ordinary list load: serve the last good copy when the network is down
@@ -77,13 +439,16 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
   /// deleted the stale copy (see [_mutate]) — so there is no pre-mutation
   /// value left to serve. A cold start over the same cache directory takes
   /// this same path and therefore never resurrects a reverted list.
-  Future<ProjectsView> _fetch() async {
+  Future<ProjectsView> _fetch({bool fresh = false}) async {
     final accountId = ref.read(currentAccountProvider)?.id;
-    final env = accountId == null
-        ? await _repo.projects()
-        : await ref
-            .read(envelopeCacheProvider)
-            .fetchOrCached('$accountId-projects', _repo.projects);
+    // Initial loads may use the offline cache; reconciliation must bypass it.
+    final env = fresh
+        ? await _freshProjects(accountId)
+        : accountId == null
+            ? await _repo.projects()
+            : await ref
+                .read(envelopeCacheProvider)
+                .fetchOrCached('$accountId-projects', _repo.projects);
     return _view(env);
   }
 
@@ -96,6 +461,72 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
         baseCustomFieldGroups: env.included.baseCustomFieldGroups,
         customFields: env.included.customFields,
       );
+
+  Future<Envelope> _freshProjects(String? accountId) async {
+    final env = await _repo.projects();
+    if (accountId != null) {
+      await ref
+          .read(envelopeCacheProvider)
+          .put('$accountId-projects', env);
+    }
+    return env;
+  }
+
+  void _onUserEvent(int session, SocketEvent event) {
+    if (session != _session ||
+        !kProjectsUserRoomEvents.contains(event.name)) {
+      return;
+    }
+    _eventVersion++;
+    final current = state.value;
+    if (current != null) {
+      final next = applyProjectsEvent(current, event);
+      if (!identical(next, current)) state = AsyncData(next);
+    }
+    _queueResync(session);
+  }
+
+  void _onUserRoomError(int session, Object error) {
+    if (session != _session) return;
+    debugPrint('projects user room error: $error');
+    _eventVersion++;
+    _queueResync(session);
+  }
+
+  void _queueResync(int session) {
+    if (session != _session) return;
+    _resyncRequested = true;
+    if (_ready && _resyncSession == null) unawaited(_drainResync(session));
+  }
+
+  /// Serializes fresh responses and discards one that crossed a newer event.
+  /// Without the version check, a slow GET could resurrect a deleted row.
+  Future<void> _drainResync(int session) async {
+    if (session != _session || !_ready || _resyncSession != null) return;
+    _resyncSession = session;
+    try {
+      while (session == _session && _resyncRequested) {
+        _resyncRequested = false;
+        final version = _eventVersion;
+        try {
+          final view = await _fetch(fresh: true);
+          if (session != _session) return;
+          if (version != _eventVersion) {
+            _resyncRequested = true;
+            continue;
+          }
+          state = AsyncData(view);
+        } on Object catch (error, stackTrace) {
+          debugPrint('projects realtime resync failed: $error\n$stackTrace');
+        }
+      }
+    } finally {
+      if (_resyncSession == session) _resyncSession = null;
+      if (_ready && _resyncRequested && _resyncSession == null) {
+        unawaited(_drainResync(_session));
+      }
+    }
+  }
 
   // ponytail: no optimistic updates here — project/board CRUD is rare, so each
   // mutation awaits the server then refetches the (small) projects payload.

@@ -7,7 +7,12 @@ import 'planka_api.dart';
 
 /// Planka server-push event names (verbatim).
 const kPlankaSocketEvents = [
+  'projectCreate', 'projectUpdate', 'projectDelete',
   'boardUpdate', 'boardDelete',
+  'boardCreate',
+  'projectManagerCreate', 'projectManagerDelete',
+  'backgroundImageCreate', 'backgroundImageDelete',
+  'userCreate', 'userDelete',
   'listCreate', 'listUpdate', 'listDelete', 'listClear',
   'labelCreate', 'labelUpdate', 'labelDelete',
   'cardCreate', 'cardUpdate', 'cardDelete', 'cardsUpdate',
