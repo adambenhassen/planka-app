@@ -64,6 +64,8 @@ jobs:
               --driver=test_driver/screenshots_driver.dart \
               --target=integration_test/screenshots_test.dart \
               -d emulator-5554 \
+              --flavor store \
+              --dart-define=ENABLE_IN_APP_UPDATER=false \
               --dart-define=PLANKA_URL=$PLANKA_URL \
               --dart-define=PLANKA_EMAIL=$PLANKA_EMAIL \
               --dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD
