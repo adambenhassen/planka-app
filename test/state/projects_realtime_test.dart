@@ -62,14 +62,27 @@ class _FakeApi extends PlankaApi {
   var userFailures = 0;
   Completer<void>? projectGate;
   Completer<void>? userGate;
+  Completer<void>? projectRequestStarted;
+  Completer<void>? userRequestStarted;
   var getCalls = 0;
   var projectGetCalls = 0;
   var userGetCalls = 0;
 
+  void signalRequestStarted(Completer<void>? signal) {
+    if (signal != null && !signal.isCompleted) signal.complete();
+  }
+
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     getCalls++;
+    if (path == '/users') {
+      signalRequestStarted(userRequestStarted);
+    } else if (path == '/projects') {
+      signalRequestStarted(projectRequestStarted);
+    }
     final gate = path == '/users' ? userGate : projectGate;
+    final requestedUserName = userName;
+    final requestedProjectName = projectName;
     if (gate != null && !gate.isCompleted) await gate.future;
     if (path == '/users') {
       userGetCalls++;
@@ -80,7 +93,7 @@ class _FakeApi extends PlankaApi {
       if (userError) throw ApiException(503, 'users unavailable');
       return Envelope.parse({
         'items': [
-          {'id': 'u1', 'name': userName, 'role': 'admin'},
+          {'id': 'u1', 'name': requestedUserName, 'role': 'admin'},
           if (includeSecondUser)
             {'id': 'u2', 'name': 'Bob', 'role': 'boardUser'},
         ],
@@ -95,7 +108,7 @@ class _FakeApi extends PlankaApi {
     if (projectError) throw ApiException(503, 'projects unavailable');
     return Envelope.parse({
       'items': [
-        {'id': 'p1', 'name': projectName},
+        {'id': 'p1', 'name': requestedProjectName},
         if (includeSecondProject) {'id': 'p2', 'name': 'Second project'},
       ],
       'included': {
@@ -434,14 +447,23 @@ void main() {
   test('projects resync discards a response crossed by a newer event',
       () async {
     final (container, api, events, connected) = await _boot();
-    api.projectGate = Completer<void>();
+    final firstGate = Completer<void>();
+    api.projectGate = firstGate;
+    api.projectRequestStarted = Completer<void>();
     connected.add(true);
-    await pumpEventQueue();
+    await api.projectRequestStarted!.future;
 
     api.projectName = 'Server after event';
     events.add(_event('projectUpdate', {'id': 'p1', 'name': 'Event name'}));
     await pumpEventQueue();
-    api.projectGate!.complete();
+    final secondGate = Completer<void>();
+    api.projectGate = secondGate;
+    api.projectRequestStarted = Completer<void>();
+    firstGate.complete();
+    await api.projectRequestStarted!.future;
+    expect(container.read(projectsProvider).value!.projects.single.name,
+        'Event name');
+    secondGate.complete();
     await pumpEventQueue();
 
     expect(container.read(projectsProvider).value!.projects.single.name,
@@ -452,14 +474,22 @@ void main() {
   test('all-users refresh discards a response crossed by a newer event',
       () async {
     final (container, api, events, connected) = await _bootUsers();
-    api.userGate = Completer<void>();
+    final firstGate = Completer<void>();
+    api.userGate = firstGate;
+    api.userRequestStarted = Completer<void>();
     connected.add(true);
-    await pumpEventQueue();
+    await api.userRequestStarted!.future;
 
     api.userName = 'Server after event';
     events.add(_event('userUpdate', {'id': 'u1', 'name': 'Event name'}));
     await pumpEventQueue();
-    api.userGate!.complete();
+    final secondGate = Completer<void>();
+    api.userGate = secondGate;
+    api.userRequestStarted = Completer<void>();
+    firstGate.complete();
+    await api.userRequestStarted!.future;
+    expect(container.read(allUsersProvider).value!.single.name, 'Event name');
+    secondGate.complete();
     await pumpEventQueue();
 
     expect(container.read(allUsersProvider).value!.single.name,
