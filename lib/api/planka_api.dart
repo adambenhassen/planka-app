@@ -55,8 +55,8 @@ class TotpPendingTokenExpiredException implements Exception {
 }
 
 /// Planka serves attachment and cover images behind session-cookie auth rather
-/// than the Bearer header the REST API uses. Both image widgets send exactly
-/// these headers — the single source of truth for the download-auth scheme.
+/// than the Bearer header the REST API uses. This helper is the single source
+/// of truth for the download-auth scheme, and every consumer goes through it.
 Map<String, String> imageAuthHeaders(String token) =>
     {'Cookie': 'accessToken=$token'};
 
