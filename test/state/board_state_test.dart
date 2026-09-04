@@ -52,6 +52,63 @@ void main() {
     expect(next.cardsOf(card.listId).first.id, card.id);
   });
 
+  test('labelUpdate with partial payload keeps name and color', () {
+    final s = seed();
+    final label = s.labels.first;
+    final next = applyEvent(
+        s, ev('labelUpdate', {'item': {'id': label.id, 'position': 1.0}}));
+    final updated = next.labels.firstWhere((l) => l.id == label.id);
+    expect(updated.position, 1.0);
+    expect(updated.name, label.name);
+    expect(updated.color, label.color);
+  });
+
+  test('listUpdate with partial payload keeps name and boardId', () {
+    final s = seed();
+    final list = s.columns.first;
+    final next = applyEvent(
+        s, ev('listUpdate', {'item': {'id': list.id, 'position': 1.0}}));
+    final updated = next.lists.firstWhere((l) => l.id == list.id);
+    expect(updated.position, 1.0);
+    expect(updated.name, list.name);
+    expect(updated.boardId, list.boardId);
+    expect(next.columns.first.id, list.id,
+        reason: 'ordering follows the new position');
+  });
+
+  test('taskListUpdate with partial payload keeps name and cardId', () {
+    final s = seed();
+    final taskList = s.taskLists.first;
+    final next = applyEvent(
+        s,
+        ev('taskListUpdate', {
+          'item': {'id': taskList.id, 'position': 1.0}
+        }));
+    final updated = next.taskLists.firstWhere((t) => t.id == taskList.id);
+    expect(updated.position, 1.0);
+    expect(updated.name, taskList.name);
+    expect(updated.cardId, taskList.cardId);
+    expect(next.taskListsOf(taskList.cardId).first.id, taskList.id,
+        reason: 'ordering follows the new position');
+  });
+
+  test('a partial labelUpdate on an unknown row still upserts it', () {
+    final s = seed();
+    const newId = 'label-new';
+    final next = applyEvent(
+        s,
+        ev('labelUpdate', {
+          'item': {
+            'id': newId,
+            'boardId': s.board.id,
+            'name': 'new',
+            'color': 'lagoon-blue',
+            'position': 2.0,
+          }
+        }));
+    expect(next.labels.map((l) => l.id), contains(newId));
+  });
+
   test('cardDelete removes', () {
     final s = seed();
     final id = s.cards.keys.first;
