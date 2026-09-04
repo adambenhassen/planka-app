@@ -423,6 +423,12 @@ T _mergeById<T>(T? existing, Map<String, dynamic> item,
         T Function(Map<String, dynamic>) fromJson) =>
     fromJson(existing == null ? item : {...toJson(existing), ...item});
 
+/// Whether a socket payload carries every key [fromJson] casts to a non-null
+/// value. Reposition siblings only send `{id, position}`; a missed create can
+/// still arrive as a complete `*Update`, which should upsert like `*Create`.
+bool _hasRequiredKeys(Map<String, dynamic> item, List<String> keys) =>
+    keys.every(item.containsKey);
+
 /// The events a board takes off the user's own room. Planka broadcasts changes
 /// to a project's base custom field groups — and to the fields on them — there
 /// rather than to the board room, so a board whose groups are instantiated from
@@ -469,7 +475,10 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
       if (id == null) return s;
       final existingList = s.lists.where((l) => l.id == id).firstOrNull;
       if (existingList == null) {
-        if (event.name == 'listUpdate') return s;
+        if (event.name == 'listUpdate' &&
+            !_hasRequiredKeys(item, const ['boardId'])) {
+          return s;
+        }
         return s.copyWith(
             lists: _upsert(s.lists, PlankaList.fromJson(item), (l) => l.id));
       }
@@ -487,7 +496,10 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
       if (id == null) return s;
       final existingLabel = s.labels.where((l) => l.id == id).firstOrNull;
       if (existingLabel == null) {
-        if (event.name == 'labelUpdate') return s;
+        if (event.name == 'labelUpdate' &&
+            !_hasRequiredKeys(item, const ['boardId', 'color'])) {
+          return s;
+        }
         return s.copyWith(
             labels: _upsert(s.labels, PlankaLabel.fromJson(item), (l) => l.id));
       }
@@ -542,7 +554,10 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
       final existingTaskList =
           s.taskLists.where((t) => t.id == id).firstOrNull;
       if (existingTaskList == null) {
-        if (event.name == 'taskListUpdate') return s;
+        if (event.name == 'taskListUpdate' &&
+            !_hasRequiredKeys(item, const ['cardId', 'name'])) {
+          return s;
+        }
         return s.copyWith(
             taskLists:
                 _upsert(s.taskLists, PlankaTaskList.fromJson(item), (t) => t.id));
@@ -560,7 +575,11 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
       if (id == null) return s;
       final existingTask = s.tasks.where((t) => t.id == id).firstOrNull;
       if (existingTask == null) {
-        if (event.name == 'taskUpdate') return s;
+        if (event.name == 'taskUpdate' &&
+            !_hasRequiredKeys(
+                item, const ['taskListId', 'name', 'isCompleted'])) {
+          return s;
+        }
         return s.copyWith(
             tasks: _upsert(s.tasks, PlankaTask.fromJson(item), (t) => t.id));
       }

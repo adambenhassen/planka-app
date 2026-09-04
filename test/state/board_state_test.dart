@@ -121,6 +121,79 @@ void main() {
     expect(applyEvent(s, ev('taskUpdate', {'item': partial})).tasks, s.tasks);
   });
 
+  test('listUpdate with a full payload upserts an unknown row', () {
+    final s = seed();
+    const unknownId = 'list-new';
+    final next = applyEvent(
+        s,
+        ev('listUpdate', {
+          'item': {
+            'id': unknownId,
+            'boardId': s.board.id,
+            'type': 'active',
+            'name': 'Inbox',
+            'position': 2.0,
+          }
+        }));
+    expect(next.lists.map((l) => l.id), contains(unknownId));
+    expect(next.lists.firstWhere((l) => l.id == unknownId).name, 'Inbox');
+  });
+
+  test('labelUpdate with a full payload upserts an unknown row', () {
+    final s = seed();
+    const unknownId = 'label-new';
+    final next = applyEvent(
+        s,
+        ev('labelUpdate', {
+          'item': {
+            'id': unknownId,
+            'boardId': s.board.id,
+            'name': 'new',
+            'color': 'lagoon-blue',
+            'position': 2.0,
+          }
+        }));
+    expect(next.labels.map((l) => l.id), contains(unknownId));
+    expect(next.labels.firstWhere((l) => l.id == unknownId).color, 'lagoon-blue');
+  });
+
+  test('taskListUpdate with a full payload upserts an unknown row', () {
+    final s = seed();
+    const unknownId = 'tl-new';
+    final cardId = s.cards.keys.first;
+    final next = applyEvent(
+        s,
+        ev('taskListUpdate', {
+          'item': {
+            'id': unknownId,
+            'cardId': cardId,
+            'name': 'Checklist',
+            'position': 2.0,
+          }
+        }));
+    expect(next.taskLists.map((t) => t.id), contains(unknownId));
+    expect(next.taskLists.firstWhere((t) => t.id == unknownId).cardId, cardId);
+  });
+
+  test('taskUpdate with a full payload upserts an unknown row', () {
+    final s = seed();
+    const unknownId = 'task-new';
+    final taskListId = s.taskLists.first.id;
+    final next = applyEvent(
+        s,
+        ev('taskUpdate', {
+          'item': {
+            'id': unknownId,
+            'taskListId': taskListId,
+            'name': 'Do it',
+            'isCompleted': false,
+            'position': 2.0,
+          }
+        }));
+    expect(next.tasks.map((t) => t.id), contains(unknownId));
+    expect(next.tasks.firstWhere((t) => t.id == unknownId).name, 'Do it');
+  });
+
   test('cardDelete removes', () {
     final s = seed();
     final id = s.cards.keys.first;
