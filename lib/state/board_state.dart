@@ -423,6 +423,12 @@ T _mergeById<T>(T? existing, Map<String, dynamic> item,
         T Function(Map<String, dynamic>) fromJson) =>
     fromJson(existing == null ? item : {...toJson(existing), ...item});
 
+/// Whether a socket payload carries every key [fromJson] casts to a non-null
+/// value. Reposition siblings only send `{id, position}`; a missed create can
+/// still arrive as a complete `*Update`, which should upsert like `*Create`.
+bool _hasRequiredKeys(Map<String, dynamic> item, List<String> keys) =>
+    keys.every(item.containsKey);
+
 /// The events a board takes off the user's own room. Planka broadcasts changes
 /// to a project's base custom field groups — and to the fields on them — there
 /// rather than to the board room, so a board whose groups are instantiated from
@@ -466,8 +472,19 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
     case 'boardUpdate':
       return s.copyWith(board: PlankaBoard.fromJson(item));
     case 'listCreate' || 'listUpdate':
-      return s.copyWith(
-          lists: _upsert(s.lists, PlankaList.fromJson(item), (l) => l.id));
+      if (id == null) return s;
+      final existingList = s.lists.where((l) => l.id == id).firstOrNull;
+      if (existingList == null) {
+        if (event.name == 'listUpdate' &&
+            !_hasRequiredKeys(item, const ['boardId'])) {
+          return s;
+        }
+        return s.copyWith(
+            lists: _upsert(s.lists, PlankaList.fromJson(item), (l) => l.id));
+      }
+      final list = _mergeById(existingList, item, (PlankaList l) => l.toJson(),
+          PlankaList.fromJson);
+      return s.copyWith(lists: _upsert(s.lists, list, (l) => l.id));
     case 'listDelete':
       return s.copyWith(lists: s.lists.where((l) => l.id != id).toList());
     case 'listClear':
@@ -476,8 +493,19 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
           if (c.listId != id) c.id: c
       });
     case 'labelCreate' || 'labelUpdate':
-      return s.copyWith(
-          labels: _upsert(s.labels, PlankaLabel.fromJson(item), (l) => l.id));
+      if (id == null) return s;
+      final existingLabel = s.labels.where((l) => l.id == id).firstOrNull;
+      if (existingLabel == null) {
+        if (event.name == 'labelUpdate' &&
+            !_hasRequiredKeys(item, const ['boardId', 'color'])) {
+          return s;
+        }
+        return s.copyWith(
+            labels: _upsert(s.labels, PlankaLabel.fromJson(item), (l) => l.id));
+      }
+      final label = _mergeById(existingLabel, item, (PlankaLabel l) => l.toJson(),
+          PlankaLabel.fromJson);
+      return s.copyWith(labels: _upsert(s.labels, label, (l) => l.id));
     case 'labelDelete':
       return s.copyWith(
         labels: s.labels.where((l) => l.id != id).toList(),
@@ -522,23 +550,44 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
       return s.copyWith(
           cardLabels: s.cardLabels.where((c) => c.id != id).toList());
     case 'taskListCreate' || 'taskListUpdate':
+      if (id == null) return s;
+      final existingTaskList =
+          s.taskLists.where((t) => t.id == id).firstOrNull;
+      if (existingTaskList == null) {
+        if (event.name == 'taskListUpdate' &&
+            !_hasRequiredKeys(item, const ['cardId', 'name'])) {
+          return s;
+        }
+        return s.copyWith(
+            taskLists:
+                _upsert(s.taskLists, PlankaTaskList.fromJson(item), (t) => t.id));
+      }
+      final taskList = _mergeById(existingTaskList, item,
+          (PlankaTaskList t) => t.toJson(), PlankaTaskList.fromJson);
       return s.copyWith(
-          taskLists: _upsert(
-              s.taskLists, PlankaTaskList.fromJson(item), (t) => t.id));
+          taskLists: _upsert(s.taskLists, taskList, (t) => t.id));
     case 'taskListDelete':
       return s.copyWith(
         taskLists: s.taskLists.where((t) => t.id != id).toList(),
         tasks: s.tasks.where((t) => t.taskListId != id).toList(),
       );
     case 'taskCreate' || 'taskUpdate':
-      // Merged like every other upserted row: a reposition can broadcast a
-      // partial payload, which must not blank the assignee or linked card.
-      return s.copyWith(
-          tasks: _upsert(
-              s.tasks,
-              _mergeById(s.tasks.where((t) => t.id == id).firstOrNull, item,
-                  (PlankaTask t) => t.toJson(), PlankaTask.fromJson),
-              (t) => t.id));
+      if (id == null) return s;
+      final existingTask = s.tasks.where((t) => t.id == id).firstOrNull;
+      if (existingTask == null) {
+        if (event.name == 'taskUpdate' &&
+            !_hasRequiredKeys(
+                item, const ['taskListId', 'name', 'isCompleted'])) {
+          return s;
+        }
+        return s.copyWith(
+            tasks: _upsert(s.tasks, PlankaTask.fromJson(item), (t) => t.id));
+      }
+      // A reposition can broadcast a partial payload, which must not blank the
+      // assignee or linked card.
+      final task = _mergeById(existingTask, item, (PlankaTask t) => t.toJson(),
+          PlankaTask.fromJson);
+      return s.copyWith(tasks: _upsert(s.tasks, task, (t) => t.id));
     case 'taskDelete':
       return s.copyWith(tasks: s.tasks.where((t) => t.id != id).toList());
     case 'attachmentCreate' || 'attachmentUpdate':

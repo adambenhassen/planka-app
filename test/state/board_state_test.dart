@@ -52,6 +52,148 @@ void main() {
     expect(next.cardsOf(card.listId).first.id, card.id);
   });
 
+  test('labelUpdate with partial payload keeps name and color', () {
+    final s = seed();
+    final label = s.labels.first;
+    final next = applyEvent(
+        s, ev('labelUpdate', {'item': {'id': label.id, 'position': 1.0}}));
+    final updated = next.labels.firstWhere((l) => l.id == label.id);
+    expect(updated.position, 1.0);
+    expect(updated.name, label.name);
+    expect(updated.color, label.color);
+  });
+
+  test('listUpdate with partial payload keeps name and boardId', () {
+    final s = seed();
+    final list = s.columns.first;
+    final next = applyEvent(
+        s, ev('listUpdate', {'item': {'id': list.id, 'position': 1.0}}));
+    final updated = next.lists.firstWhere((l) => l.id == list.id);
+    expect(updated.position, 1.0);
+    expect(updated.name, list.name);
+    expect(updated.boardId, list.boardId);
+    expect(next.columns.first.id, list.id,
+        reason: 'ordering follows the new position');
+  });
+
+  test('taskListUpdate with partial payload keeps name and cardId', () {
+    final s = seed();
+    final taskList = s.taskLists.first;
+    final next = applyEvent(
+        s,
+        ev('taskListUpdate', {
+          'item': {'id': taskList.id, 'position': 1.0}
+        }));
+    final updated = next.taskLists.firstWhere((t) => t.id == taskList.id);
+    expect(updated.position, 1.0);
+    expect(updated.name, taskList.name);
+    expect(updated.cardId, taskList.cardId);
+    expect(next.taskListsOf(taskList.cardId).first.id, taskList.id,
+        reason: 'ordering follows the new position');
+  });
+
+  test('a partial update on an unknown row is a no-op', () {
+    final s = seed();
+    const unknownId = 'row-new';
+    const partial = {'id': unknownId, 'position': 2.0};
+
+    expect(
+        () => applyEvent(s, ev('labelUpdate', {'item': partial})),
+        returnsNormally);
+    expect(
+        applyEvent(s, ev('labelUpdate', {'item': partial})).labels, s.labels);
+
+    expect(
+        () => applyEvent(s, ev('listUpdate', {'item': partial})),
+        returnsNormally);
+    expect(applyEvent(s, ev('listUpdate', {'item': partial})).lists, s.lists);
+
+    expect(
+        () => applyEvent(s, ev('taskListUpdate', {'item': partial})),
+        returnsNormally);
+    expect(
+        applyEvent(s, ev('taskListUpdate', {'item': partial})).taskLists,
+        s.taskLists);
+
+    expect(
+        () => applyEvent(s, ev('taskUpdate', {'item': partial})),
+        returnsNormally);
+    expect(applyEvent(s, ev('taskUpdate', {'item': partial})).tasks, s.tasks);
+  });
+
+  test('listUpdate with a full payload upserts an unknown row', () {
+    final s = seed();
+    const unknownId = 'list-new';
+    final next = applyEvent(
+        s,
+        ev('listUpdate', {
+          'item': {
+            'id': unknownId,
+            'boardId': s.board.id,
+            'type': 'active',
+            'name': 'Inbox',
+            'position': 2.0,
+          }
+        }));
+    expect(next.lists.map((l) => l.id), contains(unknownId));
+    expect(next.lists.firstWhere((l) => l.id == unknownId).name, 'Inbox');
+  });
+
+  test('labelUpdate with a full payload upserts an unknown row', () {
+    final s = seed();
+    const unknownId = 'label-new';
+    final next = applyEvent(
+        s,
+        ev('labelUpdate', {
+          'item': {
+            'id': unknownId,
+            'boardId': s.board.id,
+            'name': 'new',
+            'color': 'lagoon-blue',
+            'position': 2.0,
+          }
+        }));
+    expect(next.labels.map((l) => l.id), contains(unknownId));
+    expect(next.labels.firstWhere((l) => l.id == unknownId).color, 'lagoon-blue');
+  });
+
+  test('taskListUpdate with a full payload upserts an unknown row', () {
+    final s = seed();
+    const unknownId = 'tl-new';
+    final cardId = s.cards.keys.first;
+    final next = applyEvent(
+        s,
+        ev('taskListUpdate', {
+          'item': {
+            'id': unknownId,
+            'cardId': cardId,
+            'name': 'Checklist',
+            'position': 2.0,
+          }
+        }));
+    expect(next.taskLists.map((t) => t.id), contains(unknownId));
+    expect(next.taskLists.firstWhere((t) => t.id == unknownId).cardId, cardId);
+  });
+
+  test('taskUpdate with a full payload upserts an unknown row', () {
+    final s = seed();
+    const unknownId = 'task-new';
+    final taskListId = s.taskLists.first.id;
+    final next = applyEvent(
+        s,
+        ev('taskUpdate', {
+          'item': {
+            'id': unknownId,
+            'taskListId': taskListId,
+            'name': 'Do it',
+            'isCompleted': false,
+            'position': 2.0,
+          }
+        }));
+    expect(next.tasks.map((t) => t.id), contains(unknownId));
+    expect(next.tasks.firstWhere((t) => t.id == unknownId).name, 'Do it');
+  });
+
   test('cardDelete removes', () {
     final s = seed();
     final id = s.cards.keys.first;
