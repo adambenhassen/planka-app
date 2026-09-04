@@ -557,14 +557,18 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
         tasks: s.tasks.where((t) => t.taskListId != id).toList(),
       );
     case 'taskCreate' || 'taskUpdate':
-      // Merged like every other upserted row: a reposition can broadcast a
-      // partial payload, which must not blank the assignee or linked card.
-      return s.copyWith(
-          tasks: _upsert(
-              s.tasks,
-              _mergeById(s.tasks.where((t) => t.id == id).firstOrNull, item,
-                  (PlankaTask t) => t.toJson(), PlankaTask.fromJson),
-              (t) => t.id));
+      if (id == null) return s;
+      final existingTask = s.tasks.where((t) => t.id == id).firstOrNull;
+      if (existingTask == null) {
+        if (event.name == 'taskUpdate') return s;
+        return s.copyWith(
+            tasks: _upsert(s.tasks, PlankaTask.fromJson(item), (t) => t.id));
+      }
+      // A reposition can broadcast a partial payload, which must not blank the
+      // assignee or linked card.
+      final task = _mergeById(existingTask, item, (PlankaTask t) => t.toJson(),
+          PlankaTask.fromJson);
+      return s.copyWith(tasks: _upsert(s.tasks, task, (t) => t.id));
     case 'taskDelete':
       return s.copyWith(tasks: s.tasks.where((t) => t.id != id).toList());
     case 'attachmentCreate' || 'attachmentUpdate':

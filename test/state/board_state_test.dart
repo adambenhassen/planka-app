@@ -114,6 +114,11 @@ void main() {
     expect(
         applyEvent(s, ev('taskListUpdate', {'item': partial})).taskLists,
         s.taskLists);
+
+    expect(
+        () => applyEvent(s, ev('taskUpdate', {'item': partial})),
+        returnsNormally);
+    expect(applyEvent(s, ev('taskUpdate', {'item': partial})).tasks, s.tasks);
   });
 
   test('cardDelete removes', () {
