@@ -467,10 +467,13 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
       return s.copyWith(board: PlankaBoard.fromJson(item));
     case 'listCreate' || 'listUpdate':
       if (id == null) return s;
-      final list = _mergeById(
-          s.lists.where((l) => l.id == id).firstOrNull,
-          item,
-          (PlankaList l) => l.toJson(),
+      final existingList = s.lists.where((l) => l.id == id).firstOrNull;
+      if (existingList == null) {
+        if (event.name == 'listUpdate') return s;
+        return s.copyWith(
+            lists: _upsert(s.lists, PlankaList.fromJson(item), (l) => l.id));
+      }
+      final list = _mergeById(existingList, item, (PlankaList l) => l.toJson(),
           PlankaList.fromJson);
       return s.copyWith(lists: _upsert(s.lists, list, (l) => l.id));
     case 'listDelete':
@@ -482,10 +485,13 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
       });
     case 'labelCreate' || 'labelUpdate':
       if (id == null) return s;
-      final label = _mergeById(
-          s.labels.where((l) => l.id == id).firstOrNull,
-          item,
-          (PlankaLabel l) => l.toJson(),
+      final existingLabel = s.labels.where((l) => l.id == id).firstOrNull;
+      if (existingLabel == null) {
+        if (event.name == 'labelUpdate') return s;
+        return s.copyWith(
+            labels: _upsert(s.labels, PlankaLabel.fromJson(item), (l) => l.id));
+      }
+      final label = _mergeById(existingLabel, item, (PlankaLabel l) => l.toJson(),
           PlankaLabel.fromJson);
       return s.copyWith(labels: _upsert(s.labels, label, (l) => l.id));
     case 'labelDelete':
@@ -533,11 +539,16 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
           cardLabels: s.cardLabels.where((c) => c.id != id).toList());
     case 'taskListCreate' || 'taskListUpdate':
       if (id == null) return s;
-      final taskList = _mergeById(
-          s.taskLists.where((t) => t.id == id).firstOrNull,
-          item,
-          (PlankaTaskList t) => t.toJson(),
-          PlankaTaskList.fromJson);
+      final existingTaskList =
+          s.taskLists.where((t) => t.id == id).firstOrNull;
+      if (existingTaskList == null) {
+        if (event.name == 'taskListUpdate') return s;
+        return s.copyWith(
+            taskLists:
+                _upsert(s.taskLists, PlankaTaskList.fromJson(item), (t) => t.id));
+      }
+      final taskList = _mergeById(existingTaskList, item,
+          (PlankaTaskList t) => t.toJson(), PlankaTaskList.fromJson);
       return s.copyWith(
           taskLists: _upsert(s.taskLists, taskList, (t) => t.id));
     case 'taskListDelete':

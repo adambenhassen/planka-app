@@ -92,21 +92,28 @@ void main() {
         reason: 'ordering follows the new position');
   });
 
-  test('a partial labelUpdate on an unknown row still upserts it', () {
+  test('a partial update on an unknown row is a no-op', () {
     final s = seed();
-    const newId = 'label-new';
-    final next = applyEvent(
-        s,
-        ev('labelUpdate', {
-          'item': {
-            'id': newId,
-            'boardId': s.board.id,
-            'name': 'new',
-            'color': 'lagoon-blue',
-            'position': 2.0,
-          }
-        }));
-    expect(next.labels.map((l) => l.id), contains(newId));
+    const unknownId = 'row-new';
+    const partial = {'id': unknownId, 'position': 2.0};
+
+    expect(
+        () => applyEvent(s, ev('labelUpdate', {'item': partial})),
+        returnsNormally);
+    expect(
+        applyEvent(s, ev('labelUpdate', {'item': partial})).labels, s.labels);
+
+    expect(
+        () => applyEvent(s, ev('listUpdate', {'item': partial})),
+        returnsNormally);
+    expect(applyEvent(s, ev('listUpdate', {'item': partial})).lists, s.lists);
+
+    expect(
+        () => applyEvent(s, ev('taskListUpdate', {'item': partial})),
+        returnsNormally);
+    expect(
+        applyEvent(s, ev('taskListUpdate', {'item': partial})).taskLists,
+        s.taskLists);
   });
 
   test('cardDelete removes', () {
