@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import 'envelope.dart';
@@ -90,6 +91,7 @@ class PlankaSocket {
   bool get isConnected => _isConnected;
 
   Future<void> connect() async {
+    debugPrint('Planka socket opening: $serverUrl');
     final socket = io.io(
       serverUrl,
       io.OptionBuilder()
@@ -112,6 +114,7 @@ class PlankaSocket {
       socket.on(name, (payload) => _events.add(SocketEvent.parse(name, payload)));
     }
     socket.onConnect((_) {
+      debugPrint('Planka socket connected: $serverUrl');
       _isConnected = true;
       _connected.add(true);
       final boardId = _currentBoardId;
@@ -119,13 +122,17 @@ class PlankaSocket {
       if (_userSubscribed) subscribeUser();
     });
     socket.onDisconnect((_) {
+      debugPrint('Planka socket disconnected: $serverUrl');
       _isConnected = false;
       _connected.add(false);
     });
-    socket.on('connect_error', (_) {
+    socket.on('connect_error', (error) {
+      debugPrint('Planka socket connect_error: $serverUrl ($error)');
       _isConnected = false;
       _connected.add(false);
     });
+    socket.onError((error) =>
+        debugPrint('Planka socket transport error: $serverUrl ($error)'));
 
     socket.connect();
   }

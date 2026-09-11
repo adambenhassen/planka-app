@@ -71,6 +71,9 @@ jobs:
           script: |
             mkdir -p "$SCREENSHOT_OUTPUT_DIR"
             flutter drive --driver=test_driver/screenshots_driver.dart --target=integration_test/screenshots_test.dart -d emulator-5554 --flavor store --dart-define=ENABLE_IN_APP_UPDATER=false --dart-define=PLANKA_URL=$PLANKA_URL --dart-define=PLANKA_EMAIL=$PLANKA_EMAIL --dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD
+      - name: Dump Android Planka diagnostics
+        if: always()
+        run: docker compose -f dev/docker-compose.yml logs --no-color --tail=300
       - uses: actions/upload-artifact@v4
         with:
           name: store-android-screenshots
@@ -189,6 +192,12 @@ jobs:
               --dart-define=PLANKA_URL=$PLANKA_URL \
               --dart-define=PLANKA_EMAIL=$PLANKA_EMAIL \
               --dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD
+      - name: Dump Apple Planka diagnostics
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/planka-server.log" ]; then
+            tail -300 "$RUNNER_TEMP/planka-server.log"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: store-ios-screenshots
