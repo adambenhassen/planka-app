@@ -107,17 +107,47 @@ run_with_timeout \
   "$BOOT_LOG" \
   xcrun simctl bootstatus "$DEVICE_ID" -b
 
-run_with_timeout \
-  "iOS screenshot capture" \
-  "$CAPTURE_TIMEOUT_SECONDS" \
-  "$CAPTURE_LOG" \
-  env \
-  "SCREENSHOT_OUTPUT_DIR=$OUTPUT_DIR" \
-  STORE_SCREENSHOTS=1 \
-  flutter drive \
-  --driver=test_driver/screenshots_driver.dart \
-  --target=integration_test/screenshots_test.dart \
-  -d "$DEVICE_ID" \
-  "--dart-define=PLANKA_URL=$PLANKA_URL" \
-  "--dart-define=PLANKA_EMAIL=$PLANKA_EMAIL" \
-  "--dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD"
+capture_attempt=1
+while [ "$capture_attempt" -le 2 ]; do
+  if [ "$capture_attempt" -gt 1 ]; then
+    echo "Resetting iOS simulator before capture retry"
+    # A launch that never publishes VM service can leave the simulator app
+    # wedged. Reset only this ephemeral CI device before the single retry.
+    xcrun simctl shutdown "$DEVICE_ID" 2>&1 || true
+    xcrun simctl erase "$DEVICE_ID" 2>&1 || true
+    xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
+    BOOT_LOG="$OUTPUT_DIR/simctl-bootstatus-attempt-${capture_attempt}.log"
+    run_with_timeout \
+      "simulator boot retry" \
+      "$BOOT_TIMEOUT_SECONDS" \
+      "$BOOT_LOG" \
+      xcrun simctl bootstatus "$DEVICE_ID" -b || exit $?
+  fi
+
+  CAPTURE_LOG="$OUTPUT_DIR/flutter-drive-attempt-${capture_attempt}.log"
+  DIAGNOSTICS_LOG="$OUTPUT_DIR/diagnostics-attempt-${capture_attempt}.log"
+  if run_with_timeout \
+    "iOS screenshot capture attempt $capture_attempt" \
+    "$CAPTURE_TIMEOUT_SECONDS" \
+    "$CAPTURE_LOG" \
+    env \
+    "SCREENSHOT_OUTPUT_DIR=$OUTPUT_DIR" \
+    STORE_SCREENSHOTS=1 \
+    flutter drive \
+    --driver=test_driver/screenshots_driver.dart \
+    --target=integration_test/screenshots_test.dart \
+    -d "$DEVICE_ID" \
+    "--dart-define=PLANKA_URL=$PLANKA_URL" \
+    "--dart-define=PLANKA_EMAIL=$PLANKA_EMAIL" \
+    "--dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD"; then
+    exit 0
+  else
+    status=$?
+  fi
+
+  if [ "$capture_attempt" -eq 2 ]; then
+    exit "$status"
+  fi
+  echo "iOS screenshot capture attempt $capture_attempt failed; retrying once"
+  capture_attempt=$((capture_attempt + 1))
+done
