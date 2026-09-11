@@ -20,12 +20,25 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 class Png:
     def __init__(
-        self, width: int, height: int, pixels: bytearray, channels: int = 3
+        self,
+        width: int,
+        height: int,
+        pixels: bytearray,
+        channels: int = 3,
+        *,
+        color_type: int | None = None,
     ) -> None:
         self.width = width
         self.height = height
         self.pixels = pixels
         self.channels = channels
+        # [channels] describes the decoded pixel buffer. Keep the PNG header's
+        # color type separately because RGBA pixels are flattened into that
+        # buffer before callers receive the image.
+        self.color_type = color_type if color_type is not None else {
+            3: 2,
+            4: 6,
+        }[channels]
 
 
 def _chunk(kind: bytes, data: bytes) -> bytes:
@@ -67,8 +80,9 @@ def read_png(path: Path) -> Png:
             f"(bit depth {bit_depth}, color type {color_type}, interlace {interlace})"
         )
 
-    channels = 3 if color_type == 2 else 4
-    stride = width * channels
+    source_color_type = color_type
+    source_channels = 3 if source_color_type == 2 else 4
+    stride = width * source_channels
     decoded = zlib.decompress(compressed)
     expected = height * (stride + 1)
     if len(decoded) != expected:
@@ -83,9 +97,13 @@ def read_png(path: Path) -> Png:
         row = bytearray(decoded[offset : offset + stride])
         offset += stride
         for index in range(stride):
-            left = row[index - channels] if index >= channels else 0
+            left = row[index - source_channels] if index >= source_channels else 0
             above = previous[index]
-            upper_left = previous[index - channels] if index >= channels else 0
+            upper_left = (
+                previous[index - source_channels]
+                if index >= source_channels
+                else 0
+            )
             if filter_type == 1:
                 row[index] = (row[index] + left) & 0xFF
             elif filter_type == 2:
@@ -104,10 +122,10 @@ def read_png(path: Path) -> Png:
             elif filter_type != 0:
                 raise ValueError(f"{path} uses unknown PNG filter {filter_type}")
 
-        if channels == 3:
+        if source_channels == 3:
             pixels.extend(row)
         else:
-            for index in range(0, stride, channels):
+            for index in range(0, stride, source_channels):
                 alpha = row[index + 3]
                 # Flatten source alpha over white. The generated store assets
                 # are opaque even if a future source icon is not.
@@ -122,7 +140,7 @@ def read_png(path: Path) -> Png:
 
     # RGBA inputs are flattened over white above, so the returned pixels are
     # opaque RGB regardless of the source color type.
-    return Png(width, height, pixels, 3)
+    return Png(width, height, pixels, 3, color_type=source_color_type)
 
 
 def write_png(path: Path, image: Png) -> None:
@@ -180,12 +198,15 @@ def generate(root: Path) -> None:
     metadata = root / "fastlane/metadata"
     play_images = metadata / "android/en-US/images"
 
-    # App Store accepts the existing square icon directly. It is already
-    # opaque RGB and 1024x1024, so retaining the source bytes avoids a lossy
-    # round trip for the marketing icon.
+    # App Store accepts the existing square icon directly. Retain an opaque
+    # RGB source byte-for-byte, but flatten a future RGBA source before writing
+    # the marketing icon so every generated graphic remains uploadable.
     marketing_icon = metadata / "app_icon.png"
     marketing_icon.parent.mkdir(parents=True, exist_ok=True)
-    marketing_icon.write_bytes((root / "assets/icon/icon.png").read_bytes())
+    if icon.color_type == 2:
+        marketing_icon.write_bytes((root / "assets/icon/icon.png").read_bytes())
+    else:
+        write_png(marketing_icon, icon)
 
     write_png(play_images / "icon.png", resize(icon, 512, 512))
 

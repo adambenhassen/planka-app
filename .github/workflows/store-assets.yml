@@ -34,6 +34,11 @@ jobs:
           cache: true
       - run: flutter pub get
       - name: Start seeded Planka
+        env:
+          # The Android emulator reaches the host through 10.0.2.2. Planka
+          # uses BASE_URL for both absolute image URLs and socket Origin
+          # checks, so its advertised origin must be emulator-reachable too.
+          PLANKA_BASE_URL: http://10.0.2.2:3000
         run: |
           docker compose -f dev/docker-compose.yml up -d
           ready=0

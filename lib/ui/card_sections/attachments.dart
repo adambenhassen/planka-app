@@ -54,8 +54,19 @@ class CardAttachmentsSection extends StatelessWidget {
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
-                      errorWidget: (_, _, _) =>
-                          const Icon(Icons.broken_image_outlined),
+                      imageBuilder: (_, imageProvider) => Image(
+                        key: ValueKey<String>(
+                            'store-capture-loaded-attachment:${a.name}'),
+                        image: imageProvider,
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                      ),
+                      errorWidget: (_, _, _) => Icon(
+                        Icons.broken_image_outlined,
+                        key: ValueKey<String>(
+                            'store-capture-image-error:${a.name}'),
+                      ),
                     ),
                   )
                 : const Icon(Icons.insert_drive_file_outlined, size: 32),

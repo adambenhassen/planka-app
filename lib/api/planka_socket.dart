@@ -71,6 +71,7 @@ class PlankaSocket {
   final String token;
   io.Socket? _socket;
   String? _currentBoardId;
+  var _isConnected = false;
 
   /// Set once [subscribeUser] has been called, so a reconnect rejoins the room
   /// rather than leaving it silently lost.
@@ -86,6 +87,7 @@ class PlankaSocket {
 
   Stream<SocketEvent> get events => _events.stream;
   Stream<bool> get connected => _connected.stream;
+  bool get isConnected => _isConnected;
 
   Future<void> connect() async {
     final socket = io.io(
@@ -110,13 +112,20 @@ class PlankaSocket {
       socket.on(name, (payload) => _events.add(SocketEvent.parse(name, payload)));
     }
     socket.onConnect((_) {
+      _isConnected = true;
       _connected.add(true);
       final boardId = _currentBoardId;
       if (boardId != null) subscribeBoard(boardId);
       if (_userSubscribed) subscribeUser();
     });
-    socket.onDisconnect((_) => _connected.add(false));
-    socket.on('connect_error', (_) => _connected.add(false));
+    socket.onDisconnect((_) {
+      _isConnected = false;
+      _connected.add(false);
+    });
+    socket.on('connect_error', (_) {
+      _isConnected = false;
+      _connected.add(false);
+    });
 
     socket.connect();
   }
@@ -178,6 +187,7 @@ class PlankaSocket {
   }
 
   void dispose() {
+    _isConnected = false;
     _socket?.dispose();
     _events.close();
     _connected.close();

@@ -3,7 +3,7 @@ services:
     image: ghcr.io/plankanban/planka:2.2.1
     ports: ["3000:1337"]
     environment:
-      BASE_URL: http://localhost:3000
+      BASE_URL: ${PLANKA_BASE_URL:-http://localhost:3000}
       SECRET_KEY: dev-secret-key
       DATABASE_URL: postgresql://postgres@postgres/planka
       DEFAULT_ADMIN_EMAIL: demo@demo.demo

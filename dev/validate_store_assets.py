@@ -15,8 +15,10 @@ def check_png(root: Path, relative: str, dimensions: tuple[int, int]) -> None:
     actual = (image.width, image.height)
     if actual != dimensions:
         raise SystemExit(f"{relative}: expected {dimensions}, got {actual}")
-    if image.channels != 3:
-        raise SystemExit(f"{relative}: PNG has an alpha channel")
+    if image.color_type != 2:
+        raise SystemExit(
+            f"{relative}: PNG has an alpha channel (color type {image.color_type})"
+        )
     print(f"ok {relative}: {image.width}x{image.height}, opaque RGB")
 
 
