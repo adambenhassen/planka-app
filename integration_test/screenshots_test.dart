@@ -72,8 +72,16 @@ void main() {
     await tester.enterText(
         find.widgetWithText(TextFormField, 'Password'), _password);
     // Submit from the password field: the on-screen keyboard can cover the
-    // button on a real device/simulator, making a tap on it unreliable.
+    // button on a real device/simulator, making a tap on it unreliable. Some
+    // iPad simulator keyboard configurations do not deliver the action, so
+    // fall back to the button only while the credentials screen is still up.
     await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    if (tester.any(find.text('Log in'))) {
+      tester.testTextInput.hide();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Log in'));
+    }
 
     await pumpUntilFound(tester, find.text('Product Launch'),
         timeout: const Duration(seconds: 40));
