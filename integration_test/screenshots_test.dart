@@ -260,7 +260,7 @@ void main() {
     );
     // Keep the seeded labels in frame while retaining the checklist and
     // attachment rows below them.
-    await tester.drag(cardSheetScroll, const Offset(0, 275));
+    await tester.drag(cardSheetScroll, const Offset(0, 250));
     await tester.pumpAndSettle();
     await pumpUntilFound(tester, find.text('Checklists'));
     final cardSheet = find.byType(CardSheet);
