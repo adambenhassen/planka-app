@@ -81,10 +81,13 @@ class BoardBackgroundView extends StatelessWidget {
         height: double.infinity,
       ),
       placeholder: (_, _) => fallback,
-      errorWidget: (_, _, _) => KeyedSubtree(
-        key: const ValueKey<String>('store-capture-image-error'),
-        child: fallback,
-      ),
+      errorWidget: (_, error, _) {
+        debugPrint('Store capture image failed: background $url: $error');
+        return KeyedSubtree(
+          key: const ValueKey<String>('store-capture-image-error'),
+          child: fallback,
+        );
+      },
     );
   }
 }
