@@ -1176,6 +1176,11 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   Stream<bool>? get socketConnected => _socket?.connected;
 
+  /// The banner needs a synchronous initial value while the socket is still
+  /// connecting. A missing socket means the notifier is being exercised by a
+  /// socketless widget test, so retain the banner's existing hidden default.
+  bool get socketConnectedNow => _socket?.isConnected ?? true;
+
   Future<void> _optimistic(
       BoardState next, Future<Envelope> Function() call) async {
     state = AsyncData(next);

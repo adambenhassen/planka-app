@@ -361,7 +361,7 @@ class _ConnectionBanner extends ConsumerWidget {
     final notifier = ref.read(boardProvider(boardId).notifier);
     return StreamBuilder<bool>(
       stream: notifier.socketConnected,
-      initialData: true,
+      initialData: notifier.socketConnectedNow,
       builder: (context, snap) => snap.data == false
           ? MaterialBanner(
               content: Text(AppLocalizations.of(context).boardReconnecting),

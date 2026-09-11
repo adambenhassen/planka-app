@@ -12,6 +12,10 @@ const _url =
 const _email =
     String.fromEnvironment('PLANKA_EMAIL', defaultValue: 'demo@demo.demo');
 const _password = String.fromEnvironment('PLANKA_PASSWORD', defaultValue: 'demo');
+const _loadedCardCoverKey =
+    ValueKey<String>('store-capture-loaded-card-cover');
+const _loadedAttachmentPrefix = 'store-capture-loaded-attachment:';
+const _loadedBackgroundPrefix = 'store-capture-loaded-background-image:';
 
 /// Keychain needs signing entitlements not present in dev builds.
 class MemStorage implements SecureKeyValueStore {
@@ -36,6 +40,63 @@ void main() {
   // not let an off-screen finder pass while Flutter only reports a warning.
   WidgetController.hitTestWarningShouldBeFatal = true;
 
+  final imageErrors = find.byWidgetPredicate((widget) {
+    final key = widget.key;
+    return key is ValueKey<String> &&
+        key.value.startsWith('store-capture-image-error');
+  });
+  final loadedBackgrounds = find.byWidgetPredicate((widget) {
+    final key = widget.key;
+    return key is ValueKey<String> &&
+        key.value.startsWith(_loadedBackgroundPrefix);
+  });
+
+  void assertNoCaptureError(WidgetTester tester) {
+    if (tester.any(find.text('Reconnecting…')) ||
+        tester.any(find.byIcon(Icons.wifi_off))) {
+      fail('Store capture is not connected: Reconnecting… is visible');
+    }
+    if (tester.any(imageErrors)) {
+      fail('Store capture has a failed network image');
+    }
+  }
+
+  Future<void> waitForCaptureReady(
+    WidgetTester tester, {
+    int loadedImages = 0,
+    Finder? loadedFinder,
+    int? distinctLoadedImages,
+    Duration timeout = const Duration(seconds: 40),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    final loaded = loadedFinder ?? loadedBackgrounds;
+    int loadedCount() {
+      if (distinctLoadedImages == null) return loaded.evaluate().length;
+      return loaded
+          .evaluate()
+          .map((element) => element.widget.key)
+          .whereType<ValueKey<String>>()
+          .map((key) => key.value)
+          .toSet()
+          .length;
+    }
+    while (DateTime.now().isBefore(deadline)) {
+      if (tester.any(imageErrors)) {
+        fail('Store capture has a failed network image');
+      }
+      // A connecting socket briefly renders the banner while the initial
+      // request and image loads can already be complete. Keep waiting for the
+      // connection edge; shot() turns a later reconnect into a hard failure.
+      final connected = !tester.any(find.text('Reconnecting…')) &&
+          !tester.any(find.byIcon(Icons.wifi_off));
+      if (connected && loadedCount() >= loadedImages) return;
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    assertNoCaptureError(tester);
+    fail('Timed out waiting for $loadedImages loaded store images; found '
+        '${loadedCount()}');
+  }
+
   Future<void> pumpUntilFound(WidgetTester tester, Finder finder,
       {Duration timeout = const Duration(seconds: 20)}) async {
     final deadline = DateTime.now().add(timeout);
@@ -48,13 +109,24 @@ void main() {
     fail('Timed out waiting for $finder; visible texts: $texts');
   }
 
-  Future<void> shot(WidgetTester tester, String name) async {
+  Future<void> shot(WidgetTester tester, String name,
+      {int loadedImages = 0,
+      Finder? loadedFinder,
+      int? distinctLoadedImages}) async {
+    await waitForCaptureReady(
+      tester,
+      loadedImages: loadedImages,
+      loadedFinder: loadedFinder,
+      distinctLoadedImages: distinctLoadedImages,
+    );
     // Keep pumping real frames so network images (backgrounds, covers,
     // avatars) finish loading before the capture.
     final until = DateTime.now().add(const Duration(seconds: 4));
     while (DateTime.now().isBefore(until)) {
       await tester.pump(const Duration(milliseconds: 100));
+      assertNoCaptureError(tester);
     }
+    assertNoCaptureError(tester);
     await binding.takeScreenshot(name);
   }
 
@@ -115,7 +187,13 @@ void main() {
     await submitLoginAndWait(tester);
     await binding.convertFlutterSurfaceToImage();
     await tester.pump();
-    await shot(tester, 'projects');
+    await shot(
+      tester,
+      'projects',
+      loadedImages: 2,
+      loadedFinder: loadedBackgrounds,
+      distinctLoadedImages: 2,
+    );
 
     // The board tile is inside a non-scrollable GridView nested in the
     // projects ListView. Scroll the owning list explicitly and tap the tile's
@@ -140,7 +218,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(roadmapTile.first);
     await pumpUntilFound(tester, find.text('Design onboarding flow'));
-    await shot(tester, 'board');
+    await waitForCaptureReady(
+      tester,
+      loadedImages: 1,
+      loadedFinder: find.byKey(_loadedCardCoverKey),
+    );
+    await shot(tester, 'board', loadedImages: 1);
 
     // The card is in the second horizontally scrolling board list. The card's
     // own vertical ListView is the nearest scrollable to the finder, so
@@ -169,7 +252,18 @@ void main() {
       scrollable: cardSheetScroll,
     );
     await pumpUntilFound(tester, find.text('Checklists'));
-    await shot(tester, 'card');
+    await pumpUntilFound(tester, find.text('photo-60.jpg'));
+    final loadedAttachment = find.byWidgetPredicate((widget) {
+      final key = widget.key;
+      return key is ValueKey<String> &&
+          key.value == '${_loadedAttachmentPrefix}photo-60.jpg';
+    });
+    await shot(
+      tester,
+      'card',
+      loadedImages: 1,
+      loadedFinder: loadedAttachment,
+    );
 
     // Close sheet, back to projects, open notifications.
     await tester.tapAt(const Offset(10, 10));
