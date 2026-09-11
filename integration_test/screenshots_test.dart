@@ -58,6 +58,42 @@ void main() {
     await binding.takeScreenshot(name);
   }
 
+  Future<void> submitLoginAndWait(WidgetTester tester) async {
+    final productLaunch = find.text('Product Launch');
+    final loginButton = find.ancestor(
+      of: find.text('Log in'),
+      matching: find.byType(FilledButton),
+    );
+    final deadline = DateTime.now().add(const Duration(seconds: 40));
+    var attempts = 0;
+
+    while (DateTime.now().isBefore(deadline)) {
+      if (tester.any(productLaunch)) return;
+
+      // A simulator can deliver the keyboard dismissal after the first tap.
+      // Give the frame a bounded pump, then re-check the live finder before
+      // tapping so the retry never targets a stale login tree.
+      if (attempts < 3 && tester.any(loginButton)) {
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pump(const Duration(milliseconds: 500));
+        if (tester.any(productLaunch)) return;
+        if (tester.any(loginButton)) {
+          await tester.ensureVisible(loginButton);
+          if (tester.any(loginButton)) {
+            await tester.tap(loginButton);
+            attempts++;
+          }
+        }
+      }
+
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+
+    final texts =
+        tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).toList();
+    fail('Timed out waiting for $productLaunch; visible texts: $texts');
+  }
+
   testWidgets('capture README screenshots', (tester) async {
     await tester.pumpWidget(ProviderScope(
       overrides: [
@@ -76,17 +112,7 @@ void main() {
     // Submit through the button after dismissing the simulator keyboard. The
     // iPad simulator does not reliably deliver the password field's done
     // action, and a direct text tap can land outside the button bounds.
-    FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pump(const Duration(milliseconds: 500));
-    final loginButton = find.ancestor(
-      of: find.text('Log in'),
-      matching: find.byType(FilledButton),
-    );
-    await tester.ensureVisible(loginButton);
-    await tester.tap(loginButton);
-
-    await pumpUntilFound(tester, find.text('Product Launch'),
-        timeout: const Duration(seconds: 40));
+    await submitLoginAndWait(tester);
     await binding.convertFlutterSurfaceToImage();
     await tester.pump();
     await shot(tester, 'projects');
