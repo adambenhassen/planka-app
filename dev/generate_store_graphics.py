@@ -120,7 +120,9 @@ def read_png(path: Path) -> Png:
                 )
         previous = row
 
-    return Png(width, height, pixels, channels)
+    # RGBA inputs are flattened over white above, so the returned pixels are
+    # opaque RGB regardless of the source color type.
+    return Png(width, height, pixels, 3)
 
 
 def write_png(path: Path, image: Png) -> None:
