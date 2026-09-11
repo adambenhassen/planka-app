@@ -94,7 +94,10 @@ void main() {
     // The board tile is inside a non-scrollable GridView nested in the
     // projects ListView. Scroll the owning list explicitly and tap the tile's
     // actual hit target, rather than its overlaid title text.
-    final projectsScroll = find.byType(ListView).first;
+    final projectsScroll = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable && widget.axisDirection == AxisDirection.down,
+    ).first;
     final roadmapTile = find.ancestor(
       of: find.text('Roadmap').first,
       matching: find.byType(InkWell),
