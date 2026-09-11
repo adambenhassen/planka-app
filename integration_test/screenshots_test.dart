@@ -104,7 +104,7 @@ void main() {
     await tester.pumpAndSettle();
     final cardTile = find.ancestor(
       of: find.text('Design onboarding flow'),
-      matching: find.byType(Card),
+      matching: find.byType(InkWell),
     );
     await tester.tap(cardTile.first);
     await pumpUntilFound(tester, find.text('Checklists'));
