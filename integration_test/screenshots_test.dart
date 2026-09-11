@@ -93,8 +93,18 @@ void main() {
     await pumpUntilFound(tester, find.text('Design onboarding flow'));
     await shot(tester, 'board');
 
-    // Second list is off-screen to the right.
-    await tester.ensureVisible(find.text('Design onboarding flow'));
+    // The card is in the second horizontally scrolling board list. The card's
+    // own vertical ListView is the nearest scrollable to the finder, so
+    // ensureVisible() cannot reveal the list itself.
+    final horizontalScroll = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable && widget.axisDirection == AxisDirection.right,
+    );
+    await tester.dragUntilVisible(
+      find.text('Design onboarding flow'),
+      horizontalScroll,
+      const Offset(-300, 0),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Design onboarding flow'));
     await pumpUntilFound(tester, find.text('Checklists'));
