@@ -18,6 +18,8 @@ jobs:
       - run: flutter pub get
       - run: dart analyze
       - run: flutter test
+      - name: Test store PNG codec and validator
+        run: python3 -m unittest dev/test_store_assets.py
       # The updater kill switch is compile-time, so the store build's
       # behaviour needs its own run with the define set.
       - name: Test store flavor updater kill switch
