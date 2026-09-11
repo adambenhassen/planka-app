@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/main.dart';
+import 'package:planka_app/ui/card_sheet.dart';
 
 const _url =
     String.fromEnvironment('PLANKA_URL', defaultValue: 'http://localhost:3000');
@@ -31,6 +32,9 @@ void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   // Simulator builds are always debug; hide the DEBUG banner for captures.
   WidgetsApp.debugAllowBannerOverride = false;
+  // A capture must exercise the same hit targets as a user interaction. Do
+  // not let an off-screen finder pass while Flutter only reports a warning.
+  WidgetController.hitTestWarningShouldBeFatal = true;
 
   Future<void> pumpUntilFound(WidgetTester tester, Finder finder,
       {Duration timeout = const Duration(seconds: 20)}) async {
@@ -87,9 +91,21 @@ void main() {
     await tester.pump();
     await shot(tester, 'projects');
 
-    await tester.ensureVisible(find.text('Roadmap').first);
+    // The board tile is inside a non-scrollable GridView nested in the
+    // projects ListView. Scroll the owning list explicitly and tap the tile's
+    // actual hit target, rather than its overlaid title text.
+    final projectsScroll = find.byType(ListView).first;
+    final roadmapTile = find.ancestor(
+      of: find.text('Roadmap').first,
+      matching: find.byType(InkWell),
+    );
+    await tester.scrollUntilVisible(
+      roadmapTile,
+      300,
+      scrollable: projectsScroll,
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Roadmap').first);
+    await tester.tap(roadmapTile.first);
     await pumpUntilFound(tester, find.text('Design onboarding flow'));
     await shot(tester, 'board');
 
@@ -109,10 +125,11 @@ void main() {
     await tester.tap(cardTile.first);
     // The card sheet is a lazy list, so lower sections are not built until
     // its own scrollable is advanced.
-    final cardSheetScroll = find.byWidgetPredicate(
-      (widget) =>
-          widget is Scrollable && widget.axisDirection == AxisDirection.down,
-    ).last;
+    await pumpUntilFound(tester, find.byType(CardSheet));
+    final cardSheetScroll = find.descendant(
+      of: find.byType(CardSheet),
+      matching: find.byType(Scrollable),
+    );
     await tester.scrollUntilVisible(
       find.text('Checklists'),
       400,
