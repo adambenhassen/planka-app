@@ -98,8 +98,12 @@ void main() {
       (widget) =>
           widget is Scrollable && widget.axisDirection == AxisDirection.down,
     ).first;
-    final roadmapTile = find.ancestor(
+    final roadmapStack = find.ancestor(
       of: find.text('Roadmap').first,
+      matching: find.byType(Stack),
+    ).first;
+    final roadmapTile = find.descendant(
+      of: roadmapStack,
       matching: find.byType(InkWell),
     );
     await tester.scrollUntilVisible(
