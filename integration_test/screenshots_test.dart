@@ -136,7 +136,7 @@ void main() {
     final cardSheetScroll = find.descendant(
       of: find.byType(CardSheet),
       matching: find.byType(Scrollable),
-    );
+    ).first;
     await tester.scrollUntilVisible(
       find.text('Checklists'),
       400,
