@@ -72,7 +72,7 @@ void main() {
     // Submit through the button after dismissing the simulator keyboard. The
     // iPad simulator does not reliably deliver the password field's done
     // action, and a direct text tap can land outside the button bounds.
-    tester.testTextInput.hide();
+    FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
     final loginButton = find.ancestor(
       of: find.text('Log in'),
