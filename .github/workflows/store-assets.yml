@@ -77,7 +77,7 @@ jobs:
 
   ios-screenshots:
     name: iPhone and iPad screenshots
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
