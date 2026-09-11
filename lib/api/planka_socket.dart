@@ -73,6 +73,7 @@ class PlankaSocket {
   io.Socket? _socket;
   String? _currentBoardId;
   var _isConnected = false;
+  var _disposed = false;
 
   /// Set once [subscribeUser] has been called, so a reconnect rejoins the room
   /// rather than leaving it silently lost.
@@ -91,6 +92,7 @@ class PlankaSocket {
   bool get isConnected => _isConnected;
 
   Future<void> connect() async {
+    if (_disposed) return;
     debugPrint('Planka socket opening: $serverUrl');
     final socket = io.io(
       serverUrl,
@@ -115,9 +117,13 @@ class PlankaSocket {
     _socket = socket;
 
     for (final name in kPlankaSocketEvents) {
-      socket.on(name, (payload) => _events.add(SocketEvent.parse(name, payload)));
+      socket.on(name, (payload) {
+        if (_disposed || _events.isClosed) return;
+        _events.add(SocketEvent.parse(name, payload));
+      });
     }
     socket.onConnect((_) {
+      if (_disposed) return;
       debugPrint('Planka socket connected: $serverUrl');
       _isConnected = true;
       _connected.add(true);
@@ -126,11 +132,13 @@ class PlankaSocket {
       if (_userSubscribed) subscribeUser();
     });
     socket.onDisconnect((_) {
+      if (_disposed || _connected.isClosed) return;
       debugPrint('Planka socket disconnected: $serverUrl');
       _isConnected = false;
       _connected.add(false);
     });
     socket.on('connect_error', (error) {
+      if (_disposed || _connected.isClosed) return;
       debugPrint('Planka socket connect_error: $serverUrl ($error)');
       _isConnected = false;
       _connected.add(false);
@@ -198,6 +206,8 @@ class PlankaSocket {
   }
 
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _isConnected = false;
     _socket?.dispose();
     _events.close();
