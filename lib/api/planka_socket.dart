@@ -97,6 +97,10 @@ class PlankaSocket {
       io.OptionBuilder()
           .setPath('/socket.io')
           .setTransports(['websocket'])
+          // Each feature owns its lifecycle. Reusing socket.io's cached root
+          // namespace would attach a later board listener after the shared
+          // manager's connect event had already fired.
+          .enableForceNew()
           // sails rejects handshakes without the sails.io.js SDK version.
           .setQuery({
             '__sails_io_sdk_version': '1.2.1',
