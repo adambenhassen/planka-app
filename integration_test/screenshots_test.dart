@@ -100,13 +100,13 @@ void main() {
       (widget) =>
           widget is Scrollable && widget.axisDirection == AxisDirection.right,
     );
-    await tester.dragUntilVisible(
-      find.text('Design onboarding flow'),
-      horizontalScroll,
-      const Offset(-300, 0),
-    );
+    await tester.drag(horizontalScroll, const Offset(-400, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Design onboarding flow'));
+    final cardTile = find.ancestor(
+      of: find.text('Design onboarding flow'),
+      matching: find.byType(Card),
+    );
+    await tester.tap(cardTile.first);
     await pumpUntilFound(tester, find.text('Checklists'));
     await shot(tester, 'card');
 
