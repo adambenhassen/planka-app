@@ -87,6 +87,8 @@ void main() {
     await tester.pump();
     await shot(tester, 'projects');
 
+    await tester.ensureVisible(find.text('Roadmap').first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Roadmap').first);
     await pumpUntilFound(tester, find.text('Design onboarding flow'));
     await shot(tester, 'board');
