@@ -107,6 +107,17 @@ void main() {
       matching: find.byType(InkWell),
     );
     await tester.tap(cardTile.first);
+    // The card sheet is a lazy list, so lower sections are not built until
+    // its own scrollable is advanced.
+    final cardSheetScroll = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable && widget.axisDirection == AxisDirection.down,
+    ).last;
+    await tester.scrollUntilVisible(
+      find.text('Checklists'),
+      400,
+      scrollable: cardSheetScroll,
+    );
     await pumpUntilFound(tester, find.text('Checklists'));
     await shot(tester, 'card');
 
