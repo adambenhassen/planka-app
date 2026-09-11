@@ -51,8 +51,6 @@ void main() {
     while (DateTime.now().isBefore(until)) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    await binding.convertFlutterSurfaceToImage();
-    await tester.pump();
     await binding.takeScreenshot(name);
   }
 
@@ -71,22 +69,55 @@ void main() {
         find.widgetWithText(TextFormField, 'Email or username'), _email);
     await tester.enterText(
         find.widgetWithText(TextFormField, 'Password'), _password);
-    // Submit from the password field: the on-screen keyboard can cover the
-    // button on a real device/simulator, making a tap on it unreliable.
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    // Submit through the button after dismissing the simulator keyboard. The
+    // iPad simulator does not reliably deliver the password field's done
+    // action, and a direct text tap can land outside the button bounds.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump(const Duration(milliseconds: 500));
+    final loginButton = find.ancestor(
+      of: find.text('Log in'),
+      matching: find.byType(FilledButton),
+    );
+    await tester.ensureVisible(loginButton);
+    await tester.tap(loginButton);
 
     await pumpUntilFound(tester, find.text('Product Launch'),
         timeout: const Duration(seconds: 40));
+    await binding.convertFlutterSurfaceToImage();
+    await tester.pump();
     await shot(tester, 'projects');
 
+    await tester.ensureVisible(find.text('Roadmap').first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Roadmap').first);
     await pumpUntilFound(tester, find.text('Design onboarding flow'));
     await shot(tester, 'board');
 
-    // Second list is off-screen to the right.
-    await tester.ensureVisible(find.text('Design onboarding flow'));
+    // The card is in the second horizontally scrolling board list. The card's
+    // own vertical ListView is the nearest scrollable to the finder, so
+    // ensureVisible() cannot reveal the list itself.
+    final horizontalScroll = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable && widget.axisDirection == AxisDirection.right,
+    );
+    await tester.drag(horizontalScroll, const Offset(-400, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Design onboarding flow'));
+    final cardTile = find.ancestor(
+      of: find.text('Design onboarding flow'),
+      matching: find.byType(InkWell),
+    );
+    await tester.tap(cardTile.first);
+    // The card sheet is a lazy list, so lower sections are not built until
+    // its own scrollable is advanced.
+    final cardSheetScroll = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable && widget.axisDirection == AxisDirection.down,
+    ).last;
+    await tester.scrollUntilVisible(
+      find.text('Checklists'),
+      400,
+      scrollable: cardSheetScroll,
+    );
     await pumpUntilFound(tester, find.text('Checklists'));
     await shot(tester, 'card');
 

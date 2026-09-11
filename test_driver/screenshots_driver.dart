@@ -18,30 +18,24 @@ Future<void> main() async {
   await integrationDriver(
     onScreenshot: (String name, List<int> bytes,
         [Map<String, Object?>? args]) async {
+      if (storeCapture) {
+        final file = File('$outputDir/$name.png');
+        await file.parent.create(recursive: true);
+        await file.writeAsBytes(bytes);
+        return true;
+      }
       final decoded = img.decodePng(Uint8List.fromList(bytes));
       if (decoded == null) {
         stderr.writeln('screenshot $name: could not decode PNG');
         return false;
       }
-      // Store captures must keep the device's native dimensions. Flattening
-      // the PNG only removes an unused alpha channel; it does not resize or
-      // letterbox the device output.
-      final output = storeCapture ? _flatten(decoded) : _polish(decoded);
+      final output = _polish(decoded);
       final file = File('$outputDir/$name.png');
       await file.parent.create(recursive: true);
       await file.writeAsBytes(img.encodePng(output));
       return true;
     },
   );
-}
-
-/// Converts a capture to an opaque RGB PNG without changing its dimensions.
-img.Image _flatten(img.Image src) {
-  final out = img.Image(width: src.width, height: src.height, numChannels: 3);
-  for (final p in src) {
-    out.setPixelRgb(p.x, p.y, p.r, p.g, p.b);
-  }
-  return out;
 }
 
 /// Crops the blank status-bar strip and rounds the corners (transparent).
