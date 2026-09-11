@@ -69,22 +69,17 @@ void main() {
         find.widgetWithText(TextFormField, 'Email or username'), _email);
     await tester.enterText(
         find.widgetWithText(TextFormField, 'Password'), _password);
-    // Submit from the password field: the on-screen keyboard can cover the
-    // button on a real device/simulator, making a tap on it unreliable. Some
-    // iPad simulator keyboard configurations do not deliver the action, so
-    // fall back to the button only while the credentials screen is still up.
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pump();
-    if (tester.any(find.text('Log in'))) {
-      tester.testTextInput.hide();
-      await tester.pumpAndSettle();
-      final loginButton = find.ancestor(
-        of: find.text('Log in'),
-        matching: find.byType(FilledButton),
-      );
-      await tester.ensureVisible(loginButton);
-      await tester.tap(loginButton);
-    }
+    // Submit through the button after dismissing the simulator keyboard. The
+    // iPad simulator does not reliably deliver the password field's done
+    // action, and a direct text tap can land outside the button bounds.
+    tester.testTextInput.hide();
+    await tester.pumpAndSettle();
+    final loginButton = find.ancestor(
+      of: find.text('Log in'),
+      matching: find.byType(FilledButton),
+    );
+    await tester.ensureVisible(loginButton);
+    await tester.tap(loginButton);
 
     await pumpUntilFound(tester, find.text('Product Launch'),
         timeout: const Duration(seconds: 40));
