@@ -260,9 +260,29 @@ void main() {
     );
     // Keep the seeded labels in frame while retaining the checklist and
     // attachment rows below them.
-    await tester.drag(cardSheetScroll, const Offset(0, 180));
+    await tester.drag(cardSheetScroll, const Offset(0, 210));
     await tester.pumpAndSettle();
     await pumpUntilFound(tester, find.text('Checklists'));
+    final cardSheet = find.byType(CardSheet);
+    await pumpUntilFound(
+      tester,
+      find.descendant(of: cardSheet, matching: find.text('Design')),
+    );
+    await pumpUntilFound(
+      tester,
+      find.descendant(of: cardSheet, matching: find.text('Feature')),
+    );
+    await pumpUntilFound(
+      tester,
+      find.descendant(of: cardSheet, matching: find.text('Wireframes')),
+    );
+    await pumpUntilFound(
+      tester,
+      find.descendant(
+        of: cardSheet,
+        matching: find.text('Usability test (5 users)'),
+      ),
+    );
     await pumpUntilFound(tester, find.text('photo-60.jpg'));
     final loadedAttachment = find.byWidgetPredicate((widget) {
       final key = widget.key;
