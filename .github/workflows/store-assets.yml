@@ -8,7 +8,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: store-assets
+  group: store-assets-${{ github.ref }}
   cancel-in-progress: false
 
 env:
