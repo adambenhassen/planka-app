@@ -12,8 +12,7 @@ const _url =
 const _email =
     String.fromEnvironment('PLANKA_EMAIL', defaultValue: 'demo@demo.demo');
 const _password = String.fromEnvironment('PLANKA_PASSWORD', defaultValue: 'demo');
-const _loadedCardCoverKey =
-    ValueKey<String>('store-capture-loaded-card-cover');
+const _loadedCardCoverPrefix = 'store-capture-loaded-card-cover:';
 const _loadedAttachmentPrefix = 'store-capture-loaded-attachment:';
 const _loadedBackgroundPrefix = 'store-capture-loaded-background-image:';
 
@@ -218,12 +217,24 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(roadmapTile.first);
     await pumpUntilFound(tester, find.text('Design onboarding flow'));
-    await waitForCaptureReady(
-      tester,
-      loadedImages: 1,
-      loadedFinder: find.byKey(_loadedCardCoverKey),
+    final cardTile = find.ancestor(
+      of: find.text('Design onboarding flow'),
+      matching: find.byType(InkWell),
+    ).first;
+    final loadedCardCover = find.descendant(
+      of: cardTile,
+      matching: find.byWidgetPredicate((widget) {
+        final key = widget.key;
+        return key is ValueKey<String> &&
+            key.value.startsWith(_loadedCardCoverPrefix);
+      }),
     );
-    await shot(tester, 'board', loadedImages: 1);
+    await shot(
+      tester,
+      'board',
+      loadedImages: 1,
+      loadedFinder: loadedCardCover,
+    );
 
     // The card is in the second horizontally scrolling board list. The card's
     // own vertical ListView is the nearest scrollable to the finder, so
@@ -234,10 +245,6 @@ void main() {
     );
     await tester.drag(horizontalScroll, const Offset(-400, 0));
     await tester.pumpAndSettle();
-    final cardTile = find.ancestor(
-      of: find.text('Design onboarding flow'),
-      matching: find.byType(InkWell),
-    );
     await tester.tap(cardTile.first);
     // The card sheet is a lazy list, so lower sections are not built until
     // its own scrollable is advanced.
@@ -250,6 +257,7 @@ void main() {
       find.text('Checklists'),
       400,
       scrollable: cardSheetScroll,
+      alignment: 0.3,
     );
     await pumpUntilFound(tester, find.text('Checklists'));
     await pumpUntilFound(tester, find.text('photo-60.jpg'));

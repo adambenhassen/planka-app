@@ -109,7 +109,8 @@ class CardTile extends ConsumerWidget {
                 width: double.infinity,
                 fit: BoxFit.fitWidth,
                 imageBuilder: (_, imageProvider) => Image(
-                  key: const ValueKey<String>('store-capture-loaded-card-cover'),
+                  key: ValueKey<String>(
+                      'store-capture-loaded-card-cover:${card.id}'),
                   image: imageProvider,
                   width: double.infinity,
                   fit: BoxFit.fitWidth,
