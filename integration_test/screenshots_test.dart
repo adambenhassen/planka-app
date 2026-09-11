@@ -51,8 +51,6 @@ void main() {
     while (DateTime.now().isBefore(until)) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    await binding.convertFlutterSurfaceToImage();
-    await tester.pump();
     await binding.takeScreenshot(name);
   }
 
@@ -85,6 +83,8 @@ void main() {
 
     await pumpUntilFound(tester, find.text('Product Launch'),
         timeout: const Duration(seconds: 40));
+    await binding.convertFlutterSurfaceToImage();
+    await tester.pump();
     await shot(tester, 'projects');
 
     await tester.tap(find.text('Roadmap').first);
