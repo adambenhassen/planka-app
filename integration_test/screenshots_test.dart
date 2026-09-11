@@ -257,8 +257,11 @@ void main() {
       find.text('Checklists'),
       400,
       scrollable: cardSheetScroll,
-      alignment: 0.3,
     );
+    // Keep the seeded labels in frame while retaining the checklist and
+    // attachment rows below them.
+    await tester.drag(cardSheetScroll, const Offset(0, 180));
+    await tester.pumpAndSettle();
     await pumpUntilFound(tester, find.text('Checklists'));
     await pumpUntilFound(tester, find.text('photo-60.jpg'));
     final loadedAttachment = find.byWidgetPredicate((widget) {
