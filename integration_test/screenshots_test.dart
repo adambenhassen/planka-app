@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/main.dart';
+import 'package:planka_app/ui/card_sheet.dart';
 
 const _url =
     String.fromEnvironment('PLANKA_URL', defaultValue: 'http://localhost:3000');
@@ -31,6 +32,9 @@ void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   // Simulator builds are always debug; hide the DEBUG banner for captures.
   WidgetsApp.debugAllowBannerOverride = false;
+  // A capture must exercise the same hit targets as a user interaction. Do
+  // not let an off-screen finder pass while Flutter only reports a warning.
+  WidgetController.hitTestWarningShouldBeFatal = true;
 
   Future<void> pumpUntilFound(WidgetTester tester, Finder finder,
       {Duration timeout = const Duration(seconds: 20)}) async {
@@ -54,6 +58,42 @@ void main() {
     await binding.takeScreenshot(name);
   }
 
+  Future<void> submitLoginAndWait(WidgetTester tester) async {
+    final productLaunch = find.text('Product Launch');
+    final loginButton = find.ancestor(
+      of: find.text('Log in'),
+      matching: find.byType(FilledButton),
+    );
+    final deadline = DateTime.now().add(const Duration(seconds: 40));
+    var attempts = 0;
+
+    while (DateTime.now().isBefore(deadline)) {
+      if (tester.any(productLaunch)) return;
+
+      // A simulator can deliver the keyboard dismissal after the first tap.
+      // Give the frame a bounded pump, then re-check the live finder before
+      // tapping so the retry never targets a stale login tree.
+      if (attempts < 3 && tester.any(loginButton)) {
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pump(const Duration(milliseconds: 500));
+        if (tester.any(productLaunch)) return;
+        if (tester.any(loginButton)) {
+          await tester.ensureVisible(loginButton);
+          if (tester.any(loginButton)) {
+            await tester.tap(loginButton);
+            attempts++;
+          }
+        }
+      }
+
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+
+    final texts =
+        tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).toList();
+    fail('Timed out waiting for $productLaunch; visible texts: $texts');
+  }
+
   testWidgets('capture README screenshots', (tester) async {
     await tester.pumpWidget(ProviderScope(
       overrides: [
@@ -72,24 +112,33 @@ void main() {
     // Submit through the button after dismissing the simulator keyboard. The
     // iPad simulator does not reliably deliver the password field's done
     // action, and a direct text tap can land outside the button bounds.
-    FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pump(const Duration(milliseconds: 500));
-    final loginButton = find.ancestor(
-      of: find.text('Log in'),
-      matching: find.byType(FilledButton),
-    );
-    await tester.ensureVisible(loginButton);
-    await tester.tap(loginButton);
-
-    await pumpUntilFound(tester, find.text('Product Launch'),
-        timeout: const Duration(seconds: 40));
+    await submitLoginAndWait(tester);
     await binding.convertFlutterSurfaceToImage();
     await tester.pump();
     await shot(tester, 'projects');
 
-    await tester.ensureVisible(find.text('Roadmap').first);
+    // The board tile is inside a non-scrollable GridView nested in the
+    // projects ListView. Scroll the owning list explicitly and tap the tile's
+    // actual hit target, rather than its overlaid title text.
+    final projectsScroll = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable && widget.axisDirection == AxisDirection.down,
+    ).first;
+    final roadmapStack = find.ancestor(
+      of: find.text('Roadmap').first,
+      matching: find.byType(Stack),
+    ).first;
+    final roadmapTile = find.descendant(
+      of: roadmapStack,
+      matching: find.byType(InkWell),
+    );
+    await tester.scrollUntilVisible(
+      roadmapTile,
+      300,
+      scrollable: projectsScroll,
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Roadmap').first);
+    await tester.tap(roadmapTile.first);
     await pumpUntilFound(tester, find.text('Design onboarding flow'));
     await shot(tester, 'board');
 
@@ -109,10 +158,11 @@ void main() {
     await tester.tap(cardTile.first);
     // The card sheet is a lazy list, so lower sections are not built until
     // its own scrollable is advanced.
-    final cardSheetScroll = find.byWidgetPredicate(
-      (widget) =>
-          widget is Scrollable && widget.axisDirection == AxisDirection.down,
-    ).last;
+    await pumpUntilFound(tester, find.byType(CardSheet));
+    final cardSheetScroll = find.descendant(
+      of: find.byType(CardSheet),
+      matching: find.byType(Scrollable),
+    ).first;
     await tester.scrollUntilVisible(
       find.text('Checklists'),
       400,
