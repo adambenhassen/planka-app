@@ -78,7 +78,12 @@ void main() {
     if (tester.any(find.text('Log in'))) {
       tester.testTextInput.hide();
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Log in'));
+      final loginButton = find.ancestor(
+        of: find.text('Log in'),
+        matching: find.byType(FilledButton),
+      );
+      await tester.ensureVisible(loginButton);
+      await tester.tap(loginButton);
     }
 
     await pumpUntilFound(tester, find.text('Product Launch'),
