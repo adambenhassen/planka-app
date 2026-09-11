@@ -19,6 +19,7 @@ CAPTURE_TIMEOUT_SECONDS=${STORE_IOS_CAPTURE_TIMEOUT_SECONDS:-900}
 
 mkdir -p "$OUTPUT_DIR"
 BOOT_LOG="$OUTPUT_DIR/simctl-bootstatus.log"
+LAUNCH_LOG="$OUTPUT_DIR/simctl-launch.log"
 CAPTURE_LOG="$OUTPUT_DIR/flutter-drive.log"
 DIAGNOSTICS_LOG="$OUTPUT_DIR/diagnostics.log"
 
@@ -45,6 +46,8 @@ write_diagnostics() {
     xcrun simctl list devices available 2>&1 || true
     echo "--- bootstatus output ---"
     tail -200 "$BOOT_LOG" 2>/dev/null || true
+    echo "--- simulator launch output ---"
+    tail -200 "$LAUNCH_LOG" 2>/dev/null || true
     echo "--- command output ---"
     tail -200 "$command_log" 2>/dev/null || true
     if grep -q 'VMServiceFlutterDriver: Connected to Flutter application.' "$command_log"; then
@@ -99,29 +102,74 @@ run_with_timeout() {
   fi
 }
 
-echo "Booting iOS simulator $DEVICE_ID"
-xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
-run_with_timeout \
-  "simulator boot" \
-  "$BOOT_TIMEOUT_SECONDS" \
-  "$BOOT_LOG" \
-  xcrun simctl bootstatus "$DEVICE_ID" -b
+reset_simulator() {
+  local reason=$1
+
+  echo "$reason"
+  xcrun simctl shutdown "$DEVICE_ID" 2>&1 || true
+  xcrun simctl erase "$DEVICE_ID" 2>&1 || true
+}
+
+boot_simulator() {
+  local attempt_label=$1
+  local status
+
+  BOOT_LOG="$OUTPUT_DIR/simctl-bootstatus-${attempt_label}.log"
+  LAUNCH_LOG="$OUTPUT_DIR/simctl-launch-${attempt_label}.log"
+  DIAGNOSTICS_LOG="$OUTPUT_DIR/diagnostics-${attempt_label}.log"
+  echo "Booting iOS simulator $DEVICE_ID (attempt $attempt_label)"
+  if run_with_timeout \
+    "simulator launch $attempt_label" \
+    "$BOOT_TIMEOUT_SECONDS" \
+    "$LAUNCH_LOG" \
+    xcrun simctl boot "$DEVICE_ID"; then
+    :
+  else
+    status=$?
+    if [ "$status" -eq 124 ]; then
+      return "$status"
+    fi
+    echo "simulator launch $attempt_label returned exit code $status; checking boot status" >&2
+  fi
+  if run_with_timeout \
+    "simulator boot $attempt_label" \
+    "$BOOT_TIMEOUT_SECONDS" \
+    "$BOOT_LOG" \
+    xcrun simctl bootstatus "$DEVICE_ID" -b; then
+    return 0
+  else
+    status=$?
+  fi
+  return "$status"
+}
+
+boot_attempt=1
+while [ "$boot_attempt" -le 2 ]; do
+  if boot_simulator "attempt-${boot_attempt}"; then
+    break
+  else
+    status=$?
+  fi
+
+  if [ "$boot_attempt" -eq 2 ]; then
+    exit "$status"
+  fi
+  reset_simulator "Resetting iOS simulator after boot attempt ${boot_attempt} failed"
+  boot_attempt=$((boot_attempt + 1))
+done
 
 capture_attempt=1
 while [ "$capture_attempt" -le 2 ]; do
   if [ "$capture_attempt" -gt 1 ]; then
-    echo "Resetting iOS simulator before capture retry"
     # A launch that never publishes VM service can leave the simulator app
     # wedged. Reset only this ephemeral CI device before the single retry.
-    xcrun simctl shutdown "$DEVICE_ID" 2>&1 || true
-    xcrun simctl erase "$DEVICE_ID" 2>&1 || true
-    xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
-    BOOT_LOG="$OUTPUT_DIR/simctl-bootstatus-attempt-${capture_attempt}.log"
-    run_with_timeout \
-      "simulator boot retry" \
-      "$BOOT_TIMEOUT_SECONDS" \
-      "$BOOT_LOG" \
-      xcrun simctl bootstatus "$DEVICE_ID" -b || exit $?
+    reset_simulator "Resetting iOS simulator before capture retry"
+    if boot_simulator "capture-retry-${capture_attempt}"; then
+      :
+    else
+      status=$?
+      exit "$status"
+    fi
   fi
 
   CAPTURE_LOG="$OUTPUT_DIR/flutter-drive-attempt-${capture_attempt}.log"
