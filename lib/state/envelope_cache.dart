@@ -58,6 +58,16 @@ class EnvelopeCache {
     return File('${dir.path}/$safe.pending');
   }
 
+  Future<File> _failClosedFile(String key) async {
+    final base = await _baseDirectory();
+    final dir = Directory(
+      '${base.path}/envelope_cache_fail_closed/${_bucketForKey(key)}',
+    );
+    await dir.create(recursive: true);
+    final safe = sha256.convert(utf8.encode(key));
+    return File('${dir.path}/$safe.failed');
+  }
+
   Future<Directory> _baseDirectory() async =>
       _override ?? await getApplicationSupportDirectory();
 
@@ -107,12 +117,34 @@ class EnvelopeCache {
       // independent durable marker keeps both live and cold readers from
       // serving the stale envelope.
       File? intent;
+      File? failClosed;
       try {
         intent = await _deletionIntentFile(key);
         await intent.writeAsString('');
-      } catch (e, s) {
+        if (!await intent.exists()) {
+          throw StateError('Envelope deletion intent was not persisted');
+        }
+      } catch (e, _) {
         if (e is AccountCacheClosedException) rethrow;
-        recordFailure(e, s);
+        // A malformed or unwritable .pending path cannot be the fail-closed
+        // record. Keep a separate durable marker before touching either
+        // envelope representation, and verify that marker independently.
+        try {
+          failClosed = await _failClosedFile(key);
+          await failClosed.writeAsString('');
+          if (!await failClosed.exists()) {
+            throw StateError('Envelope fail-closed marker was not persisted');
+          }
+        } catch (fallbackError, fallbackStack) {
+          if (fallbackError is AccountCacheClosedException) rethrow;
+          recordFailure(fallbackError, fallbackStack);
+          lease.ensureOpen();
+          throw CachePurgeException(
+            'envelopes',
+            firstFailure!,
+            firstFailureStack ?? StackTrace.current,
+          );
+        }
       }
       final files = <File>[];
       try {
@@ -164,6 +196,20 @@ class EnvelopeCache {
           recordFailure(e, s);
         }
       }
+      if (firstFailure == null && failClosed != null) {
+        try {
+          if (await failClosed.exists()) await failClosed.delete();
+          if (await failClosed.exists()) {
+            recordFailure(
+              StateError('Envelope fail-closed marker remains'),
+              StackTrace.current,
+            );
+          }
+        } catch (e, s) {
+          if (e is AccountCacheClosedException) rethrow;
+          recordFailure(e, s);
+        }
+      }
       lease.ensureOpen();
       if (firstFailure != null) {
         throw CachePurgeException(
@@ -207,8 +253,19 @@ class EnvelopeCache {
       final deletionIntentNamespace = Directory(
         '${directory.parent.path}/envelope_cache_delete_intents/account-${sha256.convert(utf8.encode(accountId))}',
       );
+      final failClosedNamespace = Directory(
+        '${directory.parent.path}/envelope_cache_fail_closed/account-${sha256.convert(utf8.encode(accountId))}',
+      );
       try {
         if (await namespace.exists()) await namespace.delete(recursive: true);
+      } catch (e, s) {
+        firstFailure ??= e;
+        firstFailureStack ??= s;
+      }
+      try {
+        if (await failClosedNamespace.exists()) {
+          await failClosedNamespace.delete(recursive: true);
+        }
       } catch (e, s) {
         firstFailure ??= e;
         firstFailureStack ??= s;
@@ -279,6 +336,11 @@ class EnvelopeCache {
         if (await deletionIntentNamespace.exists() &&
             await _hasEntries(deletionIntentNamespace)) {
           firstFailure ??= StateError('Envelope deletion intents remain');
+          firstFailureStack ??= StackTrace.current;
+        }
+        if (await failClosedNamespace.exists() &&
+            await _hasEntries(failClosedNamespace)) {
+          firstFailure ??= StateError('Envelope fail-closed markers remain');
           firstFailureStack ??= StackTrace.current;
         }
       } catch (e, s) {
@@ -380,6 +442,8 @@ class EnvelopeCache {
 
   Future<Envelope?> _getWithLease(String key, AccountCacheLease lease) async {
     try {
+      final failClosed = await _failClosedFile(key);
+      if (await failClosed.exists()) return null;
       final intent = await _deletionIntentFile(key);
       if (await intent.exists()) return null;
       final invalidation = await _invalidationFile(key);

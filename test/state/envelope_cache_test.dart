@@ -272,12 +272,17 @@ void main() {
       final invalidations = Directory(
         '${dir.path}/envelope_cache_invalidations/account-$accountHash',
       );
+      final deletionIntents = Directory(
+        '${dir.path}/envelope_cache_delete_intents/account-$accountHash',
+      );
       await invalidations.create(recursive: true);
+      await deletionIntents.create(recursive: true);
 
       // The delete and marker write fail independently. The durable delete
       // intent written before either operation is the cold fail-closed path.
       await chmod('0555', current.parent.path);
       await chmod('0555', invalidations.path);
+      await chmod('0555', deletionIntents.path);
       try {
         await expectLater(
           cache.delete(key),
@@ -292,6 +297,7 @@ void main() {
       } finally {
         await chmod('0755', current.parent.path);
         await chmod('0755', invalidations.path);
+        await chmod('0755', deletionIntents.path);
       }
 
       await cache.delete(key);

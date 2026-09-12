@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:io' as io;
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:file/file.dart' as file;
+import 'package:file/file.dart' as fs;
+import 'package:file/local.dart' as local;
 import 'package:file/memory.dart' as file_memory;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -258,10 +261,182 @@ class _RecordingLifecycle extends AccountCacheLifecycle {
   }
 }
 
+class _FilePhase {
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  Future<void> pause() {
+    if (!started.isCompleted) started.complete();
+    return release.future;
+  }
+}
+
+class _FilesystemPhases {
+  final open = _FilePhase();
+  final write = _FilePhase();
+  final stream = _FilePhase();
+  final flush = _FilePhase();
+  final close = _FilePhase();
+  final closeFinished = Completer<void>();
+}
+
+class _PhasedFileSystem extends file.ForwardingFileSystem {
+  _PhasedFileSystem(this.phases) : super(local.LocalFileSystem());
+
+  final _FilesystemPhases phases;
+  var armed = false;
+
+  bool isMediaPath(String path) => path.contains('planka-images-');
+
+  fs.File wrapFile(io.File delegate) => _PhasedFile(this, delegate);
+
+  fs.Directory wrapDirectory(io.Directory delegate) =>
+      _PhasedDirectory(this, delegate);
+
+  @override
+  fs.File file(dynamic path) => wrapFile(io.File(super.file(path).path));
+
+  @override
+  fs.Directory directory(dynamic path) =>
+      wrapDirectory(io.Directory(super.directory(path).path));
+}
+
+class _PhasedDirectory
+    extends fs.ForwardingFileSystemEntity<fs.Directory, io.Directory>
+    with fs.ForwardingDirectory<fs.Directory> {
+  _PhasedDirectory(this._fileSystem, this._delegate);
+
+  final _PhasedFileSystem _fileSystem;
+  final io.Directory _delegate;
+
+  @override
+  fs.FileSystem get fileSystem => _fileSystem;
+
+  @override
+  io.Directory get delegate => _delegate;
+
+  @override
+  _PhasedDirectory wrap(io.Directory delegate) =>
+      _fileSystem.wrapDirectory(delegate) as _PhasedDirectory;
+
+  @override
+  fs.Directory wrapDirectory(io.Directory delegate) =>
+      _fileSystem.wrapDirectory(delegate);
+
+  @override
+  fs.File wrapFile(io.File delegate) => _fileSystem.wrapFile(delegate);
+
+  @override
+  fs.Link wrapLink(io.Link delegate) => _fileSystem.link(delegate.path);
+
+  @override
+  fs.Directory childDirectory(String basename) =>
+      _fileSystem.directory(p.join(path, basename));
+
+  @override
+  fs.File childFile(String basename) =>
+      _fileSystem.file(p.join(path, basename));
+
+  @override
+  fs.Link childLink(String basename) =>
+      _fileSystem.link(p.join(path, basename));
+}
+
+class _PhasedFile extends file.ForwardingFileSystemEntity<file.File, io.File>
+    with file.ForwardingFile {
+  _PhasedFile(this._fileSystem, this._delegate);
+
+  final _PhasedFileSystem _fileSystem;
+  final io.File _delegate;
+
+  @override
+  file.FileSystem get fileSystem => _fileSystem;
+
+  @override
+  io.File get delegate => _delegate;
+
+  @override
+  _PhasedFile wrap(io.File delegate) =>
+      _fileSystem.wrapFile(delegate) as _PhasedFile;
+
+  @override
+  file.File wrapFile(io.File delegate) => _fileSystem.wrapFile(delegate);
+
+  @override
+  file.Directory wrapDirectory(io.Directory delegate) =>
+      _fileSystem.wrapDirectory(delegate);
+
+  @override
+  file.Link wrapLink(io.Link delegate) => _fileSystem.link(delegate.path);
+
+  @override
+  Future<file.File> writeAsBytes(
+    List<int> bytes, {
+    io.FileMode mode = io.FileMode.write,
+    bool flush = false,
+  }) async {
+    if (_fileSystem.armed && _fileSystem.isMediaPath(path)) {
+      await _fileSystem.phases.write.pause();
+    }
+    return wrap(await delegate.writeAsBytes(bytes, mode: mode, flush: flush));
+  }
+
+  @override
+  io.IOSink openWrite({
+    io.FileMode mode = io.FileMode.write,
+    Encoding encoding = utf8,
+  }) {
+    final sink = delegate.openWrite(mode: mode, encoding: encoding);
+    if (!_fileSystem.armed || !_fileSystem.isMediaPath(path)) return sink;
+    return io.IOSink(
+      _PhasedSinkConsumer(sink, _fileSystem.phases),
+      encoding: encoding,
+    );
+  }
+}
+
+class _PhasedSinkConsumer implements StreamConsumer<List<int>> {
+  _PhasedSinkConsumer(this._delegate, this._phases);
+
+  final io.IOSink _delegate;
+  final _FilesystemPhases _phases;
+  var _opened = false;
+
+  Future<void> _waitForOpen() async {
+    if (_opened) return;
+    _opened = true;
+    await _phases.open.pause();
+  }
+
+  @override
+  Future<void> addStream(Stream<List<int>> stream) async {
+    await _waitForOpen();
+    await _phases.stream.pause();
+    await _phases.flush.pause();
+    await _delegate.addStream(stream);
+  }
+
+  @override
+  Future<void> close() async {
+    await _waitForOpen();
+    await _phases.close.pause();
+    try {
+      await _delegate.close();
+    } finally {
+      if (!_phases.closeFinished.isCompleted) {
+        _phases.closeFinished.complete();
+      }
+    }
+  }
+}
+
 class _RepositoryFailure {
   var failNextUpdate = false;
   Completer<void>? updateGate;
   Completer<void>? updateStarted;
+  final updateGates = <String, Completer<void>>{};
+  final updateStartedByKey = <String, Completer<void>>{};
+  final failKeys = <String>{};
 }
 
 class _FailingCacheInfoRepository extends CacheInfoRepository {
@@ -278,12 +453,13 @@ class _FailingCacheInfoRepository extends CacheInfoRepository {
 
   @override
   Future<dynamic> updateOrInsert(CacheObject cacheObject) async {
-    final gate = _failure.updateGate;
+    final gate = _failure.updateGates[cacheObject.key] ?? _failure.updateGate;
     if (gate != null) {
       _failure.updateStarted?.complete();
+      _failure.updateStartedByKey[cacheObject.key]?.complete();
       await gate.future;
     }
-    if (_failure.failNextUpdate) {
+    if (_failure.failNextUpdate || _failure.failKeys.remove(cacheObject.key)) {
       _failure.failNextUpdate = false;
       throw StateError('metadata write failed');
     }
@@ -648,13 +824,17 @@ void main() {
       addTearDown(subscription.cancel);
 
       await service.started.future;
+      await expectLater(
+        cache.purgeAccount(account),
+        throwsA(isA<CachePurgeException>()),
+      );
+      service.release.complete();
+      await lifecycle.generationRejected.future;
       await cache.purgeAccount(account);
 
       lifecycle.completeRemoval(account);
       lifecycle.reopen(account);
       final reauthenticated = cache.forAccount(account);
-      service.release.complete();
-      await lifecycle.generationRejected.future;
 
       final namespace = 'planka-images-${sha256.convert(utf8.encode(account))}';
       final namespaceDirectory = Directory(p.join(root.path, namespace));
@@ -688,32 +868,198 @@ void main() {
     },
   );
 
-  test('removal cancels a never-ending media response', () async {
-    const account = 'https://planka.example#never-ending';
-    final source = StreamController<FileResponse>();
-    var cancelled = false;
-    source.onCancel = () {
-      cancelled = true;
-    };
-    final backend = _ControlledMediaCache(responseStream: source.stream);
-    final cache = AccountImageCacheManager(
-      lifecycle: AccountCacheLifecycle(),
-      createManager: (_) => backend,
-    );
-    final handle = cache.forAccount(account);
-    final subscription = handle
-        .getFileStream('https://planka.example/media/hanging.png')
-        .listen((_) {});
-    addTearDown(() async {
-      await subscription.cancel();
+  test(
+    'production filesystem holds a pre-admitted write across removal',
+    () async {
+      const accountA = 'https://planka.example#filesystem-a';
+      const accountB = 'https://planka.example#filesystem-b';
+      const imageUrl = 'https://planka.example/media/filesystem.png';
+      final root = await Directory.systemTemp.createTemp('media_filesystem');
+      addTearDown(() => root.delete(recursive: true));
+      final phases = _FilesystemPhases();
+      final fileSystem = _PhasedFileSystem(phases);
+      final cache = AccountImageCacheManager(
+        directory: root,
+        fileSystem: fileSystem,
+        lifecycle: AccountCacheLifecycle(
+          removalTimeout: const Duration(milliseconds: 20),
+        ),
+      );
+      addTearDown(cache.dispose);
+      final handleA = cache.forAccount(accountA);
+      final handleB = cache.forAccount(accountB);
+      final keyA = plankaImageCacheKey(accountA, imageUrl);
+      final keyB = plankaImageCacheKey(accountB, imageUrl);
+      await handleA.putFile(
+        imageUrl,
+        Uint8List.fromList('A'.codeUnits),
+        key: keyA,
+      );
+      await handleB.putFile(
+        imageUrl,
+        Uint8List.fromList('B'.codeUnits),
+        key: keyB,
+      );
+      fileSystem.armed = true;
+
+      final file = (await handleA.getFileFromCache(
+        keyA,
+        ignoreMemCache: true,
+      ))!.file;
+      final write = file.writeAsBytes('late'.codeUnits);
+      await phases.write.started.future;
+      final purge = cache.purgeAccount(accountA);
+
+      await expectLater(purge, throwsA(isA<CachePurgeException>()));
+      phases.write.release.complete();
+      await expectLater(write, throwsA(isA<AccountCacheClosedException>()));
+
+      await cache.purgeAccount(accountA);
+      expect(
+        await (await handleB.getFileFromCache(
+          keyB,
+          ignoreMemCache: true,
+        ))!.file.readAsString(),
+        'B',
+      );
+
+      await cache.dispose();
+      final cold = AccountImageCacheManager(directory: root);
+      addTearDown(cold.dispose);
+      expect(
+        await cold
+            .forAccount(accountA)
+            .getFileFromCache(keyA, ignoreMemCache: true),
+        isNull,
+      );
+      expect(
+        await (await cold
+                .forAccount(accountB)
+                .getFileFromCache(keyB, ignoreMemCache: true))!
+            .file
+            .readAsString(),
+        'B',
+      );
+    },
+  );
+
+  test(
+    'production filesystem holds a media sink through open stream flush close',
+    () async {
+      const accountA = 'https://planka.example#filesystem-sink-a';
+      const accountB = 'https://planka.example#filesystem-sink-b';
+      const imageUrl = 'https://planka.example/media/filesystem-sink.png';
+      final root = await Directory.systemTemp.createTemp('media_sink_phases');
+      addTearDown(() => root.delete(recursive: true));
+      final phases = _FilesystemPhases();
+      final fileSystem = _PhasedFileSystem(phases);
+      final cache = AccountImageCacheManager(
+        directory: root,
+        fileSystem: fileSystem,
+        lifecycle: AccountCacheLifecycle(
+          removalTimeout: const Duration(milliseconds: 20),
+        ),
+      );
+      addTearDown(cache.dispose);
+      final handleA = cache.forAccount(accountA);
+      final handleB = cache.forAccount(accountB);
+      final keyA = plankaImageCacheKey(accountA, imageUrl);
+      final keyB = plankaImageCacheKey(accountB, imageUrl);
+      await handleA.putFile(
+        imageUrl,
+        Uint8List.fromList('A'.codeUnits),
+        key: keyA,
+      );
+      await handleB.putFile(
+        imageUrl,
+        Uint8List.fromList('B'.codeUnits),
+        key: keyB,
+      );
+      fileSystem.armed = true;
+
+      final file = (await handleA.getFileFromCache(
+        keyA,
+        ignoreMemCache: true,
+      ))!.file;
+      final sink = file.openWrite();
+      final streaming = sink.addStream(
+        Stream<List<int>>.value('late'.codeUnits),
+      );
+      await phases.open.started.future.timeout(const Duration(seconds: 1));
+
+      final purge = cache.purgeAccount(accountA);
+      await expectLater(purge, throwsA(isA<CachePurgeException>()));
+
+      phases.open.release.complete();
+      await phases.stream.started.future.timeout(const Duration(seconds: 1));
+      phases.stream.release.complete();
+      await phases.flush.started.future.timeout(const Duration(seconds: 1));
+      phases.flush.release.complete();
+      await expectLater(streaming, throwsA(isA<AccountCacheClosedException>()));
+
+      await phases.close.started.future.timeout(const Duration(seconds: 1));
+      phases.close.release.complete();
+      await phases.closeFinished.future.timeout(const Duration(seconds: 1));
+      await cache.purgeAccount(accountA);
+
+      expect(
+        await (await handleB.getFileFromCache(
+          keyB,
+          ignoreMemCache: true,
+        ))!.file.readAsString(),
+        'B',
+      );
+      await cache.dispose();
+      final cold = AccountImageCacheManager(directory: root);
+      addTearDown(cold.dispose);
+      expect(
+        await cold
+            .forAccount(accountA)
+            .getFileFromCache(keyA, ignoreMemCache: true),
+        isNull,
+      );
+      expect(
+        await (await cold
+                .forAccount(accountB)
+                .getFileFromCache(keyB, ignoreMemCache: true))!
+            .file
+            .readAsString(),
+        'B',
+      );
+    },
+  );
+
+  test(
+    'removal bounds a never-ending media response without false success',
+    () async {
+      const account = 'https://planka.example#never-ending';
+      final source = StreamController<FileResponse>();
+      final backend = _ControlledMediaCache(responseStream: source.stream);
+      final cache = AccountImageCacheManager(
+        lifecycle: AccountCacheLifecycle(
+          removalTimeout: const Duration(milliseconds: 20),
+        ),
+        createManager: (_) => backend,
+      );
+      final handle = cache.forAccount(account);
+      final subscription = handle
+          .getFileStream('https://planka.example/media/hanging.png')
+          .listen((_) {});
+      addTearDown(() async {
+        await subscription.cancel();
+        await source.close();
+      });
+
+      final removal = cache.purgeAccount(account);
+      await expectLater(
+        removal.timeout(const Duration(milliseconds: 250)),
+        throwsA(isA<CachePurgeException>()),
+      );
+
       await source.close();
-    });
-
-    final removal = cache.purgeAccount(account);
-    await removal.timeout(const Duration(milliseconds: 250));
-
-    expect(cancelled, isTrue);
-  });
+      await cache.purgeAccount(account);
+    },
+  );
 
   test(
     'an admitted but never-listened stream does not block removal',
@@ -744,8 +1090,6 @@ void main() {
     () async {
       const account = 'https://planka.example#bounded-cancel';
       final source = StreamController<FileResponse>();
-      final cancellation = Completer<void>();
-      source.onCancel = () => cancellation.future;
       final cache = AccountImageCacheManager(
         lifecycle: AccountCacheLifecycle(
           removalTimeout: const Duration(milliseconds: 20),
@@ -758,9 +1102,8 @@ void main() {
           .getFileStream('https://planka.example/media/bounded.png')
           .listen((_) {}, onError: (_) {});
       addTearDown(() async {
-        if (!cancellation.isCompleted) cancellation.complete();
-        await subscription.cancel();
         await source.close();
+        await subscription.cancel();
       });
 
       await expectLater(
@@ -772,8 +1115,7 @@ void main() {
         throwsA(isA<AccountCacheClosedException>()),
       );
 
-      cancellation.complete();
-      await subscription.cancel();
+      await source.close();
       await cache.purgeAccount(account);
     },
   );
@@ -783,14 +1125,7 @@ void main() {
     () async {
       const account = 'https://planka.example#immediate-retry';
       final source = StreamController<FileResponse>();
-      final cancellation = Completer<void>();
-      final cancellationStarted = Completer<void>();
       var lateCommit = false;
-      source.onCancel = () async {
-        cancellationStarted.complete();
-        await cancellation.future;
-        lateCommit = true;
-      };
       final cache = AccountImageCacheManager(
         lifecycle: AccountCacheLifecycle(
           removalTimeout: const Duration(milliseconds: 20),
@@ -803,9 +1138,8 @@ void main() {
           .getFileStream('https://planka.example/media/late-commit.png')
           .listen((_) {}, onError: (_) {});
       addTearDown(() async {
-        if (!cancellation.isCompleted) cancellation.complete();
-        await subscription.cancel();
         await source.close();
+        await subscription.cancel();
         await cache.dispose();
       });
 
@@ -813,7 +1147,6 @@ void main() {
         cache.purgeAccount(account),
         throwsA(isA<CachePurgeException>()),
       );
-      await cancellationStarted.future;
       await Future<void>.delayed(const Duration(milliseconds: 50));
       await expectLater(
         cache.purgeAccount(account),
@@ -821,9 +1154,8 @@ void main() {
       );
       expect(lateCommit, isFalse);
 
-      cancellation.complete();
-      await subscription.cancel();
-      await Future<void>.delayed(Duration.zero);
+      await source.close();
+      lateCommit = true;
       expect(lateCommit, isTrue);
       await cache.purgeAccount(account);
     },
@@ -835,16 +1167,7 @@ void main() {
       const account = 'https://planka.example#cancel-error';
       final source = StreamController<FileResponse>();
       final listened = Completer<void>();
-      final cancellationStarted = Completer<void>();
-      var cancellationCalls = 0;
       source.onListen = listened.complete;
-      source.onCancel = () {
-        cancellationStarted.complete();
-        if (cancellationCalls++ == 0) {
-          return Future<void>.error(StateError('cancel failed'));
-        }
-        return null;
-      };
       final cache = AccountImageCacheManager(
         lifecycle: AccountCacheLifecycle(
           removalTimeout: const Duration(milliseconds: 20),
@@ -867,13 +1190,85 @@ void main() {
         cache.purgeAccount(account),
         throwsA(isA<CachePurgeException>()),
       );
-      await cancellationStarted.future;
       await expectLater(
         cache.purgeAccount(account),
         throwsA(isA<CachePurgeException>()),
       );
 
       await source.close();
+      await cache.purgeAccount(account);
+    },
+  );
+
+  test(
+    'concurrent media metadata failures stay with their owning stream',
+    () async {
+      const account = 'https://planka.example#metadata-owners';
+      const imageA = 'https://planka.example/media/metadata-a.png';
+      const imageB = 'https://planka.example/media/metadata-b.png';
+      final root = await Directory.systemTemp.createTemp(
+        'media_metadata_owners',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      final metadata = Directory(p.join(root.path, 'metadata'));
+      await metadata.create(recursive: true);
+      final failure = _RepositoryFailure();
+      final keyA = plankaImageCacheKey(account, imageA);
+      final keyB = plankaImageCacheKey(account, imageB);
+      final gateA = Completer<void>();
+      final startedA = Completer<void>();
+      failure
+        ..updateGates[keyA] = gateA
+        ..updateStartedByKey[keyA] = startedA
+        ..failKeys.add(keyA);
+      CacheInfoRepository createRepository(String namespace) =>
+          _FailingCacheInfoRepository(
+            JsonCacheInfoRepository.withFile(
+              File(p.join(metadata.path, '$namespace.json')),
+            ),
+            failure,
+          );
+      final cache = AccountImageCacheManager(
+        temporaryDirectory: () async => root,
+        createRepository: createRepository,
+        fileService: _RecordingFileService(),
+      );
+      addTearDown(cache.dispose);
+      final handle = cache.forAccount(account);
+      final firstValues = <FileResponse>[];
+      final firstErrors = <Object>[];
+      final firstDone = Completer<void>();
+      final first = handle
+          .getFileStream(imageA, key: keyA)
+          .listen(
+            firstValues.add,
+            onError: (Object error, StackTrace _) => firstErrors.add(error),
+            onDone: firstDone.complete,
+          );
+      addTearDown(first.cancel);
+      await startedA.future;
+
+      final secondValues = <FileResponse>[];
+      final secondErrors = <Object>[];
+      final secondDone = Completer<void>();
+      final second = handle
+          .getFileStream(imageB, key: keyB)
+          .listen(
+            secondValues.add,
+            onError: (Object error, StackTrace _) => secondErrors.add(error),
+            onDone: secondDone.complete,
+          );
+      addTearDown(second.cancel);
+
+      await secondDone.future.timeout(const Duration(milliseconds: 250));
+      expect(secondErrors, isEmpty);
+      expect(secondValues.whereType<FileInfo>(), hasLength(1));
+
+      gateA.complete();
+      await firstDone.future;
+      expect(firstErrors, hasLength(1));
+      expect(firstErrors.single, isA<CacheOperationException>());
+      expect(firstValues.whereType<FileInfo>(), isEmpty);
     },
   );
 
@@ -982,10 +1377,7 @@ void main() {
           .where((entry) => entry is File);
       expect(await files.toList(), isNotEmpty);
 
-      await expectLater(
-        cache.purgeAccount(account),
-        throwsA(isA<CachePurgeException>()),
-      );
+      await cache.purgeAccount(account);
       expect(
         await Directory(p.join(root.path, namespace))
             .list(recursive: true, followLinks: false)

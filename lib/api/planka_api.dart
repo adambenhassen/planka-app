@@ -247,6 +247,7 @@ class _AccountFileServiceResponse implements FileServiceResponse {
     final controller = StreamController<List<int>>();
     StreamSubscription<List<int>>? subscription;
     AccountCacheLease? lease;
+    final sourceSettled = Completer<void>();
     Future<void>? cancellation;
     var cancelled = false;
     var released = false;
@@ -257,57 +258,41 @@ class _AccountFileServiceResponse implements FileServiceResponse {
       lease?.release();
     }
 
-    Future<void> finishAfterCancellation(
-      StreamSubscription<List<int>> current,
-      Future<void> operation,
-    ) async {
+    void markSourceSettled() {
+      if (!sourceSettled.isCompleted) sourceSettled.complete();
+    }
+
+    Future<void> finishAfterSource() async {
       try {
-        try {
-          await operation;
-        } catch (_) {
-          // The first cancellation result is not proof of cleanup. Retry the
-          // subscription's cancellation so a backend that reports an error
-          // while still unwinding can prove it is now quiescent.
-        }
-        await current.cancel();
+        await sourceSettled.future;
       } catch (_) {
         lease?.reportRemovalFailure();
-        // A cancellation error is not proof that the source stopped. Keep
-        // this lease until the source's onDone callback proves quiescence.
-        return;
       }
-      if (!controller.isClosed) await controller.close();
+      if (!controller.isClosed) unawaited(controller.close());
       release();
     }
 
     Future<void> cancelImplementation() async {
       cancelled = true;
-      final current = subscription;
-      Future<void>? operation;
+      if (subscription == null) {
+        if (!controller.isClosed) unawaited(controller.close());
+        release();
+        return;
+      }
       try {
-        operation = current?.cancel();
-        if (operation == null) {
-          if (!controller.isClosed) await controller.close();
-          release();
-          return;
-        }
-        await operation.timeout(_lifecycle.removalTimeout);
+        await sourceSettled.future.timeout(_lifecycle.removalTimeout);
       } on TimeoutException {
         lease?.reportRemovalFailure();
-        if (!controller.isClosed) await controller.close();
-        unawaited(finishAfterCancellation(current!, operation!));
+        if (!controller.isClosed) unawaited(controller.close());
+        unawaited(finishAfterSource());
         return;
       } catch (_) {
         lease?.reportRemovalFailure();
-        // A cancellation error is not proof that the source stopped. Keep
-        // this lease until the source's onDone callback proves quiescence.
         if (!controller.isClosed) unawaited(controller.close());
-        if (current != null && operation != null) {
-          unawaited(finishAfterCancellation(current, operation));
-        }
+        unawaited(finishAfterSource());
         return;
       }
-      if (!controller.isClosed) await controller.close();
+      if (!controller.isClosed) unawaited(controller.close());
       release();
     }
 
@@ -326,7 +311,8 @@ class _AccountFileServiceResponse implements FileServiceResponse {
         release();
         return;
       }
-      subscription = redactCacheStream(_delegate.content).listen(
+      final shared = redactCacheStream(_delegate.content).asBroadcastStream();
+      subscription = shared.listen(
         (chunk) {
           if (!cancelled && !controller.isClosed) controller.add(chunk);
         },
@@ -334,9 +320,17 @@ class _AccountFileServiceResponse implements FileServiceResponse {
           if (!controller.isClosed) controller.addError(error, stackTrace);
         },
         onDone: () async {
+          markSourceSettled();
           await controller.close();
           release();
         },
+      );
+      // This passive listener preserves an independent source-completion
+      // signal when the data subscription reports a cancellation error.
+      shared.listen(
+        (_) {},
+        onError: (Object _, StackTrace _) {},
+        onDone: markSourceSettled,
       );
       lease!.onRemoval(cancelSource);
     };
@@ -388,6 +382,7 @@ class AccountImageCacheManager {
     AccountCacheRepositoryFactory? createRepository,
     AccountCacheDirectoryProvider? temporaryDirectory,
     FileService? fileService,
+    file.FileSystem? fileSystem,
   }) : _lifecycle = lifecycle ?? AccountCacheLifecycle() {
     _createManager =
         createManager ??
@@ -397,6 +392,7 @@ class AccountImageCacheManager {
           createRepository,
           temporaryDirectory,
           fileService,
+          fileSystem,
           _lifecycle,
         ));
   }
@@ -571,15 +567,17 @@ class AccountImageCacheManager {
     AccountCacheRepositoryFactory? createRepository,
     AccountCacheDirectoryProvider? temporaryDirectory,
     FileService? fileService,
+    file.FileSystem? fileSystem,
     AccountCacheLifecycle lifecycle,
   ) {
     final namespace = _plankaImageCacheNamespace(accountId);
-    final local = LocalFileSystem();
-    final fileSystem = _AccountDirectoryFileSystem(
+    final storageFileSystem = fileSystem ?? LocalFileSystem();
+    final accountFileSystem = _AccountDirectoryFileSystem(
       _accountDirectory(
         namespace,
         directory,
         temporaryDirectory ?? getTemporaryDirectory,
+        storageFileSystem,
       ),
       accountId,
       lifecycle,
@@ -599,22 +597,22 @@ class AccountImageCacheManager {
       baseConfig = Config(
         namespace,
         repo: repository,
-        fileSystem: fileSystem,
+        fileSystem: accountFileSystem,
         fileService: accountFileService,
       );
     } else if (directory == null) {
       baseConfig = Config(
         namespace,
-        fileSystem: fileSystem,
+        fileSystem: accountFileSystem,
         fileService: accountFileService,
       );
     } else {
       baseConfig = Config(
         namespace,
         repo: JsonCacheInfoRepository.withFile(
-          local.file(p.join(directory.path, '$namespace.json')),
+          storageFileSystem.file(p.join(directory.path, '$namespace.json')),
         ),
-        fileSystem: fileSystem,
+        fileSystem: accountFileSystem,
         fileService: accountFileService,
       );
     }
@@ -633,9 +631,10 @@ class AccountImageCacheManager {
     String namespace,
     Directory? directory,
     AccountCacheDirectoryProvider temporaryDirectory,
+    file.FileSystem fileSystem,
   ) async {
     final base = directory ?? await temporaryDirectory();
-    return LocalFileSystem().directory(p.join(base.path, namespace));
+    return fileSystem.directory(p.join(base.path, namespace));
   }
 
   Future<void> _waitForPending(
@@ -757,8 +756,13 @@ class _TrackedCacheInfoRepository extends CacheInfoRepository {
   _TrackedCacheInfoRepository(this._delegate);
 
   final CacheInfoRepository _delegate;
-  final Set<Future<void>> _pending = {};
-  final List<_TrackedRepositoryFailure> _failures = [];
+  final _TrackedCacheOperation _unowned = _TrackedCacheOperation();
+
+  _TrackedCacheOperation beginOperation() => _TrackedCacheOperation();
+
+  _TrackedCacheOperation get _currentOperation =>
+      (Zone.current[_cacheOperationZoneKey] as _TrackedCacheOperation?) ??
+      _unowned;
 
   Future<T> _track<T>(Future<T> operation) {
     _trackCompletion(operation);
@@ -766,41 +770,45 @@ class _TrackedCacheInfoRepository extends CacheInfoRepository {
   }
 
   void _trackCompletion<T>(Future<T> operation) {
+    final tracking = _currentOperation;
     final done = Completer<void>();
     final marker = done.future;
-    _pending.add(marker);
+    tracking.pending.add(marker);
     operation.then<void>(
       (_) {
-        _complete(marker, done);
+        _complete(tracking, marker, done);
       },
       onError: (Object _, StackTrace stackTrace) {
-        _failures.add(
+        tracking.failures.add(
           _TrackedRepositoryFailure(
             CacheOperationException('cache'),
             StackTrace.fromString(redactDiagnostic(stackTrace)),
           ),
         );
-        _complete(marker, done);
+        _complete(tracking, marker, done);
       },
     );
   }
 
-  void _complete(Future<void> marker, Completer<void> done) {
-    _pending.remove(marker);
+  void _complete(
+    _TrackedCacheOperation tracking,
+    Future<void> marker,
+    Completer<void> done,
+  ) {
+    tracking.pending.remove(marker);
     if (!done.isCompleted) done.complete();
   }
 
-  Future<void> waitForPending() async {
-    while (_pending.isNotEmpty) {
-      await Future.wait(_pending.toList());
+  Future<void> waitForPending([_TrackedCacheOperation? tracking]) async {
+    final operation = tracking ?? _unowned;
+    while (operation.pending.isNotEmpty) {
+      await Future.wait(operation.pending.toList());
     }
-    if (_failures.isNotEmpty) {
-      final failure = _failures.first;
+    if (operation.failures.isNotEmpty) {
+      final failure = operation.failures.first;
       Error.throwWithStackTrace(failure.error, failure.stackTrace);
     }
   }
-
-  void clearFailuresForRetry() => _failures.clear();
 
   @override
   Future<bool> exists() => _delegate.exists();
@@ -862,6 +870,13 @@ class _TrackedRepositoryFailure {
   final StackTrace stackTrace;
 }
 
+class _TrackedCacheOperation {
+  final Set<Future<void>> pending = {};
+  final List<_TrackedRepositoryFailure> failures = [];
+}
+
+final Object _cacheOperationZoneKey = Object();
+
 /// A per-account view over a cache backend. Every operation is admitted by the
 /// shared lifecycle, including operations started through a handle retained by
 /// a widget before account removal began.
@@ -895,7 +910,33 @@ class _AccountCacheHandle implements BaseCacheManager {
     return 'planka-cache-${sha256.convert(utf8.encode(candidate))}';
   }
 
-  Future<void> _settleBackend() async {
+  _TrackedCacheOperation? _beginBackendOperation() {
+    if (_manager case CacheManager concrete) {
+      final repository = concrete.config.repo;
+      if (repository is _TrackedCacheInfoRepository) {
+        return repository.beginOperation();
+      }
+    }
+    return null;
+  }
+
+  Future<T> _runInBackendOperation<T>(
+    _TrackedCacheOperation? operation,
+    Future<T> Function() action,
+  ) {
+    if (operation == null) return action();
+    return runZoned(action, zoneValues: {_cacheOperationZoneKey: operation});
+  }
+
+  T _callInBackendOperation<T>(
+    _TrackedCacheOperation? operation,
+    T Function() action,
+  ) {
+    if (operation == null) return action();
+    return runZoned(action, zoneValues: {_cacheOperationZoneKey: operation});
+  }
+
+  Future<void> _settleBackend(_TrackedCacheOperation? operation) async {
     if (_manager case CacheManager concrete) {
       final repository = concrete.config.repo;
       if (repository is _TrackedCacheInfoRepository) {
@@ -903,18 +944,18 @@ class _AccountCacheHandle implements BaseCacheManager {
         // start metadata updates without awaiting them. Give that handoff one
         // event-loop turn, then wait for the tracked operation itself.
         await Future<void>.delayed(Duration.zero);
-        await repository.waitForPending();
+        await repository.waitForPending(operation);
       }
     }
   }
 
   Future<T> _run<T>(String operation, Future<T> Function() action) async {
     final lease = _lifecycle.acquire(_accountId, generation: _generation);
+    final backendOperation = _beginBackendOperation();
     try {
       try {
-        _prepareBackendRetry();
-        final result = await action();
-        await _settleBackend();
+        final result = await _runInBackendOperation(backendOperation, action);
+        await _settleBackend(backendOperation);
         lease.ensureOpen();
         return result;
       } catch (e) {
@@ -928,9 +969,12 @@ class _AccountCacheHandle implements BaseCacheManager {
 
   Stream<T> _stream<T>(String operation, Stream<T> Function() create) {
     final lease = _lifecycle.acquire(_accountId, generation: _generation);
+    final backendOperation = _beginBackendOperation();
     final controller = StreamController<T>();
     StreamSubscription<T>? subscription;
+    final sourceSettled = Completer<void>();
     final bufferedFileInfos = <T>[];
+    Future<void>? backendSettlement;
     var released = false;
     var listened = false;
     var sourceFailed = false;
@@ -941,6 +985,13 @@ class _AccountCacheHandle implements BaseCacheManager {
       lease.release();
     }
 
+    void markSourceSettled() {
+      if (!sourceSettled.isCompleted) sourceSettled.complete();
+    }
+
+    Future<void> settleBackend() =>
+        backendSettlement ??= _settleBackend(backendOperation);
+
     controller.onListen = () {
       if (listened) return;
       listened = true;
@@ -949,10 +1000,9 @@ class _AccountCacheHandle implements BaseCacheManager {
         release();
         return;
       }
-      _prepareBackendRetry();
       Stream<T> source;
       try {
-        source = create();
+        source = _callInBackendOperation(backendOperation, create);
       } catch (e) {
         if (e is AccountCacheClosedException) {
           controller.addError(e);
@@ -963,97 +1013,100 @@ class _AccountCacheHandle implements BaseCacheManager {
         release();
         return;
       }
-      subscription = source.listen(
-        (value) {
-          if (lease.wasClosed || controller.isClosed) return;
-          if (value is FileInfo) {
-            // WebHelper emits FileInfo before its intentionally unawaited
-            // metadata update completes. Hold that success until the tracked
-            // repository has settled, so a failed metadata commit cannot be
-            // presented as a usable stream result.
-            bufferedFileInfos.add(value);
-          } else {
-            controller.add(value);
-          }
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          sourceFailed = true;
-          bufferedFileInfos.clear();
-          if (controller.isClosed) return;
-          controller.addError(
-            lease.wasClosed
-                ? AccountCacheClosedException()
-                : CacheOperationException(operation),
-          );
-        },
-        onDone: () async {
-          Object? settlementError;
-          StackTrace? settlementStack;
-          try {
-            if (!sourceFailed) await _settleBackend();
-          } catch (error, stackTrace) {
-            settlementError = error is CacheOperationException
-                ? error
-                : CacheOperationException(operation);
-            settlementStack = error is CacheOperationException
-                ? stackTrace
-                : StackTrace.current;
-          }
-          if (settlementError != null) {
-            bufferedFileInfos.clear();
-            if (!controller.isClosed) {
-              controller.addError(
-                settlementError,
-                settlementStack ?? StackTrace.current,
-              );
-            }
-          } else if (!sourceFailed &&
-              !lease.wasClosed &&
-              !controller.isClosed) {
-            for (final value in bufferedFileInfos) {
+      final shared = source.asBroadcastStream();
+      subscription = _callInBackendOperation(
+        backendOperation,
+        () => shared.listen(
+          (value) {
+            if (lease.wasClosed || controller.isClosed) return;
+            if (value is FileInfo) {
+              // WebHelper emits FileInfo before its intentionally unawaited
+              // metadata update completes. Hold that success until the tracked
+              // repository has settled, so a failed metadata commit cannot be
+              // presented as a usable stream result.
+              bufferedFileInfos.add(value);
+            } else {
               controller.add(value);
             }
-          }
-          bufferedFileInfos.clear();
-          await controller.close();
-          release();
-        },
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            sourceFailed = true;
+            bufferedFileInfos.clear();
+            if (controller.isClosed) return;
+            controller.addError(
+              lease.wasClosed
+                  ? AccountCacheClosedException()
+                  : CacheOperationException(operation),
+            );
+          },
+          onDone: () async {
+            markSourceSettled();
+            Object? settlementError;
+            StackTrace? settlementStack;
+            try {
+              // A source error still leaves the cache backend free to finish
+              // an already-admitted metadata write. Do not release the
+              // lifecycle lease until that handoff settles, even when the
+              // output error has already been delivered.
+              await settleBackend();
+            } catch (error, stackTrace) {
+              settlementError = error is CacheOperationException
+                  ? error
+                  : CacheOperationException(operation);
+              settlementStack = error is CacheOperationException
+                  ? stackTrace
+                  : StackTrace.current;
+            }
+            if (settlementError != null && !sourceFailed) {
+              bufferedFileInfos.clear();
+              if (!controller.isClosed) {
+                controller.addError(
+                  settlementError,
+                  settlementStack ?? StackTrace.current,
+                );
+              }
+            } else if (!sourceFailed &&
+                !lease.wasClosed &&
+                !controller.isClosed) {
+              for (final value in bufferedFileInfos) {
+                controller.add(value);
+              }
+            }
+            bufferedFileInfos.clear();
+            await controller.close();
+            release();
+          },
+        ),
+      );
+      // Keep a passive subscription so a failed cancellation cannot make the
+      // source's later close invisible. The source is drained while removal
+      // is closed, and the lease is released only after that signal.
+      _callInBackendOperation(
+        backendOperation,
+        () => shared.listen(
+          (_) {},
+          onError: (Object _, StackTrace _) {},
+          onDone: markSourceSettled,
+        ),
       );
     };
-    // The source is deliberately drained rather than released on consumer
+    // The source is deliberately drained rather than cancelled on consumer
     // cancellation. A cache backend may still be committing a file after its
-    // subscription is cancelled; the purge must wait for source cancellation.
+    // subscription is cancelled; the purge must wait for source completion.
     controller.onCancel = () {};
-    Future<void> finishAfterCancellation(
-      StreamSubscription<T> current,
-      Future<void> operation,
-    ) async {
+    Future<void> finishAfterSource() async {
       try {
-        try {
-          await operation;
-        } catch (_) {
-          // The first cancellation result is not proof of cleanup. Retry the
-          // subscription's cancellation so a backend that reports an error
-          // while still unwinding can prove it is now quiescent.
-        }
-        await current.cancel();
-        await _settleBackend();
+        await sourceSettled.future;
+        await settleBackend();
       } catch (_) {
-        // A backend that cannot cancel or settle is not safe to purge. The
-        // lifecycle records a generic quiescence failure and keeps the
-        // account closed.
         lease.reportRemovalFailure();
-        // A cancellation error is not proof that the source stopped. Keep
-        // this lease until the source's onDone callback proves quiescence.
-        return;
       }
-      if (!controller.isClosed) await controller.close();
+      if (!controller.isClosed) unawaited(controller.close());
       release();
     }
 
     lease.onRemoval(() async {
-      final current = subscription;
-      if (current == null) {
+      if (subscription == null) {
         // A lazy stream can be admitted and returned without ever acquiring a
         // source subscription. Closing its controller waits for a listener
         // that may never arrive, so releasing this lease is the complete
@@ -1061,48 +1114,26 @@ class _AccountCacheHandle implements BaseCacheManager {
         release();
         return;
       }
-      Future<void>? operation;
       try {
-        operation = current.cancel();
-        await operation.timeout(_lifecycle.removalTimeout);
-        await _settleBackend();
+        await sourceSettled.future.timeout(_lifecycle.removalTimeout);
+        await settleBackend();
       } on TimeoutException {
         // Return a bounded failure to removal, but keep this lease active until
-        // the underlying cancellation settles so a retry cannot race a late
-        // cache commit.
+        // the source's independent completion signal proves quiescence.
         lease.reportRemovalFailure();
-        if (!controller.isClosed) await controller.close();
-        unawaited(finishAfterCancellation(current, operation!));
+        if (!controller.isClosed) unawaited(controller.close());
+        unawaited(finishAfterSource());
         return;
       } catch (_) {
-        // A backend that cannot cancel or settle is not safe to purge. The
-        // lifecycle records a generic quiescence failure and keeps the
-        // account closed.
         lease.reportRemovalFailure();
-        // A cancellation error is not proof that the source stopped. Keep
-        // this lease until the source's onDone callback proves quiescence.
         if (!controller.isClosed) unawaited(controller.close());
-        if (operation != null) {
-          unawaited(finishAfterCancellation(current, operation));
-        }
+        unawaited(finishAfterSource());
         return;
       }
-      if (!controller.isClosed) await controller.close();
+      if (!controller.isClosed) unawaited(controller.close());
       release();
     });
     return controller.stream;
-  }
-
-  void _prepareBackendRetry() {
-    if (_manager case CacheManager concrete) {
-      final repository = concrete.config.repo;
-      if (repository is _TrackedCacheInfoRepository) {
-        // A prior operation already surfaced its tracked failure. A new
-        // admitted operation is the explicit retry point; purge still sees
-        // the failure when no retry has started and can fail closed.
-        repository.clearFailuresForRetry();
-      }
-    }
   }
 
   @override
@@ -1289,50 +1320,82 @@ class _LifecycleFile extends file.ForwardingFileSystemEntity<file.File, io.File>
     _generation,
   );
 
-  void _ensureWritable() {
-    final lease = _lifecycle.acquire(_accountId, generation: _generation);
-    lease.release();
+  AccountCacheLease _acquire() =>
+      _lifecycle.acquire(_accountId, generation: _generation);
+
+  Future<T> _withLease<T>(Future<T> Function() operation) async {
+    final lease = _acquire();
+    try {
+      final result = await operation();
+      lease.ensureOpen();
+      return result;
+    } finally {
+      lease.release();
+    }
+  }
+
+  void _withLeaseSync(void Function() operation) {
+    final lease = _acquire();
+    try {
+      operation();
+      lease.ensureOpen();
+    } finally {
+      lease.release();
+    }
   }
 
   @override
-  Future<file.File> create({
-    bool recursive = false,
-    bool exclusive = false,
-  }) async {
-    _ensureWritable();
-    return wrap(
-      await delegate.create(recursive: recursive, exclusive: exclusive),
-    );
-  }
+  Future<file.File> create({bool recursive = false, bool exclusive = false}) =>
+      _withLease(
+        () async => wrap(
+          await delegate.create(recursive: recursive, exclusive: exclusive),
+        ),
+      );
 
   @override
   void createSync({bool recursive = false, bool exclusive = false}) {
-    _ensureWritable();
-    delegate.createSync(recursive: recursive, exclusive: exclusive);
+    _withLeaseSync(() {
+      delegate.createSync(recursive: recursive, exclusive: exclusive);
+    });
   }
 
   @override
-  Future<file.File> copy(String newPath) async {
-    _ensureWritable();
-    return wrap(await delegate.copy(newPath));
-  }
+  Future<file.File> copy(String newPath) =>
+      _withLease(() async => wrap(await delegate.copy(newPath)));
 
   @override
-  file.File copySync(String newPath) {
-    _ensureWritable();
-    return wrap(delegate.copySync(newPath));
-  }
+  file.File copySync(String newPath) =>
+      _withLeaseSyncResult(() => wrap(delegate.copySync(newPath)));
 
   @override
-  Future<file.File> rename(String newPath) async {
-    _ensureWritable();
-    return wrap(await delegate.rename(newPath));
-  }
+  Future<file.File> rename(String newPath) =>
+      _withLease(() async => wrap(await delegate.rename(newPath)));
 
   @override
-  file.File renameSync(String newPath) {
-    _ensureWritable();
-    return wrap(delegate.renameSync(newPath));
+  file.File renameSync(String newPath) =>
+      _withLeaseSyncResult(() => wrap(delegate.renameSync(newPath)));
+
+  @override
+  Future<file.File> delete({bool recursive = false}) => _withLease(
+    () async => wrap(await delegate.delete(recursive: recursive) as io.File),
+  );
+
+  @override
+  void deleteSync({bool recursive = false}) {
+    _withLeaseSync(() {
+      delegate.deleteSync(recursive: recursive);
+    });
+  }
+
+  T _withLeaseSyncResult<T>(T Function() operation) {
+    final lease = _acquire();
+    try {
+      final result = operation();
+      lease.ensureOpen();
+      return result;
+    } finally {
+      lease.release();
+    }
   }
 
   @override
@@ -1340,12 +1403,21 @@ class _LifecycleFile extends file.ForwardingFileSystemEntity<file.File, io.File>
     io.FileMode mode = io.FileMode.write,
     Encoding encoding = utf8,
   }) {
-    _ensureWritable();
-    final sink = delegate.openWrite(mode: mode, encoding: encoding);
-    return io.IOSink(
-      _LifecycleSinkConsumer(sink, _ensureWritable),
-      encoding: encoding,
-    );
+    final lease = _acquire();
+    try {
+      final sink = delegate.openWrite(mode: mode, encoding: encoding);
+      final consumer = _LifecycleSinkConsumer(
+        sink,
+        lease,
+        _lifecycle.removalTimeout,
+      );
+      final guarded = io.IOSink(consumer, encoding: encoding);
+      consumer.attach(guarded);
+      return guarded;
+    } catch (_) {
+      lease.release();
+      rethrow;
+    }
   }
 
   @override
@@ -1353,10 +1425,10 @@ class _LifecycleFile extends file.ForwardingFileSystemEntity<file.File, io.File>
     List<int> bytes, {
     io.FileMode mode = io.FileMode.write,
     bool flush = false,
-  }) async {
-    _ensureWritable();
-    return wrap(await delegate.writeAsBytes(bytes, mode: mode, flush: flush));
-  }
+  }) => _withLease(
+    () async =>
+        wrap(await delegate.writeAsBytes(bytes, mode: mode, flush: flush)),
+  );
 
   @override
   void writeAsBytesSync(
@@ -1364,8 +1436,9 @@ class _LifecycleFile extends file.ForwardingFileSystemEntity<file.File, io.File>
     io.FileMode mode = io.FileMode.write,
     bool flush = false,
   }) {
-    _ensureWritable();
-    delegate.writeAsBytesSync(bytes, mode: mode, flush: flush);
+    _withLeaseSync(() {
+      delegate.writeAsBytesSync(bytes, mode: mode, flush: flush);
+    });
   }
 
   @override
@@ -1374,17 +1447,16 @@ class _LifecycleFile extends file.ForwardingFileSystemEntity<file.File, io.File>
     io.FileMode mode = io.FileMode.write,
     Encoding encoding = utf8,
     bool flush = false,
-  }) async {
-    _ensureWritable();
-    return wrap(
+  }) => _withLease(
+    () async => wrap(
       await delegate.writeAsString(
         contents,
         mode: mode,
         encoding: encoding,
         flush: flush,
       ),
-    );
-  }
+    ),
+  );
 
   @override
   void writeAsStringSync(
@@ -1393,36 +1465,126 @@ class _LifecycleFile extends file.ForwardingFileSystemEntity<file.File, io.File>
     Encoding encoding = utf8,
     bool flush = false,
   }) {
-    _ensureWritable();
-    delegate.writeAsStringSync(
-      contents,
-      mode: mode,
-      encoding: encoding,
-      flush: flush,
-    );
+    _withLeaseSync(() {
+      delegate.writeAsStringSync(
+        contents,
+        mode: mode,
+        encoding: encoding,
+        flush: flush,
+      );
+    });
   }
 }
 
 class _LifecycleSinkConsumer implements StreamConsumer<List<int>> {
-  _LifecycleSinkConsumer(this._delegate, this._ensureWritable);
+  _LifecycleSinkConsumer(this._delegate, this._lease, this._removalTimeout);
 
   final io.IOSink _delegate;
-  final void Function() _ensureWritable;
+  final AccountCacheLease _lease;
+  final Duration _removalTimeout;
+  Future<void>? _active;
+  var _released = false;
+
+  void attach(io.IOSink owner) {
+    unawaited(
+      owner.done.then<void>(
+        (_) => _releaseAfterDelegateDone(),
+        onError: (Object _, StackTrace _) => _releaseAfterDelegateDone(),
+      ),
+    );
+    _lease.onRemoval(_closeForRemoval);
+  }
+
+  Future<void> _releaseAfterDelegateDone() async {
+    try {
+      await _delegate.done;
+    } catch (_) {
+      // The delegate has still settled, even when it reports the same write
+      // failure as the owner sink.
+    }
+    _release();
+  }
+
+  void _release() {
+    if (_released) return;
+    _released = true;
+    _lease.release();
+  }
 
   @override
-  Future<void> addStream(Stream<List<int>> stream) async {
+  Future<void> addStream(Stream<List<int>> stream) {
+    final operation = _addStream(stream);
+    _active = operation;
+    return operation.whenComplete(() {
+      if (identical(_active, operation)) _active = null;
+    });
+  }
+
+  Future<void> _addStream(Stream<List<int>> stream) async {
     await _delegate.addStream(
       stream.map((chunk) {
-        _ensureWritable();
+        _lease.ensureOpen();
         return chunk;
       }),
     );
+    _lease.ensureOpen();
   }
 
   @override
   Future<void> close() async {
-    _ensureWritable();
-    await _delegate.close();
+    try {
+      await _delegate.close();
+      _lease.ensureOpen();
+    } finally {
+      _release();
+    }
+  }
+
+  Future<void> _closeForRemoval() async {
+    final active = _active;
+    if (active != null) {
+      try {
+        await active.timeout(_removalTimeout);
+      } on TimeoutException {
+        _lease.reportRemovalFailure();
+        // The bounded removal attempt has failed, but the sink lease remains
+        // until this admitted operation settles and the delegate is closed.
+        unawaited(_finishAfterActive(active));
+        return;
+      } catch (_) {
+        // The underlying add/flush operation has settled with an error. Its
+        // future is the quiescence proof, so close the sink before releasing.
+      }
+    }
+    await _closeDelegateForRemoval();
+  }
+
+  Future<void> _finishAfterActive(Future<void> active) async {
+    try {
+      await active;
+    } catch (_) {
+      // A failed write is settled; the delegate still needs closing before
+      // this lease can be released.
+    }
+    await _closeDelegateForRemoval();
+  }
+
+  Future<void> _closeDelegateForRemoval() async {
+    try {
+      await _delegate.close();
+    } catch (_) {
+      // A sink can report the close error through either close() or done. The
+      // latter is the quiescence proof; do not release until it settles.
+      try {
+        await _delegate.done.timeout(_removalTimeout);
+      } on TimeoutException {
+        _lease.reportRemovalFailure();
+        return;
+      } catch (_) {
+        // An errored done future still proves that the delegate is settled.
+      }
+    }
+    _release();
   }
 }
 
