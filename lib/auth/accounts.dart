@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../security_redaction.dart';
+
 /// Minimal secure-storage surface so tests can inject an in-memory fake.
 abstract class SecureKeyValueStore {
   Future<String?> read(String key);
@@ -78,7 +80,9 @@ class Account {
     required this.token,
     required this.userId,
     required this.displayName,
-  });
+  }) {
+    registerSecret(token);
+  }
 
   String get id => '$serverUrl#$userId';
 
@@ -122,7 +126,8 @@ class AccountStore {
       // let the user re-authenticate. Log it — a decrypt failure here is a
       // silent forced-relogin, indistinguishable from "no saved accounts"
       // without this line.
-      debugPrint('AccountStore.load failed, treating as no accounts: $e');
+      debugPrint(
+          'AccountStore.load failed, treating as no accounts: ${redactDiagnostic(e)}');
       return [];
     }
   }

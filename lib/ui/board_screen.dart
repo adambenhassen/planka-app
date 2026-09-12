@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../api/models.dart';
 import '../auth/auth_providers.dart';
 import '../l10n/gen/app_localizations.dart';
+import '../security_redaction.dart';
 import '../state/board_state.dart';
 import '../state/projects_state.dart';
 import 'error_handling.dart';
@@ -123,7 +124,8 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
         context.pop();
         projects.deleteBoard(boardId).catchError((Object e) {
           messenger.showSnackBar(SnackBar(
-              content: Text('$e'), backgroundColor: errorColor));
+              content: Text(redactDiagnostic(e)),
+              backgroundColor: errorColor));
         });
     }
   }

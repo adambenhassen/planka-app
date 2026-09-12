@@ -8,6 +8,7 @@ import '../api/planka_api.dart';
 import 'custom_fields_manager_sheet.dart';
 import '../auth/auth_providers.dart';
 import '../l10n/gen/app_localizations.dart';
+import '../security_redaction.dart';
 import 'error_handling.dart';
 import 'card_sheet_edit_guard.dart';
 import 'widgets/confirm_dialog.dart';
@@ -274,7 +275,7 @@ class _CardSheetState extends ConsumerState<CardSheet> {
     Future<void> Function() run,
   ) {
     run().catchError((Object e) {
-      final message = e is ApiException ? e.message : '$e';
+      final message = e is ApiException ? e.message : redactDiagnostic(e);
       messenger.showSnackBar(
         SnackBar(content: Text(message), backgroundColor: errorColor),
       );

@@ -70,7 +70,10 @@ class BoardBackgroundView extends StatelessWidget {
     final fallback = DecoratedBox(
       decoration: BoxDecoration(gradient: background.gradient),
     );
-    final headers = url == null || token == null || serverUrl == null
+    final headers = url == null ||
+            token == null ||
+            serverUrl == null ||
+            accountId == null
         ? null
         : imageAuthHeaders(
             token!,
@@ -78,17 +81,16 @@ class BoardBackgroundView extends StatelessWidget {
             imageUrl: url,
           );
     if (headers == null) return fallback;
-    final cacheAccountId = accountId ?? 'server:$serverUrl';
     return CachedNetworkImage(
       imageUrl: url!,
       httpHeaders: headers,
-      cacheManager: plankaImageCacheManager.forAccount(cacheAccountId),
-      cacheKey: plankaImageCacheKey(cacheAccountId, url),
+      cacheManager: plankaImageCacheManager.forAccount(accountId!, token: token),
+      cacheKey: plankaImageCacheKey(accountId!, url),
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
       imageBuilder: (_, imageProvider) => Image(
-        key: ValueKey<String>('store-capture-loaded-background-image:$url'),
+        key: const ValueKey<String>('store-capture-loaded-background-image'),
         image: imageProvider,
         fit: BoxFit.cover,
         width: double.infinity,
@@ -96,7 +98,7 @@ class BoardBackgroundView extends StatelessWidget {
       ),
       placeholder: (_, _) => fallback,
       errorWidget: (_, error, _) {
-        debugPrint('Store capture image failed: background $url: $error');
+        debugPrint('Store capture background image failed');
         return KeyedSubtree(
           key: const ValueKey<String>('store-capture-image-error'),
           child: fallback,

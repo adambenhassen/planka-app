@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../api/planka_api.dart';
 import '../api/repositories.dart';
+import '../cache_lifecycle.dart';
 import '../cache_purge.dart';
 import '../state/envelope_cache.dart';
 import 'accounts.dart';
@@ -30,12 +31,24 @@ final accountsProvider =
 
 final imageCacheProvider = Provider<AccountImageCacheManager>(
     (_) => plankaImageCacheManager);
+final cacheLifecycleProvider = Provider<AccountCacheLifecycle>(
+    (_) => accountCacheLifecycle);
 
 class AccountsNotifier extends AsyncNotifier<List<Account>> {
   @override
-  Future<List<Account>> build() => ref.read(accountStoreProvider).load();
+  Future<List<Account>> build() async {
+    final accounts = await ref.read(accountStoreProvider).load();
+    final lifecycle = ref.read(cacheLifecycleProvider);
+    for (final account in accounts) {
+      lifecycle.registerKnown(account.id);
+    }
+    return accounts;
+  }
 
   Future<void> upsert(Account account) async {
+    // A successful removal leaves its old handles permanently closed. Only a
+    // newly persisted authenticated account may explicitly reopen that id.
+    ref.read(cacheLifecycleProvider).reopen(account.id);
     // Await the loaded list so a call during loading can't drop stored accounts.
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == account.id)
@@ -45,6 +58,11 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
   }
 
   Future<void> remove(String accountId) async {
+    // Close the shared barrier before awaiting account state or either purge.
+    // This makes the removal window cover every cache family and every caller
+    // that retained a handle before removal began.
+    final lifecycle = ref.read(cacheLifecycleProvider);
+    await lifecycle.beginRemoval(accountId);
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == accountId);
 
@@ -75,6 +93,7 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
 
     await ref.read(accountStoreProvider).save(list);
     state = AsyncData(list);
+    lifecycle.completeRemoval(accountId);
     final current = ref.read(currentAccountProvider);
     if (current?.id == accountId) {
       await ref.read(currentAccountProvider.notifier).select(null);

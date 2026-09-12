@@ -8,6 +8,7 @@ import '../api/models.dart';
 import '../api/planka_socket.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
+import '../security_redaction.dart';
 import 'envelope_cache.dart';
 import 'positions.dart';
 import 'user_socket.dart';
@@ -488,7 +489,7 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
 
   void _onUserRoomError(int session, Object error) {
     if (session != _session) return;
-    debugPrint('projects user room error: $error');
+    debugPrint('projects user room error: ${redactDiagnostic(error)}');
     _eventVersion++;
     _queueResync(session);
   }
@@ -517,7 +518,8 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
           }
           state = AsyncData(view);
         } on Object catch (error, stackTrace) {
-          debugPrint('projects realtime resync failed: $error\n$stackTrace');
+          debugPrint('projects realtime resync failed: '
+              '${redactDiagnostic(error)}\n${redactDiagnostic(stackTrace)}');
         }
       }
     } finally {

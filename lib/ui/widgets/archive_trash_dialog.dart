@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../api/models.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../security_redaction.dart';
 import '../../state/board_state.dart';
 import '../error_handling.dart';
 import 'confirm_dialog.dart';
@@ -159,7 +160,7 @@ class _CardList extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return Center(child: Text('${snapshot.error}'));
+          return Center(child: Text(redactDiagnostic(snapshot.error)));
         }
         final cards = snapshot.data ?? const [];
         if (cards.isEmpty) {

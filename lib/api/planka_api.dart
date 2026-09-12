@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
@@ -9,13 +11,16 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import '../cache_lifecycle.dart';
 import '../cache_purge.dart';
+import '../security_redaction.dart';
 import 'envelope.dart';
 
 class ApiException implements Exception {
   final int? statusCode;
   final String message;
-  ApiException(this.statusCode, this.message);
+  ApiException(this.statusCode, String message)
+      : message = redactDiagnostic(message);
 
   @override
   String toString() => 'ApiException($statusCode): $message';
@@ -26,7 +31,9 @@ class ApiException implements Exception {
 /// confirms with the user, calls [PlankaApi.acceptTerms], then retries login.
 class TermsRequiredException implements Exception {
   final String pendingToken;
-  TermsRequiredException(this.pendingToken);
+  TermsRequiredException(this.pendingToken) {
+    registerSecret(pendingToken);
+  }
 
   @override
   String toString() => 'TermsRequiredException';
@@ -43,7 +50,9 @@ class TermsRequiredException implements Exception {
 /// anything it does not recognise.
 class TotpRequiredException implements Exception {
   final String pendingToken;
-  TotpRequiredException(this.pendingToken);
+  TotpRequiredException(this.pendingToken) {
+    registerSecret(pendingToken);
+  }
 
   @override
   String toString() => 'TotpRequiredException';
@@ -75,6 +84,7 @@ Map<String, String>? imageAuthHeaders(
   required String serverUrl,
   required String imageUrl,
 }) {
+  registerSecret(token);
   final server = Uri.tryParse(serverUrl);
   final image = Uri.tryParse(imageUrl);
   if (server == null || image == null || !_sameOrigin(server, image)) {
@@ -121,9 +131,66 @@ class _NoRedirectClient extends http.BaseClient {
   void close() => _client.close();
 }
 
-final FileService plankaImageFileService = HttpFileService(
-  httpClient: _NoRedirectClient(),
+final FileService plankaImageFileService = _RedactingFileService(
+  HttpFileService(httpClient: _NoRedirectClient()),
 );
+
+/// Keeps the third-party cache manager from persisting credentials returned in
+/// a URL, response body, ETag, or content-type-derived filename. The wrapped
+/// service still receives the authenticated headers needed for the request.
+class _RedactingFileService extends FileService {
+  _RedactingFileService(this._delegate) {
+    concurrentFetches = _delegate.concurrentFetches;
+  }
+
+  final FileService _delegate;
+
+  @override
+  Future<FileServiceResponse> get(
+    String url, {
+    Map<String, String>? headers,
+  }) async {
+    try {
+      final response = await _delegate.get(
+        cacheSafeUrl(url),
+        headers: headers,
+      );
+      return _RedactingFileServiceResponse(response);
+    } catch (_) {
+      throw CacheOperationException('fileService');
+    }
+  }
+}
+
+class _RedactingFileServiceResponse implements FileServiceResponse {
+  _RedactingFileServiceResponse(this._delegate);
+
+  final FileServiceResponse _delegate;
+
+  @override
+  Stream<List<int>> get content async* {
+    try {
+      yield* redactCacheStream(_delegate.content);
+    } catch (_) {
+      throw CacheOperationException('fileService');
+    }
+  }
+
+  @override
+  int? get contentLength => _delegate.contentLength;
+
+  @override
+  int get statusCode => _delegate.statusCode;
+
+  @override
+  DateTime get validTill => _delegate.validTill;
+
+  @override
+  String? get eTag => null;
+
+  @override
+  String get fileExtension => 'file';
+}
 
 typedef AccountImageCacheFactory = BaseCacheManager Function(String accountId);
 
@@ -146,17 +213,27 @@ class AccountImageCacheManager {
   AccountImageCacheManager({
     AccountImageCacheFactory? createManager,
     Directory? directory,
-  }) : _createManager = createManager ??
-            ((accountId) => _createDefaultManager(accountId, directory));
+    AccountCacheLifecycle? lifecycle,
+  })  : _createManager = createManager ??
+            ((accountId) => _createDefaultManager(accountId, directory)),
+        _lifecycle = lifecycle ?? AccountCacheLifecycle();
 
   final AccountImageCacheFactory _createManager;
+  final AccountCacheLifecycle _lifecycle;
   final Map<String, BaseCacheManager> _managers = {};
+  final Map<String, _AccountCacheHandle> _handles = {};
 
-  BaseCacheManager forAccount(String accountId) {
+  BaseCacheManager forAccount(String accountId, {String? token}) {
     if (accountId.isEmpty) {
       throw ArgumentError.value(accountId, 'accountId');
     }
-    return _managers.putIfAbsent(accountId, () => _createManager(accountId));
+    registerSecret(token);
+    _lifecycle.register(accountId);
+    return _handles.putIfAbsent(accountId, () {
+      final manager = _managers.putIfAbsent(
+          accountId, () => _createManager(accountId));
+      return _AccountCacheHandle(accountId, manager, _lifecycle);
+    });
   }
 
   /// Removes every media entry in one account namespace and verifies that a
@@ -165,15 +242,21 @@ class AccountImageCacheManager {
     if (accountId.isEmpty) {
       throw ArgumentError.value(accountId, 'accountId');
     }
+    await _lifecycle.beginRemoval(accountId);
     BaseCacheManager manager;
     try {
       manager = _managers.remove(accountId) ?? _createManager(accountId);
+      _handles.remove(accountId);
     } catch (e, s) {
       throw CachePurgeException('media', e, s);
     }
 
     Object? firstFailure;
     StackTrace? firstFailureStack;
+    await _waitForPending(manager, (e, s) {
+      firstFailure ??= e;
+      firstFailureStack ??= s;
+    });
     final targets = await _mediaFiles(manager, (e, s) {
       firstFailure ??= e;
       firstFailureStack ??= s;
@@ -204,9 +287,17 @@ class AccountImageCacheManager {
         }
       }
     }
+    await _waitForPending(manager, (e, s) {
+      firstFailure ??= e;
+      firstFailureStack ??= s;
+    });
     try {
       if (firstFailure == null) {
         await manager.emptyCache();
+        await _waitForPending(manager, (e, s) {
+          firstFailure ??= e;
+          firstFailureStack ??= s;
+        });
         await _verifyEmpty(manager);
       }
     } catch (e, s) {
@@ -251,10 +342,15 @@ class AccountImageCacheManager {
   Future<void> dispose() async {
     final managers = _managers.values.toList();
     _managers.clear();
+    _handles.clear();
     Object? firstFailure;
     StackTrace? firstFailureStack;
     await Future.wait(
       managers.map((manager) async {
+        await _waitForPending(manager, (e, s) {
+          firstFailure ??= e;
+          firstFailureStack ??= s;
+        });
         try {
           await manager.dispose();
         } catch (e, s) {
@@ -275,22 +371,41 @@ class AccountImageCacheManager {
   static BaseCacheManager _createDefaultManager(
       String accountId, Directory? directory) {
     final namespace = _plankaImageCacheNamespace(accountId);
-    if (directory == null) {
-      return CacheManager(
-        Config(namespace, fileService: plankaImageFileService),
-      );
-    }
     final local = LocalFileSystem();
-    return CacheManager(
-      Config(
-        namespace,
-        repo: JsonCacheInfoRepository.withFile(
-            local.file(p.join(directory.path, '$namespace.json'))),
-        fileSystem: _DirectoryFileSystem(
-            local.directory(p.join(directory.path, namespace))),
-        fileService: plankaImageFileService,
-      ),
+    final baseConfig = directory == null
+        ? Config(namespace, fileService: plankaImageFileService)
+        : Config(
+            namespace,
+            repo: JsonCacheInfoRepository.withFile(
+                local.file(p.join(directory.path, '$namespace.json'))),
+            fileSystem: _DirectoryFileSystem(
+                local.directory(p.join(directory.path, namespace))),
+            fileService: plankaImageFileService,
+          );
+    final config = Config(
+      baseConfig.cacheKey,
+      stalePeriod: baseConfig.stalePeriod,
+      maxNrOfCacheObjects: baseConfig.maxNrOfCacheObjects,
+      repo: _TrackedCacheInfoRepository(baseConfig.repo),
+      fileSystem: _SafeFileSystem(baseConfig.fileSystem),
+      fileService: baseConfig.fileService,
     );
+    return CacheManager(config);
+  }
+
+  Future<void> _waitForPending(
+    BaseCacheManager manager,
+    void Function(Object, StackTrace) onFailure,
+  ) async {
+    if (manager case CacheManager concrete) {
+      final repository = concrete.config.repo;
+      if (repository is! _TrackedCacheInfoRepository) return;
+      try {
+        await repository.waitForPending();
+      } catch (e, s) {
+        onFailure(e, s);
+      }
+    }
   }
 
   Future<List<file.File>?> _mediaFiles(
@@ -300,8 +415,17 @@ class AccountImageCacheManager {
       try {
         await repository.open();
         final objects = await repository.getAllObjects();
-        return await Future.wait(objects.map((object) =>
+        final targets = await Future.wait(objects.map((object) =>
             concrete.config.fileSystem.createFile(object.relativePath)));
+        final fileSystem = _rawFileSystem(concrete.config.fileSystem);
+        if (fileSystem case _DirectoryFileSystem fs) {
+          await for (final entry
+              in fs._directory.list(recursive: true, followLinks: false)) {
+            if (entry is file.File) targets.add(entry);
+          }
+        }
+        final seen = <String>{};
+        return targets.where((target) => seen.add(target.path)).toList();
       } catch (e, s) {
         onFailure(e, s);
       } finally {
@@ -327,12 +451,364 @@ class AccountImageCacheManager {
       } finally {
         await repository.close();
       }
+      final fileSystem = _rawFileSystem(concrete.config.fileSystem);
+      if (fileSystem case _DirectoryFileSystem fs) {
+        await for (final entry
+            in fs._directory.list(recursive: true, followLinks: false)) {
+          if (entry is file.File) {
+            throw StateError('Media cache files remain');
+          }
+        }
+      }
     }
   }
 }
 
+/// Tracks cache metadata writes that flutter_cache_manager starts without
+/// awaiting. Removal must wait for those futures before deleting and verifying
+/// the namespace, otherwise a late repository update can recreate an entry
+/// after the cold check has passed.
+class _TrackedCacheInfoRepository extends CacheInfoRepository {
+  _TrackedCacheInfoRepository(this._delegate);
+
+  final CacheInfoRepository _delegate;
+  final Set<Future<void>> _pending = {};
+  final List<_TrackedRepositoryFailure> _failures = [];
+
+  Future<T> _track<T>(Future<T> operation) {
+    final done = Completer<void>();
+    final marker = done.future;
+    _pending.add(marker);
+    operation.then<void>(
+      (_) {
+        _complete(marker, done);
+      },
+      onError: (Object _, StackTrace stackTrace) {
+        _failures.add(
+          _TrackedRepositoryFailure(
+            CacheOperationException('cache'),
+            StackTrace.fromString(redactDiagnostic(stackTrace)),
+          ),
+        );
+        _complete(marker, done);
+      },
+    );
+    return operation;
+  }
+
+  void _complete(Future<void> marker, Completer<void> done) {
+    _pending.remove(marker);
+    if (!done.isCompleted) done.complete();
+  }
+
+  Future<void> waitForPending() async {
+    while (_pending.isNotEmpty) {
+      await Future.wait(_pending.toList());
+    }
+    if (_failures.isNotEmpty) {
+      final failure = _failures.first;
+      Error.throwWithStackTrace(failure.error, failure.stackTrace);
+    }
+  }
+
+  @override
+  Future<bool> exists() => _delegate.exists();
+
+  @override
+  Future<bool> open() => _delegate.open();
+
+  @override
+  Future<dynamic> updateOrInsert(CacheObject cacheObject) =>
+      _track(_delegate.updateOrInsert(cacheObject));
+
+  @override
+  Future<CacheObject> insert(
+    CacheObject cacheObject, {
+    bool setTouchedToNow = true,
+  }) =>
+      _track(_delegate.insert(cacheObject, setTouchedToNow: setTouchedToNow));
+
+  @override
+  Future<CacheObject?> get(String key) => _delegate.get(key);
+
+  @override
+  Future<int> delete(int id) => _track(_delegate.delete(id));
+
+  @override
+  Future<int> deleteAll(Iterable<int> ids) => _track(_delegate.deleteAll(ids));
+
+  @override
+  Future<int> update(
+    CacheObject cacheObject, {
+    bool setTouchedToNow = true,
+  }) =>
+      _track(_delegate.update(cacheObject, setTouchedToNow: setTouchedToNow));
+
+  @override
+  Future<List<CacheObject>> getAllObjects() => _delegate.getAllObjects();
+
+  @override
+  Future<List<CacheObject>> getObjectsOverCapacity(int capacity) =>
+      _delegate.getObjectsOverCapacity(capacity);
+
+  @override
+  Future<List<CacheObject>> getOldObjects(Duration maxAge) =>
+      _delegate.getOldObjects(maxAge);
+
+  @override
+  Future<bool> close() => _delegate.close();
+
+  @override
+  Future<void> deleteDataFile() => _delegate.deleteDataFile();
+}
+
+class _TrackedRepositoryFailure {
+  _TrackedRepositoryFailure(this.error, this.stackTrace);
+
+  final Object error;
+  final StackTrace stackTrace;
+}
+
+/// A per-account view over a cache backend. Every operation is admitted by the
+/// shared lifecycle, including operations started through a handle retained by
+/// a widget before account removal began.
+class _AccountCacheHandle implements BaseCacheManager {
+  _AccountCacheHandle(this._accountId, this._manager, this._lifecycle);
+
+  final String _accountId;
+  final BaseCacheManager _manager;
+  final AccountCacheLifecycle _lifecycle;
+
+  String _safeUrl(String url) => cacheSafeUrl(url);
+
+  String _safeKey(String? key, String url) {
+    final candidate = key ?? cacheSafeUrl(url);
+    if (RegExp(r'^planka-image-[0-9a-f]{64}$').hasMatch(candidate)) {
+      return candidate;
+    }
+    return 'planka-cache-${sha256.convert(utf8.encode(candidate))}';
+  }
+
+  Future<T> _run<T>(String operation, Future<T> Function() action) async {
+    final lease = _lifecycle.acquire(_accountId);
+    try {
+      try {
+        final result = await action();
+        lease.ensureOpen();
+        return result;
+      } catch (e) {
+        if (e is AccountCacheClosedException) rethrow;
+        throw CacheOperationException(operation);
+      }
+    } finally {
+      lease.release();
+    }
+  }
+
+  Stream<T> _stream<T>(String operation, Stream<T> Function() create) {
+    final lease = _lifecycle.acquire(_accountId);
+    final controller = StreamController<T>();
+    StreamSubscription<T>? subscription;
+    var released = false;
+    var listened = false;
+
+    void release() {
+      if (released) return;
+      released = true;
+      lease.release();
+    }
+
+    controller.onListen = () {
+      if (listened) return;
+      listened = true;
+      if (lease.wasClosed) {
+        unawaited(controller.close());
+        release();
+        return;
+      }
+      Stream<T> source;
+      try {
+        source = create();
+      } catch (e) {
+        if (e is AccountCacheClosedException) {
+          controller.addError(e);
+        } else {
+          controller.addError(CacheOperationException(operation));
+        }
+        unawaited(controller.close());
+        release();
+        return;
+      }
+      subscription = source.listen(
+        (value) {
+          if (lease.wasClosed || controller.isClosed) return;
+          controller.add(value);
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (controller.isClosed) return;
+          controller.addError(
+            lease.wasClosed
+                ? AccountCacheClosedException()
+                : CacheOperationException(operation),
+          );
+        },
+        onDone: () async {
+          if (lease.wasClosed && !controller.isClosed) {
+            controller.addError(AccountCacheClosedException());
+          }
+          await controller.close();
+          release();
+        },
+      );
+    };
+    // The source is deliberately drained rather than released on consumer
+    // cancellation. A cache backend may still be committing a file after its
+    // subscription is cancelled; the purge must wait for source completion.
+    controller.onCancel = () {};
+    lease.onRemoval(() async {
+      if (subscription == null) {
+        if (!controller.isClosed) await controller.close();
+        release();
+        return;
+      }
+      if (!controller.isClosed) {
+        controller.addError(AccountCacheClosedException());
+        await controller.close();
+      }
+    });
+    return controller.stream;
+  }
+
+  @override
+  Future<file.File> getSingleFile(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+  }) => _run(
+        'getSingleFile',
+        () => _manager.getSingleFile(
+          _safeUrl(url),
+          key: _safeKey(key, url),
+          headers: headers ?? const {},
+        ),
+      );
+
+  @override
+  @Deprecated('Prefer to use the new getFileStream method')
+  Stream<FileInfo> getFile(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+  }) => _stream(
+        'getFile',
+        () => _manager.getFile(
+          _safeUrl(url),
+          key: _safeKey(key, url),
+          headers: headers ?? const {},
+        ),
+      );
+
+  @override
+  Stream<FileResponse> getFileStream(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+    bool withProgress = false,
+  }) => _stream(
+        'getFileStream',
+        () => _manager.getFileStream(
+          _safeUrl(url),
+          key: _safeKey(key, url),
+          headers: headers,
+          withProgress: withProgress,
+        ),
+      );
+
+  @override
+  Future<FileInfo> downloadFile(
+    String url, {
+    String? key,
+    Map<String, String>? authHeaders,
+    bool force = false,
+  }) => _run(
+        'downloadFile',
+        () => _manager.downloadFile(
+          _safeUrl(url),
+          key: _safeKey(key, url),
+          authHeaders: authHeaders,
+          force: force,
+        ),
+      );
+
+  @override
+  Future<FileInfo?> getFileFromCache(String key,
+          {bool ignoreMemCache = false}) =>
+      _run('getFileFromCache', () => _manager.getFileFromCache(
+          _safeKey(key, key),
+          ignoreMemCache: ignoreMemCache));
+
+  @override
+  Future<FileInfo?> getFileFromMemory(String key) =>
+      _run('getFileFromMemory', () => _manager.getFileFromMemory(_safeKey(key, key)));
+
+  @override
+  Future<file.File> putFile(
+    String url,
+    Uint8List fileBytes, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) => _run(
+        'putFile',
+        () => _manager.putFile(
+          _safeUrl(url),
+          redactCacheBytes(fileBytes),
+          key: _safeKey(key, url),
+          // ETags are durable cache metadata. Do not retain caller- or
+          // server-supplied values because a credential can be used as one.
+          eTag: null,
+          maxAge: maxAge,
+          fileExtension: 'file',
+        ),
+      );
+
+  @override
+  Future<file.File> putFileStream(
+    String url,
+    Stream<List<int>> source, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) => _run(
+        'putFileStream',
+        () => _manager.putFileStream(
+          _safeUrl(url),
+          _redactedSource(source),
+          key: _safeKey(key, url),
+          eTag: null,
+          maxAge: maxAge,
+          fileExtension: 'file',
+        ),
+      );
+
+  @override
+  Future<void> removeFile(String key) =>
+      _run('removeFile', () => _manager.removeFile(_safeKey(key, key)));
+
+  Stream<List<int>> _redactedSource(Stream<List<int>> source) =>
+      redactCacheStream(source);
+
+  @override
+  Future<void> emptyCache() => _run('emptyCache', _manager.emptyCache);
+
+  @override
+  Future<void> dispose() => _run('dispose', _manager.dispose);
+}
+
 final AccountImageCacheManager plankaImageCacheManager =
-    AccountImageCacheManager();
+    AccountImageCacheManager(lifecycle: accountCacheLifecycle);
 
 class _DirectoryFileSystem implements FileSystem {
   _DirectoryFileSystem(this._directory);
@@ -341,14 +817,44 @@ class _DirectoryFileSystem implements FileSystem {
 
   @override
   Future<file.File> createFile(String name) async {
+    final safeName = _safeRelativePath(name);
     await _directory.create(recursive: true);
-    return _directory.childFile(name);
+    return _directory.childFile(safeName);
   }
+}
+
+/// Prevents cache metadata from escaping the configured cache directory via a
+/// crafted relative path. The third-party cache manager treats this value as a
+/// path, so validate it before delegating on every supported platform.
+class _SafeFileSystem implements FileSystem {
+  _SafeFileSystem(this._delegate);
+
+  final FileSystem _delegate;
+
+  @override
+  Future<file.File> createFile(String name) =>
+      _delegate.createFile(_safeRelativePath(name));
+}
+
+FileSystem _rawFileSystem(FileSystem fileSystem) =>
+    fileSystem is _SafeFileSystem ? fileSystem._delegate : fileSystem;
+
+String _safeRelativePath(String name) {
+  final normalized = p.normalize(name);
+  if (p.isAbsolute(name) ||
+      normalized == '..' ||
+      normalized.startsWith('..${p.separator}')) {
+    throw ArgumentError.value(name, 'relativePath');
+  }
+  return normalized;
 }
 
 /// The `Authorization` header value for token auth. Single source for the REST
 /// interceptor, the accept-terms call, and the socket handshake.
-String bearerAuth(String token) => 'Bearer $token';
+String bearerAuth(String token) {
+  registerSecret(token);
+  return 'Bearer $token';
+}
 
 class PlankaApi {
   /// A self-hosted Planka over a home network or VPN can accept the TCP
@@ -370,6 +876,7 @@ class PlankaApi {
   final void Function()? onUnauthorized;
 
   PlankaApi(this.serverUrl, this.token, {this.onUnauthorized}) {
+    registerSecret(token);
     dio = Dio(BaseOptions(
       baseUrl: '$serverUrl/api',
       connectTimeout: connectTimeout,
@@ -395,6 +902,7 @@ class PlankaApi {
       throw ApiException(null, 'Unexpected login response');
     }
     token = item;
+    registerSecret(item);
     return item;
   }
 
@@ -402,6 +910,7 @@ class PlankaApi {
   /// [TermsRequiredException]. The accept-terms endpoint returns a real access
   /// token, which this stores and returns — no re-login needed.
   Future<String> acceptTerms(String pendingToken) async {
+    registerSecret(pendingToken);
     final opts = Options(headers: {'Authorization': bearerAuth(pendingToken)});
     final terms = await _request(
         () => dio.get<Map<String, dynamic>>('/terms', options: opts));
@@ -420,6 +929,7 @@ class PlankaApi {
       throw ApiException(null, 'Unexpected accept-terms response');
     }
     token = item;
+    registerSecret(item);
     return item;
   }
 
@@ -435,6 +945,7 @@ class PlankaApi {
   /// survive to the caller, and neither the server's `message` nor the pending
   /// token may reach a user-visible string.
   Future<String> verifyTotp(String pendingToken, String code) async {
+    registerSecret(pendingToken);
     final Response<Map<String, dynamic>> res;
     try {
       res = await dio.post<Map<String, dynamic>>('/access-tokens/verify-totp',
@@ -460,6 +971,7 @@ class PlankaApi {
       throw ApiException(null, 'Unexpected verify-totp response');
     }
     token = item;
+    registerSecret(item);
     return item;
   }
 

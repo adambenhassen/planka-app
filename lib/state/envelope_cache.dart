@@ -1,13 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../api/envelope.dart';
+import '../cache_lifecycle.dart';
 import '../cache_purge.dart';
+import '../security_redaction.dart';
 
-final envelopeCacheProvider = Provider<EnvelopeCache>((_) => EnvelopeCache());
+final envelopeCacheProvider = Provider<EnvelopeCache>(
+  (_) => EnvelopeCache(lifecycle: accountCacheLifecycle),
+);
 
 /// Offline read cache: the last successful response envelope per key, stored
 /// as a JSON file. Keys must include the account id so accounts on different
@@ -15,36 +20,45 @@ final envelopeCacheProvider = Provider<EnvelopeCache>((_) => EnvelopeCache());
 /// ponytail: plain JSON files, no expiry — stale data beats a blank screen,
 /// and every online fetch overwrites it; move to a real DB if boards get huge.
 class EnvelopeCache {
-  EnvelopeCache({Directory? directory}) : _override = directory;
+  EnvelopeCache({Directory? directory, AccountCacheLifecycle? lifecycle})
+    : _override = directory,
+      _lifecycle = lifecycle ?? AccountCacheLifecycle();
+
   final Directory? _override;
+  final AccountCacheLifecycle _lifecycle;
 
   Future<File> _file(String key) async {
     final base = _override ?? await getApplicationSupportDirectory();
-    final dir = Directory('${base.path}/envelope_cache');
+    final accountId = _lifecycle.accountIdForKey(key);
+    final bucket = accountId == null
+        ? 'unscoped'
+        : 'account-${sha256.convert(utf8.encode(accountId))}';
+    final dir = Directory('${base.path}/envelope_cache/$bucket');
     await dir.create(recursive: true);
-    // Keys embed the account id, which contains a server URL — encode so
-    // slashes and other unsafe characters can't leak into the path.
-    final safe = base64Url.encode(utf8.encode(key));
+    // A digest is intentionally one-way: account URLs, user IDs, and any
+    // accidental credential in a caller-provided key never become metadata.
+    final safe = sha256.convert(utf8.encode(key));
     return File('${dir.path}/$safe.json');
   }
 
   Future<void> put(String key, Envelope env) async {
+    final lease = _lifecycle.acquireForKey(key);
     try {
-      await (await _file(key)).writeAsString(jsonEncode(env.raw));
-    } catch (_) {
-      // A failed cache write (IO error, missing platform support in tests)
-      // must never break the fetch that produced it.
+      await _putWithLease(key, env, lease);
+      lease.ensureOpen();
+    } finally {
+      lease.release();
     }
   }
 
   Future<Envelope?> get(String key) async {
+    final lease = _lifecycle.acquireForKey(key);
     try {
-      final file = await _file(key);
-      if (!await file.exists()) return null;
-      return Envelope.parse(
-          (jsonDecode(await file.readAsString()) as Map).cast());
-    } catch (_) {
-      return null; // Corrupt or unreadable cache entry — treat as a miss.
+      final env = await _getWithLease(key, lease);
+      lease.ensureOpen();
+      return env;
+    } finally {
+      lease.release();
     }
   }
 
@@ -52,50 +66,100 @@ class EnvelopeCache {
   /// not be served as the last good copy (a mutation landed but its
   /// confirming refresh failed, so the cached value is pre-mutation).
   Future<void> delete(String key) async {
+    final lease = _lifecycle.acquireForKey(key);
     try {
-      final file = await _file(key);
-      if (await file.exists()) await file.delete();
-    } catch (_) {
-      // A failed delete (IO error, missing platform support in tests) must
-      // never break the caller; the entry simply stays until overwritten.
+      try {
+        final file = await _file(key);
+        if (await file.exists()) await file.delete();
+      } catch (e) {
+        if (e is AccountCacheClosedException) rethrow;
+        // A failed delete (IO error, missing platform support in tests) must
+        // never break the caller; the entry simply stays until overwritten.
+      }
+      lease.ensureOpen();
+    } finally {
+      lease.release();
     }
   }
 
-  /// Removes every envelope whose decoded logical key starts with
-  /// [accountId] followed by a separator. The decoded comparison is
-  /// intentional: comparing encoded filenames would make account boundaries
-  /// depend on the encoding rather than the cache-key contract.
+  /// Removes every envelope owned by [accountId] and verifies the same
+  /// account namespace while cold, including entries from the old filename
+  /// format. Other account namespaces are not inspected or modified.
   Future<void> purgeAccount(String accountId) async {
-    final prefix = '$accountId-';
-    final directory = await _directory();
-    final targets = <FileSystemEntity>[];
-    await for (final entry in directory.list(followLinks: false)) {
-      final key = _decodedKey(entry);
-      if (key != null && key.startsWith(prefix)) targets.add(entry);
-    }
-
+    await _lifecycle.beginRemoval(accountId);
     Object? firstFailure;
     StackTrace? firstFailureStack;
-    await Future.wait(
-      targets.map((target) async {
-        try {
-          await target.delete();
-        } catch (e, s) {
-          firstFailure ??= e;
-          firstFailureStack ??= s;
-        }
-      }),
-    );
+    Directory? directory;
 
-    final remaining = <FileSystemEntity>[];
-    await for (final entry in directory.list(followLinks: false)) {
-      final key = _decodedKey(entry);
-      if (key != null && key.startsWith(prefix)) remaining.add(entry);
+    try {
+      directory = await _directory();
+    } catch (e, s) {
+      firstFailure = e;
+      firstFailureStack = s;
     }
-    if (firstFailure != null || remaining.isNotEmpty) {
+
+    if (directory != null) {
+      final namespace = Directory(
+        '${directory.path}/account-${sha256.convert(utf8.encode(accountId))}',
+      );
+      try {
+        if (await namespace.exists()) await namespace.delete(recursive: true);
+      } catch (e, s) {
+        firstFailure ??= e;
+        firstFailureStack ??= s;
+      }
+
+      // Remove entries written by the old reversible filename scheme too.
+      // This compatibility path is read-only for new writes.
+      try {
+        final legacyTargets = <FileSystemEntity>[];
+        await for (final entry in directory.list(followLinks: false)) {
+          final key = _decodedLegacyKey(entry);
+          if (key != null && key.startsWith('$accountId-')) {
+            legacyTargets.add(entry);
+          }
+        }
+        await Future.wait(
+          legacyTargets.map((target) async {
+            try {
+              await target.delete();
+            } catch (e, s) {
+              firstFailure ??= e;
+              firstFailureStack ??= s;
+            }
+          }),
+        );
+      } catch (e, s) {
+        firstFailure ??= e;
+        firstFailureStack ??= s;
+      }
+
+      // Cold verification happens after every delete attempt.
+      try {
+        if (await namespace.exists() && !await _hasEntries(namespace)) {
+          await namespace.delete();
+        }
+        await for (final entry in directory.list(followLinks: false)) {
+          final key = _decodedLegacyKey(entry);
+          if (key != null && key.startsWith('$accountId-')) {
+            firstFailure ??= StateError('Envelope cache targets remain');
+            firstFailureStack ??= StackTrace.current;
+          }
+        }
+        if (await namespace.exists() && await _hasEntries(namespace)) {
+          firstFailure ??= StateError('Envelope cache targets remain');
+          firstFailureStack ??= StackTrace.current;
+        }
+      } catch (e, s) {
+        firstFailure ??= e;
+        firstFailureStack ??= s;
+      }
+    }
+
+    if (firstFailure != null) {
       throw CachePurgeException(
         'envelopes',
-        firstFailure ?? StateError('Envelope cache targets remain'),
+        firstFailure!,
         firstFailureStack ?? StackTrace.current,
       );
     }
@@ -104,28 +168,85 @@ class EnvelopeCache {
   /// Fetches via [fetch], caching the result under [key]; on failure falls
   /// back to the cached copy, rethrowing only when there is none.
   Future<Envelope> fetchOrCached(
-      String key, Future<Envelope> Function() fetch) async {
+    String key,
+    Future<Envelope> Function() fetch,
+  ) async {
+    final lease = _lifecycle.acquireForKey(key);
     try {
-      final env = await fetch();
-      await put(key, env);
-      return env;
-    } catch (_) {
-      final cached = await get(key);
-      if (cached == null) rethrow;
-      return cached;
+      try {
+        final env = await fetch();
+        lease.ensureOpen();
+        await _putWithLease(key, env, lease);
+        lease.ensureOpen();
+        return env;
+      } catch (e, s) {
+        if (e is AccountCacheClosedException) rethrow;
+        final cached = await _getWithLease(key, lease);
+        lease.ensureOpen();
+        if (cached != null) return cached;
+        Error.throwWithStackTrace(e, s);
+      }
+    } finally {
+      lease.release();
     }
   }
 
-  /// Fetches via [fetch] and caches the result under [key], rethrowing on
-  /// failure. Unlike [fetchOrCached] there is no fallback to the cached copy:
-  /// the caller already knows the cached state is stale (a mutation landed),
-  /// so serving it would be wrong. A successful fetch still refreshes the
-  /// cache, so the next offline start sees the post-mutation state.
+  /// Fetches via [fetch] and caches the result, rethrowing on failure. Unlike
+  /// [fetchOrCached] there is no fallback to the cached copy: the caller
+  /// already knows the cached state is stale (a mutation landed but its
+  /// confirming refresh failed, so serving it would be wrong).
   Future<Envelope> fetchAndCache(
-      String key, Future<Envelope> Function() fetch) async {
-    final env = await fetch();
-    await put(key, env);
-    return env;
+    String key,
+    Future<Envelope> Function() fetch,
+  ) async {
+    final lease = _lifecycle.acquireForKey(key);
+    try {
+      final env = await fetch();
+      lease.ensureOpen();
+      await _putWithLease(key, env, lease);
+      lease.ensureOpen();
+      return env;
+    } finally {
+      lease.release();
+    }
+  }
+
+  Future<void> _putWithLease(
+    String key,
+    Envelope env,
+    AccountCacheLease lease,
+  ) async {
+    try {
+      final file = await _file(key);
+      // Envelope data normally contains board state, not credentials, but the
+      // redaction boundary also protects an accidental server echo.
+      await file.writeAsString(redactDiagnostic(jsonEncode(env.raw)));
+    } catch (e) {
+      if (e is AccountCacheClosedException) rethrow;
+      // A failed cache write must never break the fetch that produced it.
+    }
+    lease.ensureOpen();
+  }
+
+  Future<Envelope?> _getWithLease(String key, AccountCacheLease lease) async {
+    try {
+      final file = await _file(key);
+      File source = file;
+      if (!await source.exists()) {
+        source = await _legacyFile(key);
+        if (!await source.exists()) return null;
+      }
+      final env = Envelope.parse(
+        (jsonDecode(redactDiagnostic(await source.readAsString())) as Map)
+            .cast(),
+      );
+      lease.ensureOpen();
+      return env;
+    } catch (e) {
+      if (e is AccountCacheClosedException) rethrow;
+      lease.ensureOpen();
+      return null; // Corrupt or unreadable cache entry — treat as a miss.
+    }
   }
 
   Future<Directory> _directory() async {
@@ -135,9 +256,17 @@ class EnvelopeCache {
     return dir;
   }
 
-  String? _decodedKey(FileSystemEntity entry) {
-    final name = entry.uri.pathSegments
-        .lastWhere((segment) => segment.isNotEmpty, orElse: () => '');
+  Future<File> _legacyFile(String key) async {
+    final directory = await _directory();
+    final safe = base64Url.encode(utf8.encode(key));
+    return File('${directory.path}/$safe.json');
+  }
+
+  String? _decodedLegacyKey(FileSystemEntity entry) {
+    final name = entry.uri.pathSegments.lastWhere(
+      (segment) => segment.isNotEmpty,
+      orElse: () => '',
+    );
     if (!name.endsWith('.json')) return null;
     try {
       return utf8.decode(
@@ -146,5 +275,12 @@ class EnvelopeCache {
     } on FormatException {
       return null;
     }
+  }
+
+  Future<bool> _hasEntries(Directory directory) async {
+    await for (final _ in directory.list(recursive: true, followLinks: false)) {
+      return true;
+    }
+    return false;
   }
 }
