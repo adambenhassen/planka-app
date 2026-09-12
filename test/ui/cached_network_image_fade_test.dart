@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file/file.dart' as file;
@@ -26,16 +27,11 @@ class _AccNotifier extends CurrentAccountNotifier {
   Account? build() => account;
 }
 
-class _MemoryFileSystem implements FileSystem {
-  final _delegate = MemoryFileSystem();
-
-  @override
-  Future<file.File> createFile(String name) async => _delegate.file(name);
-}
-
-class _ImageFileService extends FileService {
+class _ControlledCacheManager implements BaseCacheManager {
+  final _fileSystem = MemoryFileSystem();
   final _requestedPaths = <String>{};
   final _releases = <String, Completer<void>>{};
+  final _files = <String, file.File>{};
 
   String imageUrl(String path) {
     _releases[path] = Completer<void>();
@@ -49,61 +45,142 @@ class _ImageFileService extends FileService {
     if (completer != null && !completer.isCompleted) completer.complete();
   }
 
-  @override
-  Future<FileServiceResponse> get(
-    String url, {
-    Map<String, String>? headers,
-  }) async {
+  Future<file.File> _load(String url) async {
     final path = Uri.parse(url).path;
     _requestedPaths.add(path);
     final release = _releases[path];
     if (release == null) throw StateError('unexpected image request $url');
     await release.future;
-    return _ImageFileServiceResponse();
+    final imageFile = _files.putIfAbsent(
+      path,
+      () => _fileSystem.file('/image-${_files.length}.png'),
+    );
+    await imageFile.writeAsBytes(_pngBytes);
+    return imageFile;
   }
-}
-
-class _ImageFileServiceResponse extends FileServiceResponse {
-  @override
-  Stream<List<int>> get content => Stream<List<int>>.value(_pngBytes);
 
   @override
-  int get contentLength => _pngBytes.length;
+  Stream<FileResponse> getFileStream(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+    bool withProgress = false,
+  }) async* {
+    final imageFile = await _load(url);
+    yield FileInfo(
+      imageFile,
+      FileSource.Online,
+      DateTime.now().add(const Duration(days: 1)),
+      url,
+    );
+  }
 
   @override
-  DateTime get validTill => DateTime.now().add(const Duration(days: 1));
+  @Deprecated('Prefer to use the new getFileStream method')
+  Stream<FileInfo> getFile(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+  }) =>
+      getFileStream(url, key: key, headers: headers).whereType<FileInfo>();
 
   @override
-  String? get eTag => null;
+  Future<file.File> getSingleFile(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+  }) async =>
+      (await getFileStream(url, key: key, headers: headers)
+              .whereType<FileInfo>()
+              .first)
+          .file;
 
   @override
-  String get fileExtension => '.png';
+  Future<FileInfo> downloadFile(
+    String url, {
+    String? key,
+    Map<String, String>? authHeaders,
+    bool force = false,
+  }) async =>
+      (await getFileStream(url, key: key, headers: authHeaders)
+              .whereType<FileInfo>()
+              .first);
 
   @override
-  int get statusCode => 200;
+  Future<FileInfo?> getFileFromCache(
+    String key, {
+    bool ignoreMemCache = false,
+  }) async {
+    final imageFile = _files[key];
+    if (imageFile == null) return null;
+    return FileInfo(
+      imageFile,
+      FileSource.Cache,
+      DateTime.now().add(const Duration(days: 1)),
+      key,
+    );
+  }
+
+  @override
+  Future<FileInfo?> getFileFromMemory(String key) => getFileFromCache(key);
+
+  @override
+  Future<file.File> putFile(
+    String url,
+    Uint8List fileBytes, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) async {
+    final file = _fileSystem.file('/put-${_files.length}.$fileExtension');
+    await file.writeAsBytes(fileBytes);
+    return file;
+  }
+
+  @override
+  Future<file.File> putFileStream(
+    String url,
+    Stream<List<int>> source, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) async {
+    final bytes = await source.expand((chunk) => chunk).toList();
+    return putFile(
+      url,
+      Uint8List.fromList(bytes),
+      key: key,
+      eTag: eTag,
+      maxAge: maxAge,
+      fileExtension: fileExtension,
+    );
+  }
+
+  @override
+  Future<void> removeFile(String key) async {}
+
+  @override
+  Future<void> emptyCache() async {}
+
+  @override
+  Future<void> dispose() async {}
 }
 
 final _pngBytes = base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
 
 void main() {
-  late _ImageFileService fileService;
+  late _ControlledCacheManager cacheManager;
 
   setUp(() {
-    fileService = _ImageFileService();
+    cacheManager = _ControlledCacheManager();
   });
 
   testWidgets('all store images fade after a successful load', (tester) async {
     final previousCacheManager =
         CachedNetworkImageProvider.defaultCacheManager;
-    final cacheManager = CacheManager(
-      Config(
-        'cached-network-image-fade-test-${DateTime.now().microsecondsSinceEpoch}',
-        fileSystem: _MemoryFileSystem(),
-        repo: NonStoringObjectProvider(),
-        fileService: fileService,
-      ),
-    );
     CachedNetworkImageProvider.defaultCacheManager = cacheManager;
     addTearDown(() async {
       CachedNetworkImageProvider.defaultCacheManager = previousCacheManager;
@@ -115,9 +192,9 @@ void main() {
     const backgroundPath = '/background.png';
     const cardPath = '/card.png';
     const attachmentPath = '/attachment.png';
-    final backgroundUrl = fileService.imageUrl(backgroundPath);
-    final cardUrl = fileService.imageUrl(cardPath);
-    final attachmentUrl = fileService.imageUrl(attachmentPath);
+    final backgroundUrl = cacheManager.imageUrl(backgroundPath);
+    final cardUrl = cacheManager.imageUrl(cardPath);
+    final attachmentUrl = cacheManager.imageUrl(attachmentPath);
     final attachment = PlankaAttachment(
       id: 'attachment-1',
       cardId: cardId,
@@ -211,15 +288,15 @@ void main() {
     );
 
     for (final path in keys.keys) {
-      for (var i = 0; i < 500 && !fileService.wasRequested(path); i++) {
+      for (var i = 0; i < 500 && !cacheManager.wasRequested(path); i++) {
         await tester.pump(const Duration(milliseconds: 10));
       }
-      expect(fileService.wasRequested(path), isTrue, reason: 'request $path');
+      expect(cacheManager.wasRequested(path), isTrue, reason: 'request $path');
       expect(find.byKey(ValueKey<String>(keys[path]!)), findsNothing);
     }
 
     for (final path in keys.keys) {
-      fileService.release(path);
+      cacheManager.release(path);
     }
 
     for (final key in keys.values) {
