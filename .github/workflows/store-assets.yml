@@ -54,7 +54,9 @@ jobs:
             exit 1
           fi
           PLANKA_URL=http://127.0.0.1:3000 ./dev/seed_demo.sh
-      - name: Capture on a 16:9 Android phone
+      - name: Capture on a 16:9 Android phone (attempt 1)
+        id: android_capture_attempt_1
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2.38.0
         env:
           PLANKA_URL: http://10.0.2.2:3000
@@ -68,6 +70,28 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
+          script: |
+            mkdir -p "$SCREENSHOT_OUTPUT_DIR"
+            flutter drive --driver=test_driver/screenshots_driver.dart --target=integration_test/screenshots_test.dart -d emulator-5554 --flavor store --dart-define=ENABLE_IN_APP_UPDATER=false --dart-define=PLANKA_URL=$PLANKA_URL --dart-define=PLANKA_EMAIL=$PLANKA_EMAIL --dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD
+      - name: Retry Android capture after resetting the emulator
+        if: ${{ steps.android_capture_attempt_1.outcome == 'failure' }}
+        run: echo 'Android capture attempt 1 failed; retrying with a fresh emulator.'
+      - name: Capture on a 16:9 Android phone (attempt 2)
+        if: ${{ steps.android_capture_attempt_1.outcome == 'failure' }}
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        env:
+          PLANKA_URL: http://10.0.2.2:3000
+          PLANKA_EMAIL: demo@demo.demo
+          PLANKA_PASSWORD: demo
+          SCREENSHOT_OUTPUT_DIR: ${{ runner.temp }}/store-android
+          STORE_SCREENSHOTS: '1'
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          force-avd-creation: true
           script: |
             mkdir -p "$SCREENSHOT_OUTPUT_DIR"
             flutter drive --driver=test_driver/screenshots_driver.dart --target=integration_test/screenshots_test.dart -d emulator-5554 --flavor store --dart-define=ENABLE_IN_APP_UPDATER=false --dart-define=PLANKA_URL=$PLANKA_URL --dart-define=PLANKA_EMAIL=$PLANKA_EMAIL --dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD
