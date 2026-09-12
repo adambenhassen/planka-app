@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/planka_api.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('authenticates media on the configured origin across path prefixes', () {
     expect(
       imageAuthHeaders(
