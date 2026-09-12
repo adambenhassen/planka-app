@@ -46,14 +46,14 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
   }
 
   Future<void> upsert(Account account) async {
-    // A successful removal leaves its old handles permanently closed. Only a
-    // newly persisted authenticated account may explicitly reopen that id.
-    ref.read(cacheLifecycleProvider).reopen(account.id);
     // Await the loaded list so a call during loading can't drop stored accounts.
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == account.id)
       ..add(account);
     await ref.read(accountStoreProvider).save(list);
+    // A successful removal leaves its old handles permanently closed. Only a
+    // newly persisted authenticated account may explicitly reopen that id.
+    ref.read(cacheLifecycleProvider).reopen(account.id);
     state = AsyncData(list);
   }
 
@@ -62,15 +62,20 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     // This makes the removal window cover every cache family and every caller
     // that retained a handle before removal began.
     final lifecycle = ref.read(cacheLifecycleProvider);
-    await lifecycle.beginRemoval(accountId);
+    Object? firstFailure;
+    StackTrace? firstFailureStack;
+    try {
+      await lifecycle.beginRemoval(accountId);
+    } catch (e, s) {
+      firstFailure = e;
+      firstFailureStack = s;
+    }
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == accountId);
 
     // Both cache families are account-owned. Attempt both even when the first
     // purge fails, and keep the account record until every target is gone so a
     // caller cannot mistake a partial purge for successful removal.
-    Object? firstFailure;
-    StackTrace? firstFailureStack;
     try {
       await ref.read(envelopeCacheProvider).purgeAccount(accountId);
     } catch (e, s) {

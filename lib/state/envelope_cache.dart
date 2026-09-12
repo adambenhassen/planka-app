@@ -86,7 +86,11 @@ class EnvelopeCache {
   /// account namespace while cold, including entries from the old filename
   /// format. Other account namespaces are not inspected or modified.
   Future<void> purgeAccount(String accountId) async {
-    await _lifecycle.beginRemoval(accountId);
+    try {
+      await _lifecycle.beginRemoval(accountId);
+    } catch (e, s) {
+      throw CachePurgeException('envelopes', e, s);
+    }
     Object? firstFailure;
     StackTrace? firstFailureStack;
     Directory? directory;

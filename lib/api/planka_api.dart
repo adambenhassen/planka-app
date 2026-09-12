@@ -10,6 +10,7 @@ import 'package:file/local.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../cache_lifecycle.dart';
 import '../cache_purge.dart';
@@ -20,7 +21,7 @@ class ApiException implements Exception {
   final int? statusCode;
   final String message;
   ApiException(this.statusCode, String message)
-      : message = redactDiagnostic(message);
+    : message = redactDiagnostic(message);
 
   @override
   String toString() => 'ApiException($statusCode): $message';
@@ -151,10 +152,7 @@ class _RedactingFileService extends FileService {
     Map<String, String>? headers,
   }) async {
     try {
-      final response = await _delegate.get(
-        cacheSafeUrl(url),
-        headers: headers,
-      );
+      final response = await _delegate.get(cacheSafeUrl(url), headers: headers);
       return _RedactingFileServiceResponse(response);
     } catch (_) {
       throw CacheOperationException('fileService');
@@ -192,7 +190,111 @@ class _RedactingFileServiceResponse implements FileServiceResponse {
   String get fileExtension => 'file';
 }
 
+/// Associates the cache-manager response body with the account lifecycle. The
+/// cache manager package owns the subscription that writes the file, so the
+/// account lease must cancel the response body directly when removal starts.
+class _AccountFileService extends FileService {
+  _AccountFileService(this._accountId, this._lifecycle, this._delegate) {
+    concurrentFetches = _delegate.concurrentFetches;
+  }
+
+  final String _accountId;
+  final AccountCacheLifecycle _lifecycle;
+  final FileService _delegate;
+
+  @override
+  Future<FileServiceResponse> get(
+    String url, {
+    Map<String, String>? headers,
+  }) async {
+    final response = await _delegate.get(url, headers: headers);
+    final lease = _lifecycle.acquire(_accountId);
+    return _AccountFileServiceResponse(response, lease, _lifecycle);
+  }
+}
+
+class _AccountFileServiceResponse implements FileServiceResponse {
+  _AccountFileServiceResponse(this._delegate, this._lease, this._lifecycle);
+
+  final FileServiceResponse _delegate;
+  final AccountCacheLease _lease;
+  final AccountCacheLifecycle _lifecycle;
+  Stream<List<int>>? _content;
+
+  @override
+  Stream<List<int>> get content => _content ??= _createContent();
+
+  Stream<List<int>> _createContent() {
+    final controller = StreamController<List<int>>();
+    StreamSubscription<List<int>>? subscription;
+    Future<void>? cancellation;
+    var cancelled = false;
+    var released = false;
+
+    void release() {
+      if (released) return;
+      released = true;
+      _lease.release();
+    }
+
+    Future<void> cancelImplementation() async {
+      cancelled = true;
+      try {
+        await subscription?.cancel().timeout(_lifecycle.removalTimeout);
+      } catch (_) {
+        _lease.reportRemovalFailure();
+      } finally {
+        if (!controller.isClosed) await controller.close();
+        release();
+      }
+    }
+
+    Future<void> cancelSource() => cancellation ??= cancelImplementation();
+
+    controller.onListen = () {
+      if (cancelled) {
+        unawaited(controller.close());
+        release();
+        return;
+      }
+      subscription = redactCacheStream(_delegate.content).listen(
+        (chunk) {
+          if (!cancelled && !controller.isClosed) controller.add(chunk);
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (!controller.isClosed) controller.addError(error, stackTrace);
+        },
+        onDone: () async {
+          await controller.close();
+          release();
+        },
+      );
+    };
+    controller.onCancel = cancelSource;
+    _lease.onRemoval(cancelSource);
+    return controller.stream;
+  }
+
+  @override
+  int? get contentLength => _delegate.contentLength;
+
+  @override
+  int get statusCode => _delegate.statusCode;
+
+  @override
+  DateTime get validTill => _delegate.validTill;
+
+  @override
+  String? get eTag => _delegate.eTag;
+
+  @override
+  String get fileExtension => _delegate.fileExtension;
+}
+
 typedef AccountImageCacheFactory = BaseCacheManager Function(String accountId);
+typedef AccountCacheRepositoryFactory =
+    CacheInfoRepository Function(String namespace);
+typedef AccountCacheDirectoryProvider = Future<Directory> Function();
 
 /// Stable cache key for one authenticated media URL and one account.
 ///
@@ -214,11 +316,21 @@ class AccountImageCacheManager {
     AccountImageCacheFactory? createManager,
     Directory? directory,
     AccountCacheLifecycle? lifecycle,
-  })  : _createManager = createManager ??
-            ((accountId) => _createDefaultManager(accountId, directory)),
-        _lifecycle = lifecycle ?? AccountCacheLifecycle();
+    AccountCacheRepositoryFactory? createRepository,
+    AccountCacheDirectoryProvider? temporaryDirectory,
+  }) : _lifecycle = lifecycle ?? AccountCacheLifecycle() {
+    _createManager =
+        createManager ??
+        ((accountId) => _createDefaultManager(
+          accountId,
+          directory,
+          createRepository,
+          temporaryDirectory,
+          _lifecycle,
+        ));
+  }
 
-  final AccountImageCacheFactory _createManager;
+  late final AccountImageCacheFactory _createManager;
   final AccountCacheLifecycle _lifecycle;
   final Map<String, BaseCacheManager> _managers = {};
   final Map<String, _AccountCacheHandle> _handles = {};
@@ -229,11 +341,21 @@ class AccountImageCacheManager {
     }
     registerSecret(token);
     _lifecycle.register(accountId);
-    return _handles.putIfAbsent(accountId, () {
-      final manager = _managers.putIfAbsent(
-          accountId, () => _createManager(accountId));
-      return _AccountCacheHandle(accountId, manager, _lifecycle);
-    });
+    final generation = _lifecycle.generationFor(accountId);
+    final existing = _handles[accountId];
+    if (existing != null && existing.generation == generation) return existing;
+    final manager = _managers.putIfAbsent(
+      accountId,
+      () => _createManager(accountId),
+    );
+    final handle = _AccountCacheHandle(
+      accountId,
+      manager,
+      _lifecycle,
+      generation,
+    );
+    _handles[accountId] = handle;
+    return handle;
   }
 
   /// Removes every media entry in one account namespace and verifies that a
@@ -242,7 +364,11 @@ class AccountImageCacheManager {
     if (accountId.isEmpty) {
       throw ArgumentError.value(accountId, 'accountId');
     }
-    await _lifecycle.beginRemoval(accountId);
+    try {
+      await _lifecycle.beginRemoval(accountId);
+    } catch (e, s) {
+      throw CachePurgeException('media', e, s);
+    }
     BaseCacheManager manager;
     try {
       manager = _managers.remove(accountId) ?? _createManager(accountId);
@@ -369,19 +495,51 @@ class AccountImageCacheManager {
   }
 
   static BaseCacheManager _createDefaultManager(
-      String accountId, Directory? directory) {
+    String accountId,
+    Directory? directory,
+    AccountCacheRepositoryFactory? createRepository,
+    AccountCacheDirectoryProvider? temporaryDirectory,
+    AccountCacheLifecycle lifecycle,
+  ) {
     final namespace = _plankaImageCacheNamespace(accountId);
     final local = LocalFileSystem();
-    final baseConfig = directory == null
-        ? Config(namespace, fileService: plankaImageFileService)
-        : Config(
-            namespace,
-            repo: JsonCacheInfoRepository.withFile(
-                local.file(p.join(directory.path, '$namespace.json'))),
-            fileSystem: _DirectoryFileSystem(
-                local.directory(p.join(directory.path, namespace))),
-            fileService: plankaImageFileService,
-          );
+    final fileSystem = _AccountDirectoryFileSystem(
+      _accountDirectory(
+        namespace,
+        directory,
+        temporaryDirectory ?? getTemporaryDirectory,
+      ),
+    );
+    final repository = createRepository?.call(namespace);
+    final fileService = _AccountFileService(
+      accountId,
+      lifecycle,
+      plankaImageFileService,
+    );
+    late final Config baseConfig;
+    if (repository != null) {
+      baseConfig = Config(
+        namespace,
+        repo: repository,
+        fileSystem: fileSystem,
+        fileService: fileService,
+      );
+    } else if (directory == null) {
+      baseConfig = Config(
+        namespace,
+        fileSystem: fileSystem,
+        fileService: fileService,
+      );
+    } else {
+      baseConfig = Config(
+        namespace,
+        repo: JsonCacheInfoRepository.withFile(
+          local.file(p.join(directory.path, '$namespace.json')),
+        ),
+        fileSystem: fileSystem,
+        fileService: fileService,
+      );
+    }
     final config = Config(
       baseConfig.cacheKey,
       stalePeriod: baseConfig.stalePeriod,
@@ -391,6 +549,15 @@ class AccountImageCacheManager {
       fileService: baseConfig.fileService,
     );
     return CacheManager(config);
+  }
+
+  static Future<file.Directory> _accountDirectory(
+    String namespace,
+    Directory? directory,
+    AccountCacheDirectoryProvider temporaryDirectory,
+  ) async {
+    final base = directory ?? await temporaryDirectory();
+    return LocalFileSystem().directory(p.join(base.path, namespace));
   }
 
   Future<void> _waitForPending(
@@ -409,32 +576,60 @@ class AccountImageCacheManager {
   }
 
   Future<List<file.File>?> _mediaFiles(
-      BaseCacheManager manager, void Function(Object, StackTrace) onFailure) async {
+    BaseCacheManager manager,
+    void Function(Object, StackTrace) onFailure,
+  ) async {
     if (manager case CacheManager concrete) {
       final repository = concrete.config.repo;
+      final targets = <file.File>[];
+      var opened = false;
       try {
         await repository.open();
+        opened = true;
         final objects = await repository.getAllObjects();
-        final targets = await Future.wait(objects.map((object) =>
-            concrete.config.fileSystem.createFile(object.relativePath)));
-        final fileSystem = _rawFileSystem(concrete.config.fileSystem);
-        if (fileSystem case _DirectoryFileSystem fs) {
-          await for (final entry
-              in fs._directory.list(recursive: true, followLinks: false)) {
-            if (entry is file.File) targets.add(entry);
+        for (final object in objects) {
+          try {
+            targets.add(
+              await concrete.config.fileSystem.createFile(object.relativePath),
+            );
+          } catch (e, s) {
+            onFailure(e, s);
           }
         }
-        final seen = <String>{};
-        return targets.where((target) => seen.add(target.path)).toList();
       } catch (e, s) {
         onFailure(e, s);
       } finally {
-        try {
-          await repository.close();
-        } catch (e, s) {
-          onFailure(e, s);
+        if (opened) {
+          try {
+            await repository.close();
+          } catch (e, s) {
+            onFailure(e, s);
+          }
         }
       }
+
+      // The repository can be missing a row when its asynchronous metadata
+      // insert failed. Enumerate the owned physical directory independently
+      // so that orphan files are still deleted and verified on retry.
+      try {
+        final fileSystem = _rawFileSystem(concrete.config.fileSystem);
+        if (fileSystem case _AccountDirectoryFileSystem fs) {
+          final directory = await fs.directory;
+          if (await directory.exists()) {
+            await for (final entry in directory.list(
+              recursive: true,
+              followLinks: false,
+            )) {
+              if (entry is file.File) targets.add(entry);
+            }
+          }
+        }
+      } catch (e, s) {
+        onFailure(e, s);
+      }
+
+      final seen = <String>{};
+      return targets.where((target) => seen.add(target.path)).toList();
     }
     return null;
   }
@@ -452,11 +647,16 @@ class AccountImageCacheManager {
         await repository.close();
       }
       final fileSystem = _rawFileSystem(concrete.config.fileSystem);
-      if (fileSystem case _DirectoryFileSystem fs) {
-        await for (final entry
-            in fs._directory.list(recursive: true, followLinks: false)) {
-          if (entry is file.File) {
-            throw StateError('Media cache files remain');
+      if (fileSystem case _AccountDirectoryFileSystem fs) {
+        final directory = await fs.directory;
+        if (await directory.exists()) {
+          await for (final entry in directory.list(
+            recursive: true,
+            followLinks: false,
+          )) {
+            if (entry is file.File) {
+              throw StateError('Media cache files remain');
+            }
           }
         }
       }
@@ -476,6 +676,11 @@ class _TrackedCacheInfoRepository extends CacheInfoRepository {
   final List<_TrackedRepositoryFailure> _failures = [];
 
   Future<T> _track<T>(Future<T> operation) {
+    _trackCompletion(operation);
+    return operation;
+  }
+
+  void _trackCompletion<T>(Future<T> operation) {
     final done = Completer<void>();
     final marker = done.future;
     _pending.add(marker);
@@ -493,7 +698,6 @@ class _TrackedCacheInfoRepository extends CacheInfoRepository {
         _complete(marker, done);
       },
     );
-    return operation;
   }
 
   void _complete(Future<void> marker, Completer<void> done) {
@@ -518,15 +722,20 @@ class _TrackedCacheInfoRepository extends CacheInfoRepository {
   Future<bool> open() => _delegate.open();
 
   @override
-  Future<dynamic> updateOrInsert(CacheObject cacheObject) =>
-      _track(_delegate.updateOrInsert(cacheObject));
+  Future<dynamic> updateOrInsert(CacheObject cacheObject) {
+    final operation = _delegate.updateOrInsert(cacheObject);
+    _trackCompletion(operation);
+    // CacheManager.putFile intentionally does not await this operation. Keep
+    // its returned future error-free so the tracked, sanitized failure is
+    // surfaced by the owning handle instead of as an unhandled exception.
+    return operation.catchError((Object _, StackTrace _) => null);
+  }
 
   @override
   Future<CacheObject> insert(
     CacheObject cacheObject, {
     bool setTouchedToNow = true,
-  }) =>
-      _track(_delegate.insert(cacheObject, setTouchedToNow: setTouchedToNow));
+  }) => _track(_delegate.insert(cacheObject, setTouchedToNow: setTouchedToNow));
 
   @override
   Future<CacheObject?> get(String key) => _delegate.get(key);
@@ -538,10 +747,7 @@ class _TrackedCacheInfoRepository extends CacheInfoRepository {
   Future<int> deleteAll(Iterable<int> ids) => _track(_delegate.deleteAll(ids));
 
   @override
-  Future<int> update(
-    CacheObject cacheObject, {
-    bool setTouchedToNow = true,
-  }) =>
+  Future<int> update(CacheObject cacheObject, {bool setTouchedToNow = true}) =>
       _track(_delegate.update(cacheObject, setTouchedToNow: setTouchedToNow));
 
   @override
@@ -573,11 +779,19 @@ class _TrackedRepositoryFailure {
 /// shared lifecycle, including operations started through a handle retained by
 /// a widget before account removal began.
 class _AccountCacheHandle implements BaseCacheManager {
-  _AccountCacheHandle(this._accountId, this._manager, this._lifecycle);
+  _AccountCacheHandle(
+    this._accountId,
+    this._manager,
+    this._lifecycle,
+    this._generation,
+  );
 
   final String _accountId;
   final BaseCacheManager _manager;
   final AccountCacheLifecycle _lifecycle;
+  final int _generation;
+
+  int get generation => _generation;
 
   String _safeUrl(String url) => cacheSafeUrl(url);
 
@@ -589,11 +803,25 @@ class _AccountCacheHandle implements BaseCacheManager {
     return 'planka-cache-${sha256.convert(utf8.encode(candidate))}';
   }
 
+  Future<void> _settleBackend() async {
+    if (_manager case CacheManager concrete) {
+      final repository = concrete.config.repo;
+      if (repository is _TrackedCacheInfoRepository) {
+        // CacheManager.putFile and WebHelper._manageResponse intentionally
+        // start metadata updates without awaiting them. Give that handoff one
+        // event-loop turn, then wait for the tracked operation itself.
+        await Future<void>.delayed(Duration.zero);
+        await repository.waitForPending();
+      }
+    }
+  }
+
   Future<T> _run<T>(String operation, Future<T> Function() action) async {
-    final lease = _lifecycle.acquire(_accountId);
+    final lease = _lifecycle.acquire(_accountId, generation: _generation);
     try {
       try {
         final result = await action();
+        await _settleBackend();
         lease.ensureOpen();
         return result;
       } catch (e) {
@@ -606,7 +834,7 @@ class _AccountCacheHandle implements BaseCacheManager {
   }
 
   Stream<T> _stream<T>(String operation, Stream<T> Function() create) {
-    final lease = _lifecycle.acquire(_accountId);
+    final lease = _lifecycle.acquire(_accountId, generation: _generation);
     final controller = StreamController<T>();
     StreamSubscription<T>? subscription;
     var released = false;
@@ -653,27 +881,36 @@ class _AccountCacheHandle implements BaseCacheManager {
           );
         },
         onDone: () async {
-          if (lease.wasClosed && !controller.isClosed) {
-            controller.addError(AccountCacheClosedException());
+          try {
+            await _settleBackend();
+          } catch (_) {
+            // The tracked repository retains this sanitized failure for the
+            // account purge to surface without leaking the backend exception.
+          } finally {
+            await controller.close();
+            release();
           }
-          await controller.close();
-          release();
         },
       );
     };
     // The source is deliberately drained rather than released on consumer
     // cancellation. A cache backend may still be committing a file after its
-    // subscription is cancelled; the purge must wait for source completion.
+    // subscription is cancelled; the purge must wait for source cancellation.
     controller.onCancel = () {};
     lease.onRemoval(() async {
-      if (subscription == null) {
+      try {
+        final current = subscription;
+        if (current != null) {
+          await current.cancel().timeout(_lifecycle.removalTimeout);
+        }
+        await _settleBackend();
+      } catch (_) {
+        // A backend that cannot cancel is not safe to purge. The lifecycle
+        // records a generic quiescence failure and keeps the account closed.
+        lease.reportRemovalFailure();
+      } finally {
         if (!controller.isClosed) await controller.close();
         release();
-        return;
-      }
-      if (!controller.isClosed) {
-        controller.addError(AccountCacheClosedException());
-        await controller.close();
       }
     });
     return controller.stream;
@@ -685,13 +922,13 @@ class _AccountCacheHandle implements BaseCacheManager {
     String? key,
     Map<String, String>? headers,
   }) => _run(
-        'getSingleFile',
-        () => _manager.getSingleFile(
-          _safeUrl(url),
-          key: _safeKey(key, url),
-          headers: headers ?? const {},
-        ),
-      );
+    'getSingleFile',
+    () => _manager.getSingleFile(
+      _safeUrl(url),
+      key: _safeKey(key, url),
+      headers: headers ?? const {},
+    ),
+  );
 
   @override
   @Deprecated('Prefer to use the new getFileStream method')
@@ -700,13 +937,13 @@ class _AccountCacheHandle implements BaseCacheManager {
     String? key,
     Map<String, String>? headers,
   }) => _stream(
-        'getFile',
-        () => _manager.getFile(
-          _safeUrl(url),
-          key: _safeKey(key, url),
-          headers: headers ?? const {},
-        ),
-      );
+    'getFile',
+    () => _manager.getFile(
+      _safeUrl(url),
+      key: _safeKey(key, url),
+      headers: headers ?? const {},
+    ),
+  );
 
   @override
   Stream<FileResponse> getFileStream(
@@ -715,14 +952,14 @@ class _AccountCacheHandle implements BaseCacheManager {
     Map<String, String>? headers,
     bool withProgress = false,
   }) => _stream(
-        'getFileStream',
-        () => _manager.getFileStream(
-          _safeUrl(url),
-          key: _safeKey(key, url),
-          headers: headers,
-          withProgress: withProgress,
-        ),
-      );
+    'getFileStream',
+    () => _manager.getFileStream(
+      _safeUrl(url),
+      key: _safeKey(key, url),
+      headers: headers,
+      withProgress: withProgress,
+    ),
+  );
 
   @override
   Future<FileInfo> downloadFile(
@@ -731,25 +968,32 @@ class _AccountCacheHandle implements BaseCacheManager {
     Map<String, String>? authHeaders,
     bool force = false,
   }) => _run(
-        'downloadFile',
-        () => _manager.downloadFile(
-          _safeUrl(url),
-          key: _safeKey(key, url),
-          authHeaders: authHeaders,
-          force: force,
-        ),
-      );
+    'downloadFile',
+    () => _manager.downloadFile(
+      _safeUrl(url),
+      key: _safeKey(key, url),
+      authHeaders: authHeaders,
+      force: force,
+    ),
+  );
 
   @override
-  Future<FileInfo?> getFileFromCache(String key,
-          {bool ignoreMemCache = false}) =>
-      _run('getFileFromCache', () => _manager.getFileFromCache(
-          _safeKey(key, key),
-          ignoreMemCache: ignoreMemCache));
+  Future<FileInfo?> getFileFromCache(
+    String key, {
+    bool ignoreMemCache = false,
+  }) => _run(
+    'getFileFromCache',
+    () => _manager.getFileFromCache(
+      _safeKey(key, key),
+      ignoreMemCache: ignoreMemCache,
+    ),
+  );
 
   @override
-  Future<FileInfo?> getFileFromMemory(String key) =>
-      _run('getFileFromMemory', () => _manager.getFileFromMemory(_safeKey(key, key)));
+  Future<FileInfo?> getFileFromMemory(String key) => _run(
+    'getFileFromMemory',
+    () => _manager.getFileFromMemory(_safeKey(key, key)),
+  );
 
   @override
   Future<file.File> putFile(
@@ -760,18 +1004,18 @@ class _AccountCacheHandle implements BaseCacheManager {
     Duration maxAge = const Duration(days: 30),
     String fileExtension = 'file',
   }) => _run(
-        'putFile',
-        () => _manager.putFile(
-          _safeUrl(url),
-          redactCacheBytes(fileBytes),
-          key: _safeKey(key, url),
-          // ETags are durable cache metadata. Do not retain caller- or
-          // server-supplied values because a credential can be used as one.
-          eTag: null,
-          maxAge: maxAge,
-          fileExtension: 'file',
-        ),
-      );
+    'putFile',
+    () => _manager.putFile(
+      _safeUrl(url),
+      redactCacheBytes(fileBytes),
+      key: _safeKey(key, url),
+      // ETags are durable cache metadata. Do not retain caller- or
+      // server-supplied values because a credential can be used as one.
+      eTag: null,
+      maxAge: maxAge,
+      fileExtension: 'file',
+    ),
+  );
 
   @override
   Future<file.File> putFileStream(
@@ -782,16 +1026,16 @@ class _AccountCacheHandle implements BaseCacheManager {
     Duration maxAge = const Duration(days: 30),
     String fileExtension = 'file',
   }) => _run(
-        'putFileStream',
-        () => _manager.putFileStream(
-          _safeUrl(url),
-          _redactedSource(source),
-          key: _safeKey(key, url),
-          eTag: null,
-          maxAge: maxAge,
-          fileExtension: 'file',
-        ),
-      );
+    'putFileStream',
+    () => _manager.putFileStream(
+      _safeUrl(url),
+      _redactedSource(source),
+      key: _safeKey(key, url),
+      eTag: null,
+      maxAge: maxAge,
+      fileExtension: 'file',
+    ),
+  );
 
   @override
   Future<void> removeFile(String key) =>
@@ -810,16 +1054,19 @@ class _AccountCacheHandle implements BaseCacheManager {
 final AccountImageCacheManager plankaImageCacheManager =
     AccountImageCacheManager(lifecycle: accountCacheLifecycle);
 
-class _DirectoryFileSystem implements FileSystem {
-  _DirectoryFileSystem(this._directory);
+class _AccountDirectoryFileSystem implements FileSystem {
+  _AccountDirectoryFileSystem(this._directory);
 
-  final file.Directory _directory;
+  final Future<file.Directory> _directory;
+
+  Future<file.Directory> get directory => _directory;
 
   @override
   Future<file.File> createFile(String name) async {
     final safeName = _safeRelativePath(name);
-    await _directory.create(recursive: true);
-    return _directory.childFile(safeName);
+    final directory = await _directory;
+    await directory.create(recursive: true);
+    return directory.childFile(safeName);
   }
 }
 
@@ -877,24 +1124,31 @@ class PlankaApi {
 
   PlankaApi(this.serverUrl, this.token, {this.onUnauthorized}) {
     registerSecret(token);
-    dio = Dio(BaseOptions(
-      baseUrl: '$serverUrl/api',
-      connectTimeout: connectTimeout,
-      receiveTimeout: receiveTimeout,
-    ));
-    dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) {
-        final t = token;
-        if (t != null) options.headers['Authorization'] = bearerAuth(t);
-        handler.next(options);
-      },
-    ));
+    dio = Dio(
+      BaseOptions(
+        baseUrl: '$serverUrl/api',
+        connectTimeout: connectTimeout,
+        receiveTimeout: receiveTimeout,
+      ),
+    );
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          final t = token;
+          if (t != null) options.headers['Authorization'] = bearerAuth(t);
+          handler.next(options);
+        },
+      ),
+    );
   }
 
   Future<String> login(String emailOrUsername, String password) async {
-    final res = await _request(() => dio.post<Map<String, dynamic>>(
+    final res = await _request(
+      () => dio.post<Map<String, dynamic>>(
         '/access-tokens',
-        data: {'emailOrUsername': emailOrUsername, 'password': password}));
+        data: {'emailOrUsername': emailOrUsername, 'password': password},
+      ),
+    );
     // A fresh server answers this with 403 {step:accept-terms} — surfaced as
     // TermsRequiredException from _request, so we never reach here in that case.
     final item = res['item'];
@@ -913,14 +1167,18 @@ class PlankaApi {
     registerSecret(pendingToken);
     final opts = Options(headers: {'Authorization': bearerAuth(pendingToken)});
     final terms = await _request(
-        () => dio.get<Map<String, dynamic>>('/terms', options: opts));
+      () => dio.get<Map<String, dynamic>>('/terms', options: opts),
+    );
     final signature = (terms['item'] as Map?)?['signature'];
     if (signature is! String) {
       throw ApiException(null, 'Unexpected terms response');
     }
-    final res = await _request(() => dio.post<Map<String, dynamic>>(
+    final res = await _request(
+      () => dio.post<Map<String, dynamic>>(
         '/access-tokens/accept-terms',
-        data: {'pendingToken': pendingToken, 'signature': signature}));
+        data: {'pendingToken': pendingToken, 'signature': signature},
+      ),
+    );
     final item = res['item'];
     // Same rule as verifyTotp: a server echoing the pending token back as the
     // access token would have signIn persist the pending token as the account
@@ -948,8 +1206,10 @@ class PlankaApi {
     registerSecret(pendingToken);
     final Response<Map<String, dynamic>> res;
     try {
-      res = await dio.post<Map<String, dynamic>>('/access-tokens/verify-totp',
-          data: {'pendingToken': pendingToken, 'code': code});
+      res = await dio.post<Map<String, dynamic>>(
+        '/access-tokens/verify-totp',
+        data: {'pendingToken': pendingToken, 'code': code},
+      );
     } on DioException catch (e) {
       switch (e.response?.statusCode) {
         case 403:
@@ -981,17 +1241,23 @@ class PlankaApi {
   }
 
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async =>
-      Envelope.parse(await _request(
-          () => dio.get<Map<String, dynamic>>(path, queryParameters: query)));
+      Envelope.parse(
+        await _request(
+          () => dio.get<Map<String, dynamic>>(path, queryParameters: query),
+        ),
+      );
 
   Future<Envelope> post(String path, Object? body) async => Envelope.parse(
-      await _request(() => dio.post<Map<String, dynamic>>(path, data: body)));
+    await _request(() => dio.post<Map<String, dynamic>>(path, data: body)),
+  );
 
   Future<Envelope> patch(String path, Object? body) async => Envelope.parse(
-      await _request(() => dio.patch<Map<String, dynamic>>(path, data: body)));
+    await _request(() => dio.patch<Map<String, dynamic>>(path, data: body)),
+  );
 
   Future<Envelope> delete(String path) async => Envelope.parse(
-      await _request(() => dio.delete<Map<String, dynamic>>(path)));
+    await _request(() => dio.delete<Map<String, dynamic>>(path)),
+  );
 
   /// Downloads a server file (attachment download endpoint — root-level, not
   /// under /api, and cookie-authenticated like images) to [savePath].
@@ -999,11 +1265,7 @@ class PlankaApi {
     final t = token;
     if (t == null) throw ApiException(401, 'Not signed in');
     final url = '$serverUrl$urlPath';
-    final headers = imageAuthHeaders(
-      t,
-      serverUrl: serverUrl,
-      imageUrl: url,
-    );
+    final headers = imageAuthHeaders(t, serverUrl: serverUrl, imageUrl: url);
     if (headers == null) {
       throw ApiException(null, 'Invalid download URL');
     }
@@ -1011,21 +1273,22 @@ class PlankaApi {
       await dio.download(
         url,
         savePath,
-        options: Options(
-          headers: headers,
-          followRedirects: false,
-        ),
+        options: Options(headers: headers, followRedirects: false),
       );
     } on DioException catch (e) {
       // Same session-expiry handling as _request: 401 with a token means the
       // session died, so kick off the re-login flow.
       if (e.response?.statusCode == 401) onUnauthorized?.call();
-      throw ApiException(e.response?.statusCode, e.message ?? 'Download failed');
+      throw ApiException(
+        e.response?.statusCode,
+        e.message ?? 'Download failed',
+      );
     }
   }
 
   Future<Map<String, dynamic>> _request(
-      Future<Response<Map<String, dynamic>>> Function() send) async {
+    Future<Response<Map<String, dynamic>>> Function() send,
+  ) async {
     try {
       final res = await send();
       return res.data ?? const {};

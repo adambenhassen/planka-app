@@ -20,21 +20,7 @@ void registerSecret(String? secret) {
 /// string before it reaches a diagnostic or user-visible boundary.
 String redactDiagnostic(Object? value) {
   var result = '$value';
-  final variants = <String>{};
-  for (final secret in _secrets) {
-    variants.add(secret);
-    variants.add(Uri.encodeComponent(secret));
-    if (secret.length >= 8) {
-      final bytes = utf8.encode(secret);
-      final standardBase64 = base64.encode(bytes);
-      final urlBase64 = base64Url.encode(bytes);
-      variants.add(standardBase64);
-      variants.add(standardBase64.replaceAll('=', ''));
-      variants.add(urlBase64);
-      variants.add(urlBase64.replaceAll('=', ''));
-      variants.add(sha256.convert(bytes).toString());
-    }
-  }
+  final variants = _secretVariants();
   final ordered = variants.where((variant) => variant.isNotEmpty).toList()
     ..sort((a, b) => b.length.compareTo(a.length));
   for (final variant in ordered) {
@@ -81,21 +67,74 @@ Uint8List redactCacheBytes(Uint8List bytes) {
   return Uint8List.fromList(utf8.encode(redacted));
 }
 
+Set<String> _secretVariants() {
+  final variants = <String>{};
+  for (final secret in _secrets) {
+    variants.add(secret);
+    variants.add(Uri.encodeComponent(secret));
+    if (secret.length >= 8) {
+      final bytes = utf8.encode(secret);
+      final standardBase64 = base64.encode(bytes);
+      final urlBase64 = base64Url.encode(bytes);
+      variants.add(standardBase64);
+      variants.add(standardBase64.replaceAll('=', ''));
+      variants.add(urlBase64);
+      variants.add(urlBase64.replaceAll('=', ''));
+      variants.add(sha256.convert(bytes).toString());
+    }
+  }
+  return variants;
+}
+
+int _indexOfBytes(List<int> bytes, List<int> needle, int start) {
+  if (needle.isEmpty) return start;
+  for (var index = start;
+      index <= bytes.length - needle.length;
+      index++) {
+    var matches = true;
+    for (var offset = 0; offset < needle.length; offset++) {
+      if (bytes[index + offset] != needle[offset]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return index;
+  }
+  return -1;
+}
+
+int _safeSplit(List<int> bytes, int candidate, Set<String> variants) {
+  var split = candidate;
+  for (final variant in variants) {
+    final encoded = utf8.encode(variant);
+    var index = _indexOfBytes(bytes, encoded, 0);
+    while (index >= 0) {
+      final end = index + encoded.length;
+      if (index < split && end > split) split = index;
+      index = _indexOfBytes(bytes, encoded, index + 1);
+    }
+  }
+  return split;
+}
+
 /// Redacts a byte stream while retaining only a bounded suffix between input
 /// chunks. The suffix prevents a credential split across network chunks from
 /// being emitted before the complete value can be recognized.
 Stream<List<int>> redactCacheStream(Stream<List<int>> source) async* {
-  var longestSecret = 0;
-  for (final secret in _secrets) {
-    if (secret.length > longestSecret) longestSecret = secret.length;
+  final variants = _secretVariants();
+  var longestVariant = 0;
+  for (final variant in variants) {
+    final length = utf8.encode(variant).length;
+    if (length > longestVariant) longestVariant = length;
   }
-  final window = longestSecret > 48 ? longestSecret * 4 + 64 : 256;
+  final window = longestVariant + 64 > 256 ? longestVariant + 64 : 256;
   final pending = <int>[];
 
   await for (final chunk in source) {
     pending.addAll(chunk);
     if (pending.length <= window) continue;
-    final split = pending.length - window;
+    final split = _safeSplit(pending, pending.length - window, variants);
+    if (split == 0) continue;
     yield redactCacheBytes(Uint8List.fromList(pending.sublist(0, split)));
     pending.removeRange(0, split);
   }

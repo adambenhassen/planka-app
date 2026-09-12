@@ -7,6 +7,12 @@ class AccountCacheClosedException implements Exception {
   String toString() => 'AccountCacheClosedException';
 }
 
+/// Raised when an admitted cache operation cannot be quiesced in time.
+class AccountCacheQuiesceException implements Exception {
+  @override
+  String toString() => 'AccountCacheQuiesceException';
+}
+
 /// Shared by the app's envelope and media cache providers.
 final accountCacheLifecycle = AccountCacheLifecycle();
 
@@ -17,22 +23,32 @@ final accountCacheLifecycle = AccountCacheLifecycle();
 /// waiting, [ensureOpen] makes the operation fail instead of returning data
 /// that was produced during teardown.
 class AccountCacheLease {
-  AccountCacheLease._(this._lifecycle, this._accountId, this._state);
+  AccountCacheLease._(
+    this._lifecycle,
+    this._accountId,
+    this._state,
+    this._generation,
+  );
 
   AccountCacheLease._unscoped()
     : _lifecycle = null,
       _accountId = null,
-      _state = null;
+      _state = null,
+      _generation = null;
 
   final AccountCacheLifecycle? _lifecycle;
   final String? _accountId;
   final _AccountCacheState? _state;
+  final int? _generation;
   FutureOr<void> Function()? _onRemoval;
   bool _invalidated = false;
   bool _released = false;
 
   /// Whether removal has started since this operation was admitted.
-  bool get wasClosed => _invalidated || (_state?.removing ?? false);
+  bool get wasClosed =>
+      _invalidated ||
+      (_state?.removing ?? false) ||
+      (_generation != null && _state?.generation != _generation);
 
   /// Fails an admitted operation that crossed the removal barrier.
   void ensureOpen() {
@@ -49,8 +65,26 @@ class AccountCacheLease {
     }
   }
 
+  /// Records that cancellation or draining could not safely complete.
+  void reportRemovalFailure() {
+    final lifecycle = _lifecycle;
+    final accountId = _accountId;
+    final state = _state;
+    if (lifecycle != null && accountId != null && state != null) {
+      lifecycle._recordRemovalFailure(accountId, state);
+    }
+  }
+
   void _invoke(FutureOr<void> Function() callback) {
-    unawaited(Future<void>.sync(callback).catchError((_) {}));
+    unawaited(_runRemovalCallback(callback));
+  }
+
+  Future<void> _runRemovalCallback(FutureOr<void> Function() callback) async {
+    try {
+      await callback();
+    } catch (_) {
+      reportRemovalFailure();
+    }
   }
 
   void _invalidate() {
@@ -80,6 +114,9 @@ class AccountCacheLease {
 /// implementation. The envelope cache and media cache can therefore share one
 /// barrier, while tests and isolated cache instances can use their own.
 class AccountCacheLifecycle {
+  AccountCacheLifecycle({this.removalTimeout = const Duration(seconds: 5)});
+
+  final Duration removalTimeout;
   final Map<String, _AccountCacheState> _states = {};
 
   /// Records an account as a cache owner without admitting an operation.
@@ -100,16 +137,26 @@ class AccountCacheLifecycle {
   }
 
   /// Admits one operation for [accountId], or fails after removal begins.
-  AccountCacheLease acquire(String accountId) {
+  AccountCacheLease acquire(String accountId, {int? generation}) {
     _validate(accountId);
     final state = _states.putIfAbsent(accountId, _AccountCacheState.new);
-    if (state.removing || state.removed) {
+    if (state.removing ||
+        state.removed ||
+        (generation != null && state.generation != generation)) {
       throw AccountCacheClosedException();
     }
-    final lease = AccountCacheLease._(this, accountId, state);
+    final lease = AccountCacheLease._(this, accountId, state, state.generation);
     state.leases.add(lease);
     state.active++;
     return lease;
+  }
+
+  /// Returns the epoch for handles created during the current authentication.
+  int generationFor(String accountId) {
+    _validate(accountId);
+    final state = _states[accountId];
+    if (state == null) throw StateError('Unknown account cache');
+    return state.generation;
   }
 
   /// Admits an operation whose account is encoded in the established cache
@@ -145,8 +192,7 @@ class AccountCacheLifecycle {
     for (final marker in const ['-projects', '-project-', '-board-']) {
       final separator = key.indexOf(marker, hash + 1);
       if (separator <= hash + 1) continue;
-      if (marker == '-projects' &&
-          separator + marker.length != key.length) {
+      if (marker == '-projects' && separator + marker.length != key.length) {
         continue;
       }
       return key.substring(0, separator);
@@ -161,18 +207,32 @@ class AccountCacheLifecycle {
   ///
   /// A failed purge deliberately leaves this state closed. Calling this again
   /// for an idempotent retry waits for any current work and then returns.
-  Future<void> beginRemoval(String accountId) {
+  Future<void> beginRemoval(String accountId) async {
     _validate(accountId);
     final state = _states.putIfAbsent(accountId, _AccountCacheState.new);
     state.removing = true;
-    if (state.active == 0) return Future<void>.value();
+    // A failed cancellation closes the account but does not make the failure
+    // permanent. Once the failed callback has released its lease, the next
+    // purge attempt may retry the same namespace idempotently.
+    if (state.removalFailure != null && state.active == 0) {
+      state.removalFailure = null;
+    }
+    if (state.active == 0) return;
     if (state.drain == null || state.drain!.isCompleted) {
       state.drain = Completer<void>();
     }
     for (final lease in state.leases.toList()) {
       lease._invalidate();
     }
-    return state.drain!.future;
+    try {
+      await state.drain!.future.timeout(removalTimeout);
+    } on TimeoutException {
+      final failure = AccountCacheQuiesceException();
+      state.removalFailure ??= failure;
+      throw failure;
+    }
+    final failure = state.removalFailure;
+    if (failure != null) throw failure;
   }
 
   /// Reopens an account after a new authenticated account has been persisted.
@@ -189,6 +249,8 @@ class AccountCacheLifecycle {
     }
     state.removing = false;
     state.removed = false;
+    state.generation++;
+    state.removalFailure = null;
     state.drain = null;
   }
 
@@ -218,6 +280,12 @@ class AccountCacheLifecycle {
     }
   }
 
+  void _recordRemovalFailure(String accountId, _AccountCacheState state) {
+    if (_states[accountId] == state) {
+      state.removalFailure ??= AccountCacheQuiesceException();
+    }
+  }
+
   void _validate(String accountId) {
     if (accountId.isEmpty) throw ArgumentError.value(accountId, 'accountId');
   }
@@ -225,8 +293,10 @@ class AccountCacheLifecycle {
 
 class _AccountCacheState {
   var active = 0;
+  var generation = 0;
   var removing = false;
   var removed = false;
+  AccountCacheQuiesceException? removalFailure;
   Completer<void>? drain = Completer<void>()..complete();
   final Set<AccountCacheLease> leases = {};
 }

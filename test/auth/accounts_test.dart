@@ -1,6 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:file/file.dart' as file;
+import 'package:file/memory.dart' as file_memory;
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/planka_api.dart';
@@ -20,6 +24,19 @@ class FakeStorage implements SecureKeyValueStore {
   Future<void> delete(String key) async => data.remove(key);
 }
 
+class _FailingStorage extends FakeStorage {
+  var failNextWrite = false;
+
+  @override
+  Future<void> write(String key, String value) async {
+    if (failNextWrite) {
+      failNextWrite = false;
+      throw StateError('durable account save failed');
+    }
+    await super.write(key, value);
+  }
+}
+
 class _RecordingEnvelopeCache extends EnvelopeCache {
   _RecordingEnvelopeCache({bool shouldFail = false, int? failuresRemaining})
     : failuresRemaining = failuresRemaining ?? (shouldFail ? 1 : 0);
@@ -37,8 +54,93 @@ class _RecordingEnvelopeCache extends EnvelopeCache {
   }
 }
 
+class _MemoryMediaCache implements BaseCacheManager {
+  final _files = file_memory.MemoryFileSystem();
+
+  @override
+  Future<file.File> getSingleFile(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+  }) => throw UnimplementedError();
+
+  @override
+  Stream<FileInfo> getFile(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+  }) => const Stream.empty();
+
+  @override
+  Stream<FileResponse> getFileStream(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+    bool withProgress = false,
+  }) => const Stream.empty();
+
+  @override
+  Future<FileInfo> downloadFile(
+    String url, {
+    String? key,
+    Map<String, String>? authHeaders,
+    bool force = false,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<FileInfo?> getFileFromCache(
+    String key, {
+    bool ignoreMemCache = false,
+  }) async => null;
+
+  @override
+  Future<FileInfo?> getFileFromMemory(String key) async => null;
+
+  @override
+  Future<file.File> putFile(
+    String url,
+    Uint8List fileBytes, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) async {
+    final result = _files.file('/${key ?? url}');
+    await result.parent.create(recursive: true);
+    await result.writeAsBytes(fileBytes);
+    return result;
+  }
+
+  @override
+  Future<file.File> putFileStream(
+    String url,
+    Stream<List<int>> source, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) async => putFile(
+    url,
+    Uint8List.fromList(await source.expand((chunk) => chunk).toList()),
+    key: key,
+    eTag: eTag,
+    maxAge: maxAge,
+    fileExtension: fileExtension,
+  );
+
+  @override
+  Future<void> removeFile(String key) async {}
+
+  @override
+  Future<void> emptyCache() async {}
+
+  @override
+  Future<void> dispose() async {}
+}
+
 class _RecordingImageCache extends AccountImageCacheManager {
-  _RecordingImageCache({this.failuresRemaining = 0});
+  _RecordingImageCache({this.failuresRemaining = 0, super.lifecycle})
+    : super(createManager: (_) => _MemoryMediaCache());
 
   int failuresRemaining;
   final purgedAccountIds = <String>[];
@@ -199,6 +301,94 @@ void main() {
       expect(envelopes.purgedAccountIds, [account.id, account.id]);
       expect(images.purgedAccountIds, [account.id, account.id]);
       expect(await store.load(), isEmpty);
+    },
+  );
+
+  test(
+    'pre-removal handles stay closed after successful reauthentication',
+    () async {
+      final storage = _FailingStorage();
+      final store = AccountStore(storage);
+      final account = Account(
+        serverUrl: 'https://reauth.example',
+        token: 'reauth-old-token',
+        userId: 'u1',
+        displayName: 'Reauth',
+      );
+      await store.save([account]);
+      final lifecycle = AccountCacheLifecycle();
+      final images = _RecordingImageCache(lifecycle: lifecycle);
+      final container = ProviderContainer(
+        overrides: [
+          accountStoreProvider.overrideWithValue(store),
+          envelopeCacheProvider.overrideWithValue(_RecordingEnvelopeCache()),
+          imageCacheProvider.overrideWithValue(images),
+          cacheLifecycleProvider.overrideWithValue(lifecycle),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final oldHandle = images.forAccount(account.id);
+      await container.read(accountsProvider.future);
+      await container.read(accountsProvider.notifier).remove(account.id);
+      await container
+          .read(accountsProvider.notifier)
+          .upsert(account.copyWith(token: 'reauth-new-token'));
+
+      await expectLater(
+        oldHandle.putFile(
+          'https://reauth.example/media/old.png',
+          Uint8List.fromList('old'.codeUnits),
+          key: 'old-handle',
+        ),
+        throwsA(isA<AccountCacheClosedException>()),
+      );
+    },
+  );
+
+  test(
+    'pre-removal handles stay closed when durable reauthentication save fails',
+    () async {
+      final storage = _FailingStorage();
+      final store = AccountStore(storage);
+      final account = Account(
+        serverUrl: 'https://failed-reauth.example',
+        token: 'failed-reauth-old-token',
+        userId: 'u1',
+        displayName: 'Failed reauth',
+      );
+      await store.save([account]);
+      final lifecycle = AccountCacheLifecycle();
+      final images = _RecordingImageCache(lifecycle: lifecycle);
+      final container = ProviderContainer(
+        overrides: [
+          accountStoreProvider.overrideWithValue(store),
+          envelopeCacheProvider.overrideWithValue(_RecordingEnvelopeCache()),
+          imageCacheProvider.overrideWithValue(images),
+          cacheLifecycleProvider.overrideWithValue(lifecycle),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final oldHandle = images.forAccount(account.id);
+      await container.read(accountsProvider.future);
+      await container.read(accountsProvider.notifier).remove(account.id);
+      storage.failNextWrite = true;
+      await expectLater(
+        container
+            .read(accountsProvider.notifier)
+            .upsert(account.copyWith(token: 'failed-reauth-new-token')),
+        throwsA(isA<StateError>()),
+      );
+
+      await expectLater(
+        oldHandle.putFile(
+          'https://failed-reauth.example/media/old.png',
+          Uint8List.fromList('old'.codeUnits),
+          key: 'old-handle',
+        ),
+        throwsA(isA<AccountCacheClosedException>()),
+      );
     },
   );
 
