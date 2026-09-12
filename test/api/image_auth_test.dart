@@ -100,4 +100,36 @@ void main() {
       dir.deleteSync(recursive: true);
     }
   });
+
+  test('cached media does not send the cookie after a foreign redirect',
+      () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv6, 0);
+    String? redirectedCookie;
+    server.listen((request) async {
+      final response = request.response;
+      if (request.uri.path == '/redirect') {
+        response.statusCode = HttpStatus.found;
+        response.headers.set(
+          HttpHeaders.locationHeader,
+          'http://attacker.localhost:${server.port}/stolen',
+        );
+      } else {
+        redirectedCookie = request.headers.value(HttpHeaders.cookieHeader);
+        response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    try {
+      final response = await plankaImageCacheManager.config.fileService.get(
+        'http://localhost:${server.port}/redirect',
+        headers: {'Cookie': 'accessToken=jwt'},
+      );
+      await response.content.drain<void>();
+
+      expect(response.statusCode, HttpStatus.found);
+      expect(redirectedCookie, isNull);
+    } finally {
+      await server.close(force: true);
+    }
+  });
 }
