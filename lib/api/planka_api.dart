@@ -215,16 +215,15 @@ class _AccountFileService extends FileService {
     final requestHeaders = <String, String>{...?headers};
     final originalUrl = requestHeaders.remove(_originalMediaUrlHeader) ?? url;
     final response = await _delegate.get(originalUrl, headers: requestHeaders);
-    final lease = _lifecycle.acquire(_accountId);
-    return _AccountFileServiceResponse(response, lease, _lifecycle);
+    return _AccountFileServiceResponse(response, _accountId, _lifecycle);
   }
 }
 
 class _AccountFileServiceResponse implements FileServiceResponse {
-  _AccountFileServiceResponse(this._delegate, this._lease, this._lifecycle);
+  _AccountFileServiceResponse(this._delegate, this._accountId, this._lifecycle);
 
   final FileServiceResponse _delegate;
-  final AccountCacheLease _lease;
+  final String _accountId;
   final AccountCacheLifecycle _lifecycle;
   Stream<List<int>>? _content;
 
@@ -234,6 +233,7 @@ class _AccountFileServiceResponse implements FileServiceResponse {
   Stream<List<int>> _createContent() {
     final controller = StreamController<List<int>>();
     StreamSubscription<List<int>>? subscription;
+    AccountCacheLease? lease;
     Future<void>? cancellation;
     var cancelled = false;
     var released = false;
@@ -241,24 +241,56 @@ class _AccountFileServiceResponse implements FileServiceResponse {
     void release() {
       if (released) return;
       released = true;
-      _lease.release();
+      lease?.release();
+    }
+
+    Future<void> finishAfterCancellation(Future<void> operation) async {
+      try {
+        await operation;
+      } catch (_) {
+        lease?.reportRemovalFailure();
+      } finally {
+        release();
+      }
     }
 
     Future<void> cancelImplementation() async {
       cancelled = true;
+      final current = subscription;
+      Future<void>? operation;
       try {
-        await subscription?.cancel().timeout(_lifecycle.removalTimeout);
+        operation = current?.cancel();
+        if (operation == null) {
+          if (!controller.isClosed) await controller.close();
+          release();
+          return;
+        }
+        await operation.timeout(_lifecycle.removalTimeout);
+      } on TimeoutException {
+        lease?.reportRemovalFailure();
+        if (!controller.isClosed) await controller.close();
+        unawaited(finishAfterCancellation(operation!));
+        return;
       } catch (_) {
-        _lease.reportRemovalFailure();
-      } finally {
+        lease?.reportRemovalFailure();
         if (!controller.isClosed) await controller.close();
         release();
+        return;
       }
+      if (!controller.isClosed) await controller.close();
+      release();
     }
 
     Future<void> cancelSource() => cancellation ??= cancelImplementation();
 
     controller.onListen = () {
+      try {
+        lease = _lifecycle.acquire(_accountId);
+      } catch (e, s) {
+        controller.addError(e, s);
+        unawaited(controller.close());
+        return;
+      }
       if (cancelled) {
         unawaited(controller.close());
         release();
@@ -276,9 +308,9 @@ class _AccountFileServiceResponse implements FileServiceResponse {
           release();
         },
       );
+      lease!.onRemoval(cancelSource);
     };
     controller.onCancel = cancelSource;
-    _lease.onRemoval(cancelSource);
     return controller.stream;
   }
 
@@ -915,21 +947,49 @@ class _AccountCacheHandle implements BaseCacheManager {
     // cancellation. A cache backend may still be committing a file after its
     // subscription is cancelled; the purge must wait for source cancellation.
     controller.onCancel = () {};
-    lease.onRemoval(() async {
+    Future<void> finishAfterCancellation(Future<void> operation) async {
       try {
-        final current = subscription;
-        if (current != null) {
-          await current.cancel().timeout(_lifecycle.removalTimeout);
-        }
+        await operation;
         await _settleBackend();
       } catch (_) {
-        // A backend that cannot cancel is not safe to purge. The lifecycle
-        // records a generic quiescence failure and keeps the account closed.
+        // A backend that cannot cancel or settle is not safe to purge. The
+        // lifecycle records a generic quiescence failure and keeps the
+        // account closed.
         lease.reportRemovalFailure();
       } finally {
         if (!controller.isClosed) await controller.close();
         release();
       }
+    }
+
+    lease.onRemoval(() async {
+      Future<void>? operation;
+      try {
+        final current = subscription;
+        operation = current?.cancel();
+        if (operation != null) {
+          await operation.timeout(_lifecycle.removalTimeout);
+        }
+        await _settleBackend();
+      } on TimeoutException {
+        // Return a bounded failure to removal, but keep this lease active until
+        // the underlying cancellation settles so a retry cannot race a late
+        // cache commit.
+        lease.reportRemovalFailure();
+        if (!controller.isClosed) await controller.close();
+        unawaited(finishAfterCancellation(operation!));
+        return;
+      } catch (_) {
+        // A backend that cannot cancel or settle is not safe to purge. The
+        // lifecycle records a generic quiescence failure and keeps the
+        // account closed.
+        lease.reportRemovalFailure();
+        if (!controller.isClosed) await controller.close();
+        release();
+        return;
+      }
+      if (!controller.isClosed) await controller.close();
+      release();
     });
     return controller.stream;
   }

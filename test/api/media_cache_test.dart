@@ -172,6 +172,41 @@ class _TestFileServiceResponse implements FileServiceResponse {
   String get fileExtension => 'file';
 }
 
+class _StatusFileService extends FileService {
+  _StatusFileService(this.statusCode);
+
+  final int statusCode;
+
+  @override
+  Future<FileServiceResponse> get(
+    String url, {
+    Map<String, String>? headers,
+  }) async => _StatusFileServiceResponse(statusCode);
+}
+
+class _StatusFileServiceResponse implements FileServiceResponse {
+  _StatusFileServiceResponse(this.statusCode);
+
+  @override
+  final int statusCode;
+
+  @override
+  Stream<List<int>> get content =>
+      throw StateError('Unexpected response body access');
+
+  @override
+  int? get contentLength => 0;
+
+  @override
+  DateTime get validTill => DateTime.now();
+
+  @override
+  String? get eTag => null;
+
+  @override
+  String get fileExtension => 'file';
+}
+
 class _RepositoryFailure {
   var failNextUpdate = false;
   Completer<void>? updateGate;
@@ -560,6 +595,86 @@ void main() {
       await cache.purgeAccount(account);
     },
   );
+
+  test(
+    'an immediate retry stays failed until media cancellation settles',
+    () async {
+      const account = 'https://planka.example#immediate-retry';
+      final source = StreamController<FileResponse>();
+      final cancellation = Completer<void>();
+      final cancellationStarted = Completer<void>();
+      var lateCommit = false;
+      source.onCancel = () async {
+        cancellationStarted.complete();
+        await cancellation.future;
+        lateCommit = true;
+      };
+      final cache = AccountImageCacheManager(
+        lifecycle: AccountCacheLifecycle(
+          removalTimeout: const Duration(milliseconds: 20),
+        ),
+        createManager: (_) =>
+            _ControlledMediaCache(responseStream: source.stream),
+      );
+      final handle = cache.forAccount(account);
+      final subscription = handle
+          .getFileStream('https://planka.example/media/late-commit.png')
+          .listen((_) {}, onError: (_) {});
+      addTearDown(() async {
+        if (!cancellation.isCompleted) cancellation.complete();
+        await subscription.cancel();
+        await source.close();
+        await cache.dispose();
+      });
+
+      await expectLater(
+        cache.purgeAccount(account),
+        throwsA(isA<CachePurgeException>()),
+      );
+      await cancellationStarted.future;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await expectLater(
+        cache.purgeAccount(account),
+        throwsA(isA<CachePurgeException>()),
+      );
+      expect(lateCommit, isFalse);
+
+      cancellation.complete();
+      await subscription.cancel();
+      await Future<void>.delayed(Duration.zero);
+      expect(lateCommit, isTrue);
+      await cache.purgeAccount(account);
+    },
+  );
+
+  for (final statusCode in [HttpStatus.notModified, HttpStatus.notFound]) {
+    test(
+      '$statusCode response without a body does not retain an account lease',
+      () async {
+        final directory = await Directory.systemTemp.createTemp('media_status');
+        addTearDown(() => directory.delete(recursive: true));
+        final cache = AccountImageCacheManager(
+          directory: directory,
+          lifecycle: AccountCacheLifecycle(
+            removalTimeout: const Duration(milliseconds: 20),
+          ),
+          fileService: _StatusFileService(statusCode),
+        );
+        addTearDown(cache.dispose);
+        final handle = cache.forAccount(accountA);
+        final request = handle.getSingleFile(
+          'https://planka.example/media/status-$statusCode.png',
+        );
+        if (statusCode == HttpStatus.notFound) {
+          await expectLater(request, throwsA(isA<CacheOperationException>()));
+        } else {
+          await request;
+        }
+
+        await cache.purgeAccount(accountA);
+      },
+    );
+  }
 
   test('production media storage purge finds an unindexed orphan', () async {
     const account = 'https://production.example#orphan-canary';

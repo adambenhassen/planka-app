@@ -222,8 +222,10 @@ class AccountCacheLifecycle {
     final state = _states.putIfAbsent(accountId, _AccountCacheState.new);
     state.removing = true;
     // A failed cancellation closes the account but does not make the failure
-    // permanent. Once the failed callback has released its lease, the next
-    // purge attempt may retry the same namespace idempotently.
+    // permanent. A retry may clear it only after the failed callback has
+    // released its lease, so an unresolved cancellation remains represented.
+    final retryingUnsettledRemoval =
+        state.removalFailure != null && state.active != 0;
     if (state.removalFailure != null && state.active == 0) {
       state.removalFailure = null;
     }
@@ -240,6 +242,9 @@ class AccountCacheLifecycle {
       final failure = AccountCacheQuiesceException();
       state.removalFailure ??= failure;
       throw failure;
+    }
+    if (retryingUnsettledRemoval && state.active == 0) {
+      state.removalFailure = null;
     }
     final failure = state.removalFailure;
     if (failure != null) throw failure;
