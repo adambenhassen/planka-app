@@ -113,10 +113,13 @@ class _NoRedirectClient extends http.BaseClient {
   void close() => _client.close();
 }
 
+final FileService plankaImageFileService =
+    HttpFileService(httpClient: _NoRedirectClient());
+
 final CacheManager plankaImageCacheManager = CacheManager(
   Config(
     'planka-images',
-    fileService: HttpFileService(httpClient: _NoRedirectClient()),
+    fileService: plankaImageFileService,
   ),
 );
 
