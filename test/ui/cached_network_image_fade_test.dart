@@ -75,134 +75,140 @@ void main() {
   tearDown(() => server.close());
 
   testWidgets('all store images fade after a successful load', (tester) async {
-    const cardId = 'card-1';
-    const attachmentName = 'cover.png';
-    const backgroundPath = '/background.png';
-    const cardPath = '/card.png';
-    const attachmentPath = '/attachment.png';
-    final backgroundUrl = server.imageUrl(backgroundPath);
-    final cardUrl = server.imageUrl(cardPath);
-    final attachmentUrl = server.imageUrl(attachmentPath);
-    final attachment = PlankaAttachment(
-      id: 'attachment-1',
-      cardId: cardId,
-      type: 'file',
-      name: attachmentName,
-      data: {
-        'thumbnailUrls': {
-          'outside720': cardUrl,
-          'outside360': attachmentUrl,
-        },
-      },
-    );
-    final card = PlankaCard(
-      id: cardId,
-      boardId: 'board-1',
-      listId: 'list-1',
-      type: 'project',
-      name: 'Card',
-      coverAttachmentId: attachment.id,
-    );
-    final state = BoardState(
-      board: const PlankaBoard(
-        id: 'board-1',
-        projectId: 'project-1',
-        name: 'Board',
-      ),
-      lists: const [],
-      cards: {card.id: card},
-      attachments: [attachment],
-    );
-    const backgroundGradient = LinearGradient(
-      colors: [Colors.blue, Colors.indigo],
-    );
-    final keys = <String, String>{
-      backgroundPath: 'store-capture-loaded-background-image:$backgroundUrl',
-      cardPath: 'store-capture-loaded-card-cover:$cardId',
-      attachmentPath: 'store-capture-loaded-attachment:$attachmentName',
-    };
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          currentAccountProvider.overrideWith(
-            () => _AccNotifier(
-              Account(
-                serverUrl: 'http://127.0.0.1',
-                token: 'token',
-                userId: 'user-1',
-                displayName: 'User',
-              ),
-            ),
+    await HttpOverrides.runZoned(
+      () async {
+        const cardId = 'card-1';
+        const attachmentName = 'cover.png';
+        const backgroundPath = '/background.png';
+        const cardPath = '/card.png';
+        const attachmentPath = '/attachment.png';
+        final backgroundUrl = server.imageUrl(backgroundPath);
+        final cardUrl = server.imageUrl(cardPath);
+        final attachmentUrl = server.imageUrl(attachmentPath);
+        final attachment = PlankaAttachment(
+          id: 'attachment-1',
+          cardId: cardId,
+          type: 'file',
+          name: attachmentName,
+          data: {
+            'thumbnailUrls': {
+              'outside720': cardUrl,
+              'outside360': attachmentUrl,
+            },
+          },
+        );
+        final card = PlankaCard(
+          id: cardId,
+          boardId: 'board-1',
+          listId: 'list-1',
+          type: 'project',
+          name: 'Card',
+          coverAttachmentId: attachment.id,
+        );
+        final state = BoardState(
+          board: const PlankaBoard(
+            id: 'board-1',
+            projectId: 'project-1',
+            name: 'Board',
           ),
-        ],
-        child: MaterialApp(
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          theme: AppTheme.light,
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: Column(
-                children: [
-                  SizedBox(
-                    width: 300,
-                    height: 120,
-                    child: BoardBackgroundView(
-                      background: BoardBackground(
-                        backgroundGradient,
-                        backgroundUrl,
-                      ),
-                      token: 'token',
-                    ),
-                  ),
-                  CardTile(card: card, state: state),
-                  CardAttachmentsSection(
-                    attachments: [attachment],
+          lists: const [],
+          cards: {card.id: card},
+          attachments: [attachment],
+        );
+        const backgroundGradient = LinearGradient(
+          colors: [Colors.blue, Colors.indigo],
+        );
+        final keys = <String, String>{
+          backgroundPath:
+              'store-capture-loaded-background-image:$backgroundUrl',
+          cardPath: 'store-capture-loaded-card-cover:$cardId',
+          attachmentPath: 'store-capture-loaded-attachment:$attachmentName',
+        };
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              currentAccountProvider.overrideWith(
+                () => _AccNotifier(
+                  Account(
+                    serverUrl: 'http://127.0.0.1',
                     token: 'token',
-                    coverAttachmentId: null,
-                    onUpload: (_, _) {},
-                    onDelete: (_) {},
-                    onSetCover: (_) {},
-                    onOpen: (_) {},
+                    userId: 'user-1',
+                    displayName: 'User',
                   ),
-                ],
+                ),
+              ),
+            ],
+            child: MaterialApp(
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              theme: AppTheme.light,
+              home: Scaffold(
+                body: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        width: 300,
+                        height: 120,
+                        child: BoardBackgroundView(
+                          background: BoardBackground(
+                            backgroundGradient,
+                            backgroundUrl,
+                          ),
+                          token: 'token',
+                        ),
+                      ),
+                      CardTile(card: card, state: state),
+                      CardAttachmentsSection(
+                        attachments: [attachment],
+                        token: 'token',
+                        coverAttachmentId: null,
+                        onUpload: (_, _) {},
+                        onDelete: (_) {},
+                        onSetCover: (_) {},
+                        onOpen: (_) {},
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+
+        for (final path in keys.keys) {
+          for (var i = 0; i < 500 && !server.wasRequested(path); i++) {
+            await tester.pump(const Duration(milliseconds: 10));
+          }
+          expect(server.wasRequested(path), isTrue, reason: 'request $path');
+          expect(find.byKey(ValueKey<String>(keys[path]!)), findsNothing);
+        }
+
+        for (final path in keys.keys) {
+          server.release(path);
+        }
+
+        for (final key in keys.values) {
+          final image = find.byKey(ValueKey<String>(key));
+          for (var i = 0; i < 500 && !tester.any(image); i++) {
+            await tester.pump(const Duration(milliseconds: 10));
+          }
+          expect(image, findsOneWidget, reason: 'loaded image $key');
+
+          final fade = find
+              .ancestor(of: image, matching: find.byType(FadeTransition))
+              .first;
+          await tester.pump(const Duration(milliseconds: 250));
+          final halfwayOpacity =
+              tester.widget<FadeTransition>(fade).opacity.value;
+          expect(halfwayOpacity, greaterThan(0));
+          expect(halfwayOpacity, lessThan(1));
+
+          await tester.pump(const Duration(milliseconds: 300));
+          expect(tester.widget<FadeTransition>(fade).opacity.value, 1);
+        }
+      },
+      createHttpClient: (context) => HttpClient(context),
     );
-
-    for (final path in keys.keys) {
-      for (var i = 0; i < 500 && !server.wasRequested(path); i++) {
-        await tester.pump(const Duration(milliseconds: 10));
-      }
-      expect(server.wasRequested(path), isTrue, reason: 'request $path');
-      expect(find.byKey(ValueKey<String>(keys[path]!)), findsNothing);
-    }
-
-    for (final path in keys.keys) {
-      server.release(path);
-    }
-
-    for (final key in keys.values) {
-      final image = find.byKey(ValueKey<String>(key));
-      for (var i = 0; i < 500 && !tester.any(image); i++) {
-        await tester.pump(const Duration(milliseconds: 10));
-      }
-      expect(image, findsOneWidget, reason: 'loaded image $key');
-
-      final fade = find
-          .ancestor(of: image, matching: find.byType(FadeTransition))
-          .first;
-      await tester.pump(const Duration(milliseconds: 250));
-      final halfwayOpacity =
-          tester.widget<FadeTransition>(fade).opacity.value;
-      expect(halfwayOpacity, greaterThan(0));
-      expect(halfwayOpacity, lessThan(1));
-
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(tester.widget<FadeTransition>(fade).opacity.value, 1);
-    }
   });
 }
