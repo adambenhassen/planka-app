@@ -23,6 +23,13 @@ class _AccNotifier extends CurrentAccountNotifier {
   Account? build() => account;
 }
 
+class _RealHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context);
+  }
+}
+
 class _ImageServer {
   final _requestedPaths = <String>{};
   final _releases = <String, Completer<void>>{};
@@ -75,7 +82,7 @@ void main() {
   tearDown(() => server.close());
 
   testWidgets('all store images fade after a successful load', (tester) async {
-    await HttpOverrides.runZoned(
+    await HttpOverrides.runWithHttpOverrides(
       () async {
         const cardId = 'card-1';
         const attachmentName = 'cover.png';
@@ -208,7 +215,7 @@ void main() {
           expect(tester.widget<FadeTransition>(fade).opacity.value, 1);
         }
       },
-      createHttpClient: (context) => HttpOverrides().createHttpClient(context),
+      _RealHttpOverrides(),
     );
   });
 }
