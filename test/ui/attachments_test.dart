@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,13 +24,24 @@ class _FakeSelector extends FileSelectorPlatform {
 }
 
 void main() {
-  PlankaAttachment attachment(String id, String name) => PlankaAttachment(
-      id: id, cardId: 'c1', type: 'file', name: name); // data null → no thumb
+  PlankaAttachment attachment(String id, String name, {String? thumb}) =>
+      PlankaAttachment(
+        id: id,
+        cardId: 'c1',
+        type: 'file',
+        name: name,
+        data: thumb == null
+            ? null
+            : {
+                'thumbnailUrls': {'outside360': thumb},
+              },
+      );
 
   Widget host({
     List<PlankaAttachment> attachments = const [],
     required void Function(String path, String name) onUpload,
     void Function(String id) onDelete = _noop,
+    String? serverUrl,
   }) =>
       MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -38,6 +50,7 @@ void main() {
           body: CardAttachmentsSection(
             attachments: attachments,
             token: 'tok',
+            serverUrl: serverUrl,
             coverAttachmentId: null,
             onUpload: onUpload,
             onDelete: onDelete,
@@ -86,6 +99,37 @@ void main() {
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
     expect(deleted, 'a1');
+  });
+
+  testWidgets('same-origin attachment thumbnail uses cookie auth',
+      (tester) async {
+    await tester.pumpWidget(host(
+      attachments: [
+        attachment('a1', 'photo.png',
+            thumb: 'https://my.planka.test:8443/thumb.png'),
+      ],
+      serverUrl: 'https://my.planka.test:8443/planka',
+      onUpload: (_, _) {},
+    ));
+
+    final image = tester.widget<CachedNetworkImage>(
+        find.byType(CachedNetworkImage));
+    expect(image.httpHeaders, {'Cookie': 'accessToken=tok'});
+  });
+
+  testWidgets('foreign-origin attachment thumbnail renders no image',
+      (tester) async {
+    await tester.pumpWidget(host(
+      attachments: [
+        attachment('a1', 'photo.png',
+            thumb: 'https://my.planka.test.evil.example/thumb.png'),
+      ],
+      serverUrl: 'https://my.planka.test:8443/planka',
+      onUpload: (_, _) {},
+    ));
+
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(find.byIcon(Icons.insert_drive_file_outlined), findsOneWidget);
   });
 }
 

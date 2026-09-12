@@ -30,10 +30,11 @@ void main() {
       BoardState(
           board: board, lists: const [], cards: {c.id: c}, attachments: atts);
 
-  Widget host(PlankaCard c, BoardState s) => ProviderScope(
+  Widget host(PlankaCard c, BoardState s, {String serverUrl = 'http://x'}) =>
+      ProviderScope(
         overrides: [
           currentAccountProvider.overrideWith(() => _AccNotifier(Account(
-              serverUrl: 'http://x',
+              serverUrl: serverUrl,
               token: 'jwt-123',
               userId: 'u1',
               displayName: 'U'))),
@@ -45,18 +46,52 @@ void main() {
 
   testWidgets('renders cover thumbnail with cookie auth', (tester) async {
     final c = card(cover: 'att1');
-    final att = PlankaAttachment(id: 'att1', cardId: 'c1', type: 'file', name: 'p.png', data: {
-      'thumbnailUrls': {
-        'outside360': 'http://x/360.png',
-        'outside720': 'http://x/720.png'
-      }
-    });
-    await tester.pumpWidget(host(c, stateWith(c, atts: [att])));
+    final att = PlankaAttachment(
+      id: 'att1',
+      cardId: 'c1',
+      type: 'file',
+      name: 'p.png',
+      data: {
+        'thumbnailUrls': {
+          'outside360': 'https://my.planka.test:8443/360.png',
+          'outside720': 'https://my.planka.test:8443/720.png',
+        },
+      },
+    );
+    await tester.pumpWidget(host(
+      c,
+      stateWith(c, atts: [att]),
+      serverUrl: 'https://my.planka.test:8443/planka',
+    ));
 
     final img =
         tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
-    expect(img.imageUrl, 'http://x/720.png');
+    expect(img.imageUrl, 'https://my.planka.test:8443/720.png');
     expect(img.httpHeaders, {'Cookie': 'accessToken=jwt-123'});
+  });
+
+  testWidgets('foreign-origin cover thumbnail renders no image',
+      (tester) async {
+    final c = card(cover: 'att1');
+    final att = PlankaAttachment(
+      id: 'att1',
+      cardId: 'c1',
+      type: 'file',
+      name: 'p.png',
+      data: {
+        'thumbnailUrls': {
+          'outside360': 'https://evil.example/?u=https://my.planka.test',
+          'outside720': 'https://evil.example/?u=https://my.planka.test',
+        },
+      },
+    );
+    await tester.pumpWidget(host(
+      c,
+      stateWith(c, atts: [att]),
+      serverUrl: 'https://my.planka.test',
+    ));
+
+    expect(find.byType(CachedNetworkImage), findsNothing);
   });
 
   testWidgets('no cover attachment → no image', (tester) async {

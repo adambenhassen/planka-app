@@ -55,10 +55,12 @@ class BoardBackgroundView extends StatelessWidget {
     super.key,
     required this.background,
     required this.token,
+    this.serverUrl,
   });
 
   final BoardBackground background;
   final String? token;
+  final String? serverUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -66,10 +68,17 @@ class BoardBackgroundView extends StatelessWidget {
     final fallback = DecoratedBox(
       decoration: BoxDecoration(gradient: background.gradient),
     );
-    if (url == null || token == null) return fallback;
+    final headers = url == null || token == null || serverUrl == null
+        ? null
+        : imageAuthHeaders(
+            token!,
+            serverUrl: serverUrl!,
+            imageUrl: url,
+          );
+    if (headers == null) return fallback;
     return CachedNetworkImage(
-      imageUrl: url,
-      httpHeaders: imageAuthHeaders(token!),
+      imageUrl: url!,
+      httpHeaders: headers,
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,

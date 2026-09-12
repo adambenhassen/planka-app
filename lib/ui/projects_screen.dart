@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/models.dart';
+import '../auth/accounts.dart';
 import '../auth/auth_providers.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../state/current_user_state.dart';
@@ -145,7 +146,7 @@ class ProjectsScreen extends ConsumerWidget {
           onRefresh: () => ref.refresh(projectsProvider.future),
           child: _ProjectList(
             view: view,
-            token: ref.watch(currentAccountProvider)?.token,
+            account: ref.watch(currentAccountProvider),
           ),
         ),
       ),
@@ -154,9 +155,9 @@ class ProjectsScreen extends ConsumerWidget {
 }
 
 class _ProjectList extends ConsumerWidget {
-  const _ProjectList({required this.view, required this.token});
+  const _ProjectList({required this.view, required this.account});
   final ProjectsView view;
-  final String? token;
+  final Account? account;
 
   Future<void> _onProjectMenu(
     BuildContext context,
@@ -337,7 +338,8 @@ class _ProjectList extends ConsumerWidget {
                     view.backgroundImages,
                     b.name,
                   ),
-                  token: token,
+                  token: account?.token,
+                  serverUrl: account?.serverUrl,
                 ),
             ],
           ),
@@ -352,10 +354,12 @@ class _BoardTile extends StatelessWidget {
     required this.board,
     required this.background,
     required this.token,
+    required this.serverUrl,
   });
   final PlankaBoard board;
   final BoardBackground background;
   final String? token;
+  final String? serverUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -364,7 +368,11 @@ class _BoardTile extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          BoardBackgroundView(background: background, token: token),
+          BoardBackgroundView(
+            background: background,
+            token: token,
+            serverUrl: serverUrl,
+          ),
           // Scrim keeps the white title legible over any tile color or photo.
           ColoredBox(color: Colors.black.withValues(alpha: 0.28)),
           Padding(

@@ -57,8 +57,42 @@ class TotpPendingTokenExpiredException implements Exception {
 /// Planka serves attachment and cover images behind session-cookie auth rather
 /// than the Bearer header the REST API uses. This helper is the single source
 /// of truth for the download-auth scheme, and every consumer goes through it.
-Map<String, String> imageAuthHeaders(String token) =>
-    {'Cookie': 'accessToken=$token'};
+///
+/// A null result means [imageUrl] is not on the configured server origin and
+/// must not be loaded with credentials.
+Map<String, String>? imageAuthHeaders(
+  String token, {
+  required String serverUrl,
+  required String imageUrl,
+}) {
+  final server = Uri.tryParse(serverUrl);
+  final image = Uri.tryParse(imageUrl);
+  if (server == null || image == null || !_sameOrigin(server, image)) {
+    return null;
+  }
+  return {'Cookie': 'accessToken=$token'};
+}
+
+bool _sameOrigin(Uri server, Uri image) {
+  if (!server.hasScheme ||
+      server.host.isEmpty ||
+      !image.hasScheme ||
+      image.host.isEmpty) {
+    return false;
+  }
+  return server.scheme.toLowerCase() == image.scheme.toLowerCase() &&
+      server.host.toLowerCase() == image.host.toLowerCase() &&
+      _originPort(server) == _originPort(image);
+}
+
+int _originPort(Uri uri) {
+  if (uri.hasPort) return uri.port;
+  return switch (uri.scheme.toLowerCase()) {
+    'http' => 80,
+    'https' => 443,
+    _ => -1,
+  };
+}
 
 /// The `Authorization` header value for token auth. Single source for the REST
 /// interceptor, the accept-terms call, and the socket handshake.
@@ -200,9 +234,17 @@ class PlankaApi {
   Future<void> download(String urlPath, String savePath) async {
     final t = token;
     if (t == null) throw ApiException(401, 'Not signed in');
+    final url = '$serverUrl$urlPath';
+    final headers = imageAuthHeaders(
+      t,
+      serverUrl: serverUrl,
+      imageUrl: url,
+    );
+    if (headers == null) {
+      throw ApiException(null, 'Invalid download URL');
+    }
     try {
-      await dio.download('$serverUrl$urlPath', savePath,
-          options: Options(headers: imageAuthHeaders(t)));
+      await dio.download(url, savePath, options: Options(headers: headers));
     } on DioException catch (e) {
       // Same session-expiry handling as _request: 401 with a token means the
       // session died, so kick off the re-login flow.

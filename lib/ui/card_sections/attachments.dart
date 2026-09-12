@@ -11,6 +11,7 @@ class CardAttachmentsSection extends StatelessWidget {
     super.key,
     required this.attachments,
     required this.token,
+    this.serverUrl,
     required this.coverAttachmentId,
     required this.onUpload,
     required this.onDelete,
@@ -20,6 +21,7 @@ class CardAttachmentsSection extends StatelessWidget {
 
   final List<PlankaAttachment> attachments;
   final String? token;
+  final String? serverUrl;
   final String? coverAttachmentId;
   final void Function(String filePath, String name) onUpload;
   final ValueChanged<String> onDelete;
@@ -43,14 +45,22 @@ class CardAttachmentsSection extends StatelessWidget {
       children: [
         ...attachments.map((a) {
           final thumb = a.listThumbnailUrl;
+          final thumbHeaders =
+              thumb == null || token == null || serverUrl == null
+                  ? null
+                  : imageAuthHeaders(
+                      token!,
+                      serverUrl: serverUrl!,
+                      imageUrl: thumb,
+                    );
           return ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: thumb != null && token != null
+            leading: thumbHeaders != null
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(6),
                     child: CachedNetworkImage(
-                      imageUrl: thumb,
-                      httpHeaders: imageAuthHeaders(token!),
+                      imageUrl: thumb!,
+                      httpHeaders: thumbHeaders,
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
@@ -89,7 +99,7 @@ class CardAttachmentsSection extends StatelessWidget {
                 if (a.id == coverAttachmentId)
                   PopupMenuItem(
                       value: 'uncover', child: Text(l10n.attachmentRemoveCover))
-                else if (thumb != null)
+                else if (thumbHeaders != null)
                   PopupMenuItem(
                       value: 'cover', child: Text(l10n.attachmentSetAsCover)),
                 PopupMenuItem(value: 'delete', child: Text(l10n.actionDelete)),
