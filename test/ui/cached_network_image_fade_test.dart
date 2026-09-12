@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file/file.dart' as file;
 import 'package:file/memory.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -23,6 +24,13 @@ class _AccNotifier extends CurrentAccountNotifier {
 
   @override
   Account? build() => account;
+}
+
+class _MemoryFileSystem implements FileSystem {
+  final _delegate = MemoryFileSystem();
+
+  @override
+  Future<file.File> createFile(String name) async => _delegate.file(name);
 }
 
 class _ImageFileService extends FileService {
@@ -91,7 +99,7 @@ void main() {
     final cacheManager = CacheManager(
       Config(
         'cached-network-image-fade-test-${DateTime.now().microsecondsSinceEpoch}',
-        fileSystem: MemoryFileSystem(),
+        fileSystem: _MemoryFileSystem(),
         repo: NonStoringObjectProvider(),
         fileService: fileService,
       ),
