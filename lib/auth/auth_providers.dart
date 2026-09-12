@@ -41,10 +41,10 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
   Future<List<Account>> build() async {
     final store = ref.read(accountStoreProvider);
     final accounts = await store.load();
-    final failedRemovals = await store.loadRemovalFailures();
+    final removalIntents = await store.loadRemovalFailures();
     final lifecycle = ref.read(cacheLifecycleProvider);
     for (final account in accounts) {
-      if (failedRemovals.contains(account.id)) {
+      if (removalIntents.contains(account.id)) {
         lifecycle.restoreRemovalFailure(account.id);
       }
       lifecycle.registerKnown(account.id);
@@ -65,10 +65,19 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
   }
 
   Future<void> remove(String accountId) async {
-    // Close the shared barrier before awaiting account state or either purge.
-    // This makes the removal window cover every cache family and every caller
-    // that retained a handle before removal began.
+    // Persist the removal intent before closing the shared barrier. This makes
+    // a crash between barrier establishment and purge fail closed on restart.
     final lifecycle = ref.read(cacheLifecycleProvider);
+    final store = ref.read(accountStoreProvider);
+    try {
+      // The durable intent must precede the in-memory barrier. A process crash
+      // after the barrier and before this write must not reopen the account.
+      await store.markRemovalFailed(accountId);
+    } catch (e, s) {
+      throw CachePurgeException('account', e, s);
+    }
+    // The barrier covers every cache family and every caller that retained a
+    // handle before removal began.
     Object? firstFailure;
     StackTrace? firstFailureStack;
     try {
@@ -77,7 +86,6 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
       firstFailure = e;
       firstFailureStack = s;
     }
-    final store = ref.read(accountStoreProvider);
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == accountId);
 

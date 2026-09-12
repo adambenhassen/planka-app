@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -113,8 +114,19 @@ class Account {
 class AccountStore {
   static const _key = 'accounts';
   static const _removalFailuresKey = 'accountRemovalFailures';
+  static final _removalMarkerLocks = Expando<_RemovalMarkerLock>();
   final SecureKeyValueStore _storage;
-  AccountStore(this._storage);
+  final _RemovalMarkerLock _removalMarkerLock;
+
+  AccountStore(this._storage) : _removalMarkerLock = _lockFor(_storage);
+
+  static _RemovalMarkerLock _lockFor(SecureKeyValueStore storage) {
+    final existing = _removalMarkerLocks[storage];
+    if (existing != null) return existing;
+    final created = _RemovalMarkerLock();
+    _removalMarkerLocks[storage] = created;
+    return created;
+  }
 
   Future<List<Account>> load() async {
     final raw = await _storage.read(_key);
@@ -141,10 +153,13 @@ class AccountStore {
     jsonEncode(accounts.map((a) => a.toJson()).toList()),
   );
 
-  /// Returns account ids whose cache-removal barrier was durably left closed.
-  /// A malformed marker fails closed so startup cannot reopen an account whose
-  /// removal state is unknown.
-  Future<Set<String>> loadRemovalFailures() async {
+  /// Returns account ids with a pending or failed removal intent. A malformed
+  /// marker fails closed so startup cannot reopen an account whose removal
+  /// state is unknown.
+  Future<Set<String>> loadRemovalFailures() =>
+      _removalMarkerLock.run(_readRemovalFailures);
+
+  Future<Set<String>> _readRemovalFailures() async {
     final raw = await _storage.read(_removalFailuresKey);
     if (raw == null) return <String>{};
     try {
@@ -162,24 +177,30 @@ class AccountStore {
     }
   }
 
+  /// Durably records a removal intent. It remains set if the purge fails so a
+  /// reconstructed lifecycle keeps the account closed until a retry succeeds.
   Future<void> markRemovalFailed(String accountId) async {
     if (accountId.isEmpty) throw ArgumentError.value(accountId, 'accountId');
-    final ids = await loadRemovalFailures()
-      ..add(accountId);
-    final sorted = ids.toList()..sort();
-    await _storage.write(_removalFailuresKey, jsonEncode(sorted));
+    await _removalMarkerLock.run(() async {
+      final ids = await _readRemovalFailures()
+        ..add(accountId);
+      final sorted = ids.toList()..sort();
+      await _storage.write(_removalFailuresKey, jsonEncode(sorted));
+    });
   }
 
   Future<void> clearRemovalFailed(String accountId) async {
     if (accountId.isEmpty) throw ArgumentError.value(accountId, 'accountId');
-    final ids = await loadRemovalFailures()
-      ..remove(accountId);
-    if (ids.isEmpty) {
-      await _storage.delete(_removalFailuresKey);
-      return;
-    }
-    final sorted = ids.toList()..sort();
-    await _storage.write(_removalFailuresKey, jsonEncode(sorted));
+    await _removalMarkerLock.run(() async {
+      final ids = await _readRemovalFailures()
+        ..remove(accountId);
+      if (ids.isEmpty) {
+        await _storage.delete(_removalFailuresKey);
+        return;
+      }
+      final sorted = ids.toList()..sort();
+      await _storage.write(_removalFailuresKey, jsonEncode(sorted));
+    });
   }
 
   static const _currentKey = 'currentAccountId';
@@ -189,4 +210,21 @@ class AccountStore {
   Future<void> writeCurrentId(String? id) => id == null
       ? _storage.delete(_currentKey)
       : _storage.write(_currentKey, id);
+}
+
+class _RemovalMarkerLock {
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> run<T>(Future<T> Function() operation) {
+    final previous = _tail;
+    final done = Completer<void>();
+    _tail = done.future;
+    return previous.then((_) async {
+      try {
+        return await operation();
+      } finally {
+        done.complete();
+      }
+    });
+  }
 }

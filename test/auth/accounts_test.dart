@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -36,6 +37,28 @@ class _FailingStorage extends FakeStorage {
     }
     await super.write(key, value);
   }
+}
+
+class _PauseAfterRemovalLifecycle extends AccountCacheLifecycle {
+  final reachedBarrier = Completer<void>();
+  final releaseBarrier = Completer<void>();
+
+  @override
+  Future<void> beginRemoval(String accountId) async {
+    await super.beginRemoval(accountId);
+    reachedBarrier.complete();
+    await releaseBarrier.future;
+  }
+}
+
+class _DelayedStorage extends FakeStorage {
+  @override
+  Future<String?> read(String key) =>
+      Future<String?>.delayed(Duration.zero, () => data[key]);
+
+  @override
+  Future<void> write(String key, String value) =>
+      Future<void>.delayed(Duration.zero, () => data[key] = value);
 }
 
 class _RecordingEnvelopeCache extends EnvelopeCache {
@@ -207,6 +230,188 @@ void main() {
 
   test('AccountStore load empty', () async {
     expect(await AccountStore(FakeStorage()).load(), isEmpty);
+  });
+
+  test('failed removal-intent persistence leaves the account open', () async {
+    final storage = _FailingStorage();
+    final store = AccountStore(storage);
+    final account = Account(
+      serverUrl: 'https://intent-failure.example',
+      token: 'intent-failure-token',
+      userId: 'u1',
+      displayName: 'Intent failure',
+    );
+    await store.save([account]);
+    final lifecycle = AccountCacheLifecycle();
+    final envelopes = _RecordingEnvelopeCache();
+    final images = _RecordingImageCache(lifecycle: lifecycle);
+    final container = ProviderContainer(
+      overrides: [
+        accountStoreProvider.overrideWithValue(store),
+        envelopeCacheProvider.overrideWithValue(envelopes),
+        imageCacheProvider.overrideWithValue(images),
+        cacheLifecycleProvider.overrideWithValue(lifecycle),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(images.dispose);
+
+    await container.read(accountsProvider.future);
+    storage.failNextWrite = true;
+    await expectLater(
+      container.read(accountsProvider.notifier).remove(account.id),
+      throwsA(isA<CachePurgeException>()),
+    );
+
+    expect(envelopes.purgedAccountIds, isEmpty);
+    expect(images.purgedAccountIds, isEmpty);
+    expect((await store.load()).single.id, account.id);
+    expect(await store.loadRemovalFailures(), isEmpty);
+    expect(images.forAccount(account.id), isNotNull);
+  });
+
+  test(
+    'durable removal intent closes a reconstructed lifecycle before purge',
+    () async {
+      final storage = FakeStorage();
+      final store = AccountStore(storage);
+      final accountA = Account(
+        serverUrl: 'https://intent-restart.example',
+        token: 'intent-restart-a-token',
+        userId: 'a',
+        displayName: 'A',
+      );
+      final accountB = Account(
+        serverUrl: 'https://intent-restart.example',
+        token: 'intent-restart-b-token',
+        userId: 'b',
+        displayName: 'B',
+      );
+      await store.save([accountA, accountB]);
+
+      final lifecycle = _PauseAfterRemovalLifecycle();
+      final firstEnvelopes = _RecordingEnvelopeCache(shouldFail: true);
+      final firstImages = _RecordingImageCache(lifecycle: lifecycle);
+      final firstContainer = ProviderContainer(
+        overrides: [
+          accountStoreProvider.overrideWithValue(store),
+          envelopeCacheProvider.overrideWithValue(firstEnvelopes),
+          imageCacheProvider.overrideWithValue(firstImages),
+          cacheLifecycleProvider.overrideWithValue(lifecycle),
+        ],
+      );
+      addTearDown(firstContainer.dispose);
+      addTearDown(firstImages.dispose);
+      await firstContainer.read(accountsProvider.future);
+
+      final removal = firstContainer
+          .read(accountsProvider.notifier)
+          .remove(accountA.id);
+      await lifecycle.reachedBarrier.future;
+      expect(await store.loadRemovalFailures(), contains(accountA.id));
+
+      final reconstructedLifecycle = AccountCacheLifecycle();
+      final reconstructedImages = _RecordingImageCache(
+        lifecycle: reconstructedLifecycle,
+      );
+      final reconstructedContainer = ProviderContainer(
+        overrides: [
+          accountStoreProvider.overrideWithValue(store),
+          envelopeCacheProvider.overrideWithValue(_RecordingEnvelopeCache()),
+          imageCacheProvider.overrideWithValue(reconstructedImages),
+          cacheLifecycleProvider.overrideWithValue(reconstructedLifecycle),
+        ],
+      );
+      addTearDown(reconstructedContainer.dispose);
+      addTearDown(reconstructedImages.dispose);
+      await reconstructedContainer.read(accountsProvider.future);
+      expect(
+        () => reconstructedImages.forAccount(accountA.id),
+        throwsA(isA<AccountCacheClosedException>()),
+      );
+      expect(reconstructedImages.forAccount(accountB.id), isNotNull);
+
+      lifecycle.releaseBarrier.complete();
+      await expectLater(removal, throwsA(isA<CachePurgeException>()));
+    },
+  );
+
+  test(
+    'concurrent removal-intent updates retain both account tombstones',
+    () async {
+      final storage = _DelayedStorage();
+      final store = AccountStore(storage);
+
+      final first = store.markRemovalFailed('https://concurrent.example#a');
+      final second = store.markRemovalFailed('https://concurrent.example#b');
+      await Future.wait([first, second]);
+
+      expect(await store.loadRemovalFailures(), {
+        'https://concurrent.example#a',
+        'https://concurrent.example#b',
+      });
+    },
+  );
+
+  test('concurrent failed removals retain both accounts closed', () async {
+    final storage = _DelayedStorage();
+    final store = AccountStore(storage);
+    final accountA = Account(
+      serverUrl: 'https://concurrent-removal.example',
+      token: 'concurrent-removal-a-token',
+      userId: 'a',
+      displayName: 'A',
+    );
+    final accountB = Account(
+      serverUrl: 'https://concurrent-removal.example',
+      token: 'concurrent-removal-b-token',
+      userId: 'b',
+      displayName: 'B',
+    );
+    await store.save([accountA, accountB]);
+    final lifecycle = AccountCacheLifecycle();
+    final envelopes = _RecordingEnvelopeCache(failuresRemaining: 2);
+    final images = _RecordingImageCache(
+      failuresRemaining: 2,
+      lifecycle: lifecycle,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        accountStoreProvider.overrideWithValue(store),
+        envelopeCacheProvider.overrideWithValue(envelopes),
+        imageCacheProvider.overrideWithValue(images),
+        cacheLifecycleProvider.overrideWithValue(lifecycle),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(images.dispose);
+    await container.read(accountsProvider.future);
+
+    Future<void> expectFailure(Future<void> removal) async {
+      await expectLater(removal, throwsA(isA<CachePurgeException>()));
+    }
+
+    final notifier = container.read(accountsProvider.notifier);
+    await Future.wait([
+      expectFailure(notifier.remove(accountA.id)),
+      expectFailure(notifier.remove(accountB.id)),
+    ]);
+
+    expect(await store.loadRemovalFailures(), {accountA.id, accountB.id});
+    expect((await store.load()).map((account) => account.id), {
+      accountA.id,
+      accountB.id,
+    });
+    expect(envelopes.purgedAccountIds, containsAll([accountA.id, accountB.id]));
+    expect(images.purgedAccountIds, containsAll([accountA.id, accountB.id]));
+    expect(
+      () => images.forAccount(accountA.id),
+      throwsA(isA<AccountCacheClosedException>()),
+    );
+    expect(
+      () => images.forAccount(accountB.id),
+      throwsA(isA<AccountCacheClosedException>()),
+    );
   });
 
   test('removing an account purges both caches before deleting it', () async {
