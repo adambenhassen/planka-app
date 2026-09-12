@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/models.dart';
@@ -23,12 +25,7 @@ class _AccNotifier extends CurrentAccountNotifier {
   Account? build() => account;
 }
 
-class _RealHttpOverrides extends HttpOverrides {
-  @override
-  HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context);
-  }
-}
+class _RealHttpOverrides extends HttpOverrides {}
 
 class _ImageServer {
   final _requestedPaths = <String>{};
@@ -84,6 +81,19 @@ void main() {
   testWidgets('all store images fade after a successful load', (tester) async {
     await HttpOverrides.runWithHttpOverrides(
       () async {
+        final previousCacheManager =
+            CachedNetworkImageProvider.defaultCacheManager;
+        final cacheManager = CacheManager(
+          Config(
+            'cached-network-image-fade-test-${DateTime.now().microsecondsSinceEpoch}',
+          ),
+        );
+        CachedNetworkImageProvider.defaultCacheManager = cacheManager;
+        addTearDown(() async {
+          CachedNetworkImageProvider.defaultCacheManager = previousCacheManager;
+          await cacheManager.dispose();
+        });
+
         const cardId = 'card-1';
         const attachmentName = 'cover.png';
         const backgroundPath = '/background.png';
