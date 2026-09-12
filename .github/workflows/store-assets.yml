@@ -54,6 +54,9 @@ jobs:
             exit 1
           fi
           PLANKA_URL=http://127.0.0.1:3000 ./dev/seed_demo.sh
+      # The pinned runner caps emulator boot at its 600-second default. Cap
+      # the driver separately so a hung attempt leaves retry runway within the
+      # 60-minute job timeout.
       - name: Capture on a 16:9 Android phone (attempt 1)
         id: android_capture_attempt_1
         continue-on-error: true
@@ -72,10 +75,7 @@ jobs:
           disable-animations: true
           script: |
             mkdir -p "$SCREENSHOT_OUTPUT_DIR"
-            flutter drive --driver=test_driver/screenshots_driver.dart --target=integration_test/screenshots_test.dart -d emulator-5554 --flavor store --dart-define=ENABLE_IN_APP_UPDATER=false --dart-define=PLANKA_URL=$PLANKA_URL --dart-define=PLANKA_EMAIL=$PLANKA_EMAIL --dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD
-      - name: Retry Android capture after resetting the emulator
-        if: ${{ steps.android_capture_attempt_1.outcome == 'failure' }}
-        run: echo 'Android capture attempt 1 failed; retrying with a fresh emulator.'
+            timeout --foreground --kill-after=30s 900s flutter drive --driver=test_driver/screenshots_driver.dart --target=integration_test/screenshots_test.dart -d emulator-5554 --flavor store --dart-define=ENABLE_IN_APP_UPDATER=false --dart-define=PLANKA_URL=$PLANKA_URL --dart-define=PLANKA_EMAIL=$PLANKA_EMAIL --dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD
       - name: Capture on a 16:9 Android phone (attempt 2)
         if: ${{ steps.android_capture_attempt_1.outcome == 'failure' }}
         uses: reactivecircus/android-emulator-runner@v2.38.0
@@ -91,10 +91,9 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          force-avd-creation: true
           script: |
             mkdir -p "$SCREENSHOT_OUTPUT_DIR"
-            flutter drive --driver=test_driver/screenshots_driver.dart --target=integration_test/screenshots_test.dart -d emulator-5554 --flavor store --dart-define=ENABLE_IN_APP_UPDATER=false --dart-define=PLANKA_URL=$PLANKA_URL --dart-define=PLANKA_EMAIL=$PLANKA_EMAIL --dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD
+            timeout --foreground --kill-after=30s 900s flutter drive --driver=test_driver/screenshots_driver.dart --target=integration_test/screenshots_test.dart -d emulator-5554 --flavor store --dart-define=ENABLE_IN_APP_UPDATER=false --dart-define=PLANKA_URL=$PLANKA_URL --dart-define=PLANKA_EMAIL=$PLANKA_EMAIL --dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD
       - name: Dump Android Planka diagnostics
         if: always()
         run: docker compose -f dev/docker-compose.yml logs --no-color --tail=300
