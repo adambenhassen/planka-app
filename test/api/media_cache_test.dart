@@ -207,6 +207,57 @@ class _StatusFileServiceResponse implements FileServiceResponse {
   String get fileExtension => 'file';
 }
 
+class _DelayedFileService extends FileService {
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<FileServiceResponse> get(
+    String url, {
+    Map<String, String>? headers,
+  }) async {
+    started.complete();
+    await release.future;
+    return _DelayedFileServiceResponse();
+  }
+}
+
+class _DelayedFileServiceResponse implements FileServiceResponse {
+  @override
+  Stream<List<int>> get content => Stream.value('late'.codeUnits);
+
+  @override
+  int? get contentLength => 4;
+
+  @override
+  int get statusCode => 200;
+
+  @override
+  DateTime get validTill => DateTime.now().add(const Duration(days: 1));
+
+  @override
+  String? get eTag => null;
+
+  @override
+  String get fileExtension => 'file';
+}
+
+class _RecordingLifecycle extends AccountCacheLifecycle {
+  _RecordingLifecycle({super.removalTimeout});
+
+  final generationRejected = Completer<void>();
+
+  @override
+  AccountCacheLease acquire(String accountId, {int? generation}) {
+    try {
+      return super.acquire(accountId, generation: generation);
+    } catch (error) {
+      if (generation != null) generationRejected.complete();
+      rethrow;
+    }
+  }
+}
+
 class _RepositoryFailure {
   var failNextUpdate = false;
   Completer<void>? updateGate;
@@ -559,6 +610,84 @@ void main() {
     },
   );
 
+  test(
+    'delayed pre-removal transport cannot write into a reauthenticated generation',
+    () async {
+      const account = 'https://planka.example#delayed-reauth';
+      const imageUrl = 'https://planka.example/media/delayed.png';
+      final root = await Directory.systemTemp.createTemp(
+        'media_delayed_reauth',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      final metadata = Directory(p.join(root.path, 'metadata'));
+      await metadata.create(recursive: true);
+      final service = _DelayedFileService();
+      final failure = _RepositoryFailure()..updateStarted = Completer<void>();
+      CacheInfoRepository createRepository(String namespace) =>
+          _FailingCacheInfoRepository(
+            JsonCacheInfoRepository.withFile(
+              File(p.join(metadata.path, '$namespace.json')),
+            ),
+            failure,
+          );
+      final lifecycle = _RecordingLifecycle(
+        removalTimeout: const Duration(milliseconds: 20),
+      );
+      final cache = AccountImageCacheManager(
+        lifecycle: lifecycle,
+        temporaryDirectory: () async => root,
+        createRepository: createRepository,
+        fileService: service,
+      );
+      addTearDown(cache.dispose);
+      final key = plankaImageCacheKey(account, imageUrl);
+      final handle = cache.forAccount(account);
+      final subscription = handle
+          .getFileStream(imageUrl, key: key)
+          .listen((_) {}, onError: (_) {});
+      addTearDown(subscription.cancel);
+
+      await service.started.future;
+      await cache.purgeAccount(account);
+
+      lifecycle.completeRemoval(account);
+      lifecycle.reopen(account);
+      final reauthenticated = cache.forAccount(account);
+      service.release.complete();
+      await lifecycle.generationRejected.future;
+
+      final namespace = 'planka-images-${sha256.convert(utf8.encode(account))}';
+      final namespaceDirectory = Directory(p.join(root.path, namespace));
+      if (await namespaceDirectory.exists()) {
+        expect(
+          await namespaceDirectory
+              .list(recursive: true, followLinks: false)
+              .where((entry) => entry is File)
+              .toList(),
+          isEmpty,
+        );
+      }
+
+      expect(
+        await reauthenticated.getFileFromCache(key, ignoreMemCache: true),
+        isNull,
+      );
+      await cache.dispose();
+      final cold = AccountImageCacheManager(
+        lifecycle: AccountCacheLifecycle(),
+        temporaryDirectory: () async => root,
+        createRepository: createRepository,
+      );
+      addTearDown(cold.dispose);
+      expect(
+        await cold
+            .forAccount(account)
+            .getFileFromCache(key, ignoreMemCache: true),
+        isNull,
+      );
+    },
+  );
+
   test('removal cancels a never-ending media response', () async {
     const account = 'https://planka.example#never-ending';
     final source = StreamController<FileResponse>();
@@ -585,6 +714,30 @@ void main() {
 
     expect(cancelled, isTrue);
   });
+
+  test(
+    'an admitted but never-listened stream does not block removal',
+    () async {
+      const account = 'https://planka.example#unlistened-stream';
+      final backend = _ControlledMediaCache();
+      final cache = AccountImageCacheManager(
+        lifecycle: AccountCacheLifecycle(
+          removalTimeout: const Duration(milliseconds: 20),
+        ),
+        createManager: (_) => backend,
+      );
+      final handle = cache.forAccount(account);
+
+      // Admission happens when the handle creates the stream. No consumer
+      // attaches, so there is no source subscription to cancel or drain.
+      handle.getFileStream('https://planka.example/media/unlistened.png');
+
+      await cache
+          .purgeAccount(account)
+          .timeout(const Duration(milliseconds: 250));
+      expect(backend.emptyCalls, 1);
+    },
+  );
 
   test(
     'removal reports bounded media cancellation failure and can retry',
@@ -673,6 +826,54 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(lateCommit, isTrue);
       await cache.purgeAccount(account);
+    },
+  );
+
+  test(
+    'a media cancellation error stays unresolved until the source settles',
+    () async {
+      const account = 'https://planka.example#cancel-error';
+      final source = StreamController<FileResponse>();
+      final listened = Completer<void>();
+      final cancellationStarted = Completer<void>();
+      var cancellationCalls = 0;
+      source.onListen = listened.complete;
+      source.onCancel = () {
+        cancellationStarted.complete();
+        if (cancellationCalls++ == 0) {
+          return Future<void>.error(StateError('cancel failed'));
+        }
+        return null;
+      };
+      final cache = AccountImageCacheManager(
+        lifecycle: AccountCacheLifecycle(
+          removalTimeout: const Duration(milliseconds: 20),
+        ),
+        createManager: (_) =>
+            _ControlledMediaCache(responseStream: source.stream),
+      );
+      final handle = cache.forAccount(account);
+      final subscription = handle
+          .getFileStream('https://planka.example/media/cancel-error.png')
+          .listen((_) {}, onError: (_) {});
+      addTearDown(() async {
+        await source.close();
+        await subscription.cancel();
+        await cache.dispose();
+      });
+
+      await listened.future;
+      await expectLater(
+        cache.purgeAccount(account),
+        throwsA(isA<CachePurgeException>()),
+      );
+      await cancellationStarted.future;
+      await expectLater(
+        cache.purgeAccount(account),
+        throwsA(isA<CachePurgeException>()),
+      );
+
+      await source.close();
     },
   );
 
@@ -805,6 +1006,61 @@ void main() {
         isNull,
       );
       await cold.dispose();
+    },
+  );
+
+  test(
+    'metadata failure is a stream error and a later stream retry succeeds',
+    () async {
+      const account = 'https://production.example#stream-metadata-failure';
+      const imageUrl =
+          'https://production.example/media/stream-metadata-failure.png';
+      final root = await Directory.systemTemp.createTemp(
+        'media_stream_metadata',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      final metadata = Directory(p.join(root.path, 'metadata'));
+      await metadata.create(recursive: true);
+      final failure = _RepositoryFailure()..failNextUpdate = true;
+      CacheInfoRepository createRepository(String namespace) =>
+          _FailingCacheInfoRepository(
+            JsonCacheInfoRepository.withFile(
+              File(p.join(metadata.path, '$namespace.json')),
+            ),
+            failure,
+          );
+      final cache = AccountImageCacheManager(
+        temporaryDirectory: () async => root,
+        createRepository: createRepository,
+        fileService: _RecordingFileService(),
+      );
+      addTearDown(cache.dispose);
+      final handle = cache.forAccount(account);
+      final key = plankaImageCacheKey(account, imageUrl);
+      final values = <FileResponse>[];
+      final errors = <Object>[];
+      final done = Completer<void>();
+
+      final first = handle
+          .getFileStream(imageUrl, key: key)
+          .listen(
+            values.add,
+            onError: (Object error, StackTrace _) => errors.add(error),
+            onDone: done.complete,
+          );
+      await done.future;
+      await first.cancel();
+
+      expect(errors, hasLength(1));
+      expect(errors.single, isA<CacheOperationException>());
+      expect(values.whereType<FileInfo>(), isEmpty);
+
+      final retry = await handle.getFileStream(imageUrl, key: key).toList();
+      expect(retry.whereType<FileInfo>(), hasLength(1));
+      expect(
+        await retry.whereType<FileInfo>().single.file.readAsString(),
+        'media',
+      );
     },
   );
 

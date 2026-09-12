@@ -254,6 +254,55 @@ void main() {
   }
 
   test(
+    'combined delete and invalidation failures fail closed live and cold',
+    () async {
+      if (Platform.isWindows) return;
+      const account = 'https://planka.example#combined-delete-failure';
+      const otherAccount = 'https://planka.example#other-combined-failure';
+      final key = '$account-projects';
+      final otherKey = '$otherAccount-projects';
+      await cache.put(key, env('stale'));
+      await cache.put(otherKey, env('other'));
+
+      final accountHash = sha256.convert(utf8.encode(account));
+      final keyHash = sha256.convert(utf8.encode(key));
+      final current = File(
+        '${dir.path}/envelope_cache/account-$accountHash/$keyHash.json',
+      );
+      final invalidations = Directory(
+        '${dir.path}/envelope_cache_invalidations/account-$accountHash',
+      );
+      await invalidations.create(recursive: true);
+
+      // The delete and marker write fail independently. The durable delete
+      // intent written before either operation is the cold fail-closed path.
+      await chmod('0555', current.parent.path);
+      await chmod('0555', invalidations.path);
+      try {
+        await expectLater(
+          cache.delete(key),
+          throwsA(isA<CachePurgeException>()),
+        );
+        expect(await current.exists(), isTrue);
+        expect(await cache.get(key), isNull);
+
+        final cold = EnvelopeCache(directory: dir);
+        expect(await cold.get(key), isNull);
+        expect((await cold.get(otherKey))!.item['name'], 'other');
+      } finally {
+        await chmod('0755', current.parent.path);
+        await chmod('0755', invalidations.path);
+      }
+
+      await cache.delete(key);
+      expect(await cache.get(key), isNull);
+      final reconstructed = EnvelopeCache(directory: dir);
+      expect(await reconstructed.get(key), isNull);
+      expect((await reconstructed.get(otherKey))!.item['name'], 'other');
+    },
+  );
+
+  test(
     'purge blocks new writes and drains an admitted fetch before cold purge',
     () async {
       const account = 'https://planka.example#user';

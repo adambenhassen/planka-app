@@ -48,6 +48,16 @@ class EnvelopeCache {
     return File('${dir.path}/$safe.invalidated');
   }
 
+  Future<File> _deletionIntentFile(String key) async {
+    final base = await _baseDirectory();
+    final dir = Directory(
+      '${base.path}/envelope_cache_delete_intents/${_bucketForKey(key)}',
+    );
+    await dir.create(recursive: true);
+    final safe = sha256.convert(utf8.encode(key));
+    return File('${dir.path}/$safe.pending');
+  }
+
   Future<Directory> _baseDirectory() async =>
       _override ?? await getApplicationSupportDirectory();
 
@@ -92,6 +102,18 @@ class EnvelopeCache {
     }
 
     try {
+      // Record the removal intent before touching either representation. If
+      // one delete and the normal invalidation marker fail together, this
+      // independent durable marker keeps both live and cold readers from
+      // serving the stale envelope.
+      File? intent;
+      try {
+        intent = await _deletionIntentFile(key);
+        await intent.writeAsString('');
+      } catch (e, s) {
+        if (e is AccountCacheClosedException) rethrow;
+        recordFailure(e, s);
+      }
       final files = <File>[];
       try {
         files.add(await _file(key));
@@ -134,6 +156,14 @@ class EnvelopeCache {
         if (e is AccountCacheClosedException) rethrow;
         recordFailure(e, s);
       }
+      if (firstFailure == null && intent != null) {
+        try {
+          if (await intent.exists()) await intent.delete();
+        } catch (e, s) {
+          if (e is AccountCacheClosedException) rethrow;
+          recordFailure(e, s);
+        }
+      }
       lease.ensureOpen();
       if (firstFailure != null) {
         throw CachePurgeException(
@@ -174,6 +204,9 @@ class EnvelopeCache {
       final invalidationNamespace = Directory(
         '${directory.parent.path}/envelope_cache_invalidations/account-${sha256.convert(utf8.encode(accountId))}',
       );
+      final deletionIntentNamespace = Directory(
+        '${directory.parent.path}/envelope_cache_delete_intents/account-${sha256.convert(utf8.encode(accountId))}',
+      );
       try {
         if (await namespace.exists()) await namespace.delete(recursive: true);
       } catch (e, s) {
@@ -183,6 +216,14 @@ class EnvelopeCache {
       try {
         if (await invalidationNamespace.exists()) {
           await invalidationNamespace.delete(recursive: true);
+        }
+      } catch (e, s) {
+        firstFailure ??= e;
+        firstFailureStack ??= s;
+      }
+      try {
+        if (await deletionIntentNamespace.exists()) {
+          await deletionIntentNamespace.delete(recursive: true);
         }
       } catch (e, s) {
         firstFailure ??= e;
@@ -233,6 +274,11 @@ class EnvelopeCache {
         if (await invalidationNamespace.exists() &&
             await _hasEntries(invalidationNamespace)) {
           firstFailure ??= StateError('Envelope invalidations remain');
+          firstFailureStack ??= StackTrace.current;
+        }
+        if (await deletionIntentNamespace.exists() &&
+            await _hasEntries(deletionIntentNamespace)) {
+          firstFailure ??= StateError('Envelope deletion intents remain');
           firstFailureStack ??= StackTrace.current;
         }
       } catch (e, s) {
@@ -306,13 +352,24 @@ class EnvelopeCache {
       // Envelope data normally contains board state, not credentials, but the
       // redaction boundary also protects an accidental server echo.
       await file.writeAsString(redactDiagnostic(jsonEncode(env.raw)));
+      var invalidationCleared = false;
       try {
         final invalidation = await _invalidationFile(key);
         if (await invalidation.exists()) await invalidation.delete();
+        invalidationCleared = true;
       } catch (_) {
         // Leaving an invalidation marker in place is fail-closed: a fresh
         // result may be cached for a later retry, but it will not make a
         // previously invalidated fallback readable.
+      }
+      if (invalidationCleared) {
+        try {
+          final intent = await _deletionIntentFile(key);
+          if (await intent.exists()) await intent.delete();
+        } catch (_) {
+          // A pending delete intent is also fail-closed until it can be
+          // removed by a later successful cache write or delete.
+        }
       }
     } catch (e) {
       if (e is AccountCacheClosedException) rethrow;
@@ -323,6 +380,8 @@ class EnvelopeCache {
 
   Future<Envelope?> _getWithLease(String key, AccountCacheLease lease) async {
     try {
+      final intent = await _deletionIntentFile(key);
+      if (await intent.exists()) return null;
       final invalidation = await _invalidationFile(key);
       if (await invalidation.exists()) return null;
       final file = await _file(key);
