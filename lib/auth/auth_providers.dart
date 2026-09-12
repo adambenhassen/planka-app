@@ -25,21 +25,28 @@ String _desktopHome() =>
     Platform.environment['USERPROFILE'] ??
     Directory.systemTemp.path;
 
-final accountsProvider =
-    AsyncNotifierProvider<AccountsNotifier, List<Account>>(
-        AccountsNotifier.new);
+final accountsProvider = AsyncNotifierProvider<AccountsNotifier, List<Account>>(
+  AccountsNotifier.new,
+);
 
 final imageCacheProvider = Provider<AccountImageCacheManager>(
-    (_) => plankaImageCacheManager);
+  (_) => plankaImageCacheManager,
+);
 final cacheLifecycleProvider = Provider<AccountCacheLifecycle>(
-    (_) => accountCacheLifecycle);
+  (_) => accountCacheLifecycle,
+);
 
 class AccountsNotifier extends AsyncNotifier<List<Account>> {
   @override
   Future<List<Account>> build() async {
-    final accounts = await ref.read(accountStoreProvider).load();
+    final store = ref.read(accountStoreProvider);
+    final accounts = await store.load();
+    final failedRemovals = await store.loadRemovalFailures();
     final lifecycle = ref.read(cacheLifecycleProvider);
     for (final account in accounts) {
+      if (failedRemovals.contains(account.id)) {
+        lifecycle.restoreRemovalFailure(account.id);
+      }
       lifecycle.registerKnown(account.id);
     }
     return accounts;
@@ -70,6 +77,7 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
       firstFailure = e;
       firstFailureStack = s;
     }
+    final store = ref.read(accountStoreProvider);
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == accountId);
 
@@ -89,14 +97,50 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
       firstFailureStack ??= s;
     }
     if (firstFailure != null) {
+      Object? markerFailure;
+      StackTrace? markerFailureStack;
+      try {
+        await store.markRemovalFailed(accountId);
+      } catch (e, s) {
+        markerFailure = e;
+        markerFailureStack = s;
+      }
       throw CachePurgeException(
         'account',
-        firstFailure,
-        firstFailureStack ?? StackTrace.current,
+        markerFailure ?? firstFailure,
+        markerFailureStack ?? firstFailureStack ?? StackTrace.current,
       );
     }
 
-    await ref.read(accountStoreProvider).save(list);
+    final accountsBeforeRemoval = <Account>[...await future];
+    var accountListSaved = false;
+    try {
+      await store.save(list);
+      accountListSaved = true;
+      await store.clearRemovalFailed(accountId);
+    } catch (e, s) {
+      Object? persistenceFailure = e;
+      StackTrace persistenceFailureStack = s;
+      try {
+        await store.markRemovalFailed(accountId);
+      } catch (markerError, markerStack) {
+        persistenceFailure = markerError;
+        persistenceFailureStack = markerStack;
+      }
+      if (accountListSaved) {
+        try {
+          await store.save(accountsBeforeRemoval);
+        } catch (restoreError, restoreStack) {
+          persistenceFailure = restoreError;
+          persistenceFailureStack = restoreStack;
+        }
+      }
+      throw CachePurgeException(
+        'account',
+        persistenceFailure,
+        persistenceFailureStack,
+      );
+    }
     state = AsyncData(list);
     lifecycle.completeRemoval(accountId);
     final current = ref.read(currentAccountProvider);
@@ -108,7 +152,8 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
 
 final currentAccountProvider =
     NotifierProvider<CurrentAccountNotifier, Account?>(
-        CurrentAccountNotifier.new);
+      CurrentAccountNotifier.new,
+    );
 
 class CurrentAccountNotifier extends Notifier<Account?> {
   @override
@@ -146,8 +191,9 @@ class CurrentAccountNotifier extends Notifier<Account?> {
 
 /// Set when a request 401s with a token: the session expired.
 /// Carries the expired account so the login screen can prefill.
-final authExpiredProvider =
-    NotifierProvider<AuthExpiredNotifier, Account?>(AuthExpiredNotifier.new);
+final authExpiredProvider = NotifierProvider<AuthExpiredNotifier, Account?>(
+  AuthExpiredNotifier.new,
+);
 
 class AuthExpiredNotifier extends Notifier<Account?> {
   @override
@@ -161,13 +207,19 @@ class AuthExpiredNotifier extends Notifier<Account?> {
 /// the login flow before an account exists. A provider so tests can inject a
 /// fake API.
 final apiFactoryProvider = Provider<PlankaApi Function(String serverUrl)>(
-    (ref) => (url) => PlankaApi(url, null));
+  (ref) =>
+      (url) => PlankaApi(url, null),
+);
 
 final apiProvider = Provider<PlankaApi>((ref) {
   final account = ref.watch(currentAccountProvider);
   if (account == null) throw StateError('No account selected');
-  return PlankaApi(account.serverUrl, account.token, onUnauthorized: () {
-    ref.read(authExpiredProvider.notifier).expire(account);
-    ref.read(currentAccountProvider.notifier).select(null);
-  });
+  return PlankaApi(
+    account.serverUrl,
+    account.token,
+    onUnauthorized: () {
+      ref.read(authExpiredProvider.notifier).expire(account);
+      ref.read(currentAccountProvider.notifier).select(null);
+    },
+  );
 });

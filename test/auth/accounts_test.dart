@@ -8,6 +8,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/planka_api.dart';
+import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/cache_lifecycle.dart';
@@ -51,6 +52,24 @@ class _RecordingEnvelopeCache extends EnvelopeCache {
       failuresRemaining--;
       throw StateError('secret-access-token');
     }
+  }
+}
+
+class _FailOnceEnvelopeCache extends EnvelopeCache {
+  _FailOnceEnvelopeCache({
+    required Directory directory,
+    required super.lifecycle,
+  }) : super(directory: directory);
+
+  var failNextPurge = true;
+
+  @override
+  Future<void> purgeAccount(String accountId) async {
+    if (failNextPurge) {
+      failNextPurge = false;
+      throw StateError('metadata purge failed');
+    }
+    await super.purgeAccount(accountId);
   }
 }
 
@@ -389,6 +408,209 @@ void main() {
         ),
         throwsA(isA<AccountCacheClosedException>()),
       );
+    },
+  );
+
+  test(
+    'failed removal stays closed across reconstruction until a real retry purges storage',
+    () async {
+      final storage = FakeStorage();
+      final store = AccountStore(storage);
+      final accountA = Account(
+        serverUrl: 'https://durable-removal.example',
+        token: 'durable-a-token',
+        userId: 'a',
+        displayName: 'A',
+      );
+      final accountB = Account(
+        serverUrl: 'https://durable-removal.example',
+        token: 'durable-b-token',
+        userId: 'b',
+        displayName: 'B',
+      );
+      await store.save([accountA, accountB]);
+
+      final root = await Directory.systemTemp.createTemp('durable_removal');
+      addTearDown(() => root.delete(recursive: true));
+      final seedLifecycle = AccountCacheLifecycle();
+      final seedEnvelopes = EnvelopeCache(
+        directory: root,
+        lifecycle: seedLifecycle,
+      );
+      final envelopeKeyA = '${accountA.id}-projects';
+      final envelopeKeyB = '${accountB.id}-projects';
+      await seedEnvelopes.put(
+        envelopeKeyA,
+        Envelope.parse({
+          'item': {'id': 'a', 'value': 'A'},
+        }),
+      );
+      await seedEnvelopes.put(
+        envelopeKeyB,
+        Envelope.parse({
+          'item': {'id': 'b', 'value': 'B'},
+        }),
+      );
+      final legacyA =
+          File(
+              '${root.path}/envelope_cache/${base64Url.encode(utf8.encode(envelopeKeyA))}.json',
+            )
+            ..createSync(recursive: true)
+            ..writeAsStringSync(
+              jsonEncode({
+                'item': {'id': 'a', 'value': 'legacy-A'},
+              }),
+            );
+
+      final imageUrl = 'https://durable-removal.example/media/shared.png';
+      final imageKeyA = plankaImageCacheKey(accountA.id, imageUrl);
+      final imageKeyB = plankaImageCacheKey(accountB.id, imageUrl);
+      final seedImages = AccountImageCacheManager(
+        directory: root,
+        lifecycle: seedLifecycle,
+      );
+      await seedImages
+          .forAccount(accountA.id)
+          .putFile(imageUrl, Uint8List.fromList('A'.codeUnits), key: imageKeyA);
+      await seedImages
+          .forAccount(accountB.id)
+          .putFile(imageUrl, Uint8List.fromList('B'.codeUnits), key: imageKeyB);
+      await seedImages.dispose();
+
+      final firstLifecycle = AccountCacheLifecycle();
+      final firstEnvelopes = _FailOnceEnvelopeCache(
+        directory: root,
+        lifecycle: firstLifecycle,
+      );
+      final firstImages = AccountImageCacheManager(
+        directory: root,
+        lifecycle: firstLifecycle,
+      );
+      final firstContainer = ProviderContainer(
+        overrides: [
+          accountStoreProvider.overrideWithValue(store),
+          envelopeCacheProvider.overrideWithValue(firstEnvelopes),
+          imageCacheProvider.overrideWithValue(firstImages),
+          cacheLifecycleProvider.overrideWithValue(firstLifecycle),
+        ],
+      );
+      await firstContainer.read(accountsProvider.future);
+      await expectLater(
+        firstContainer.read(accountsProvider.notifier).remove(accountA.id),
+        throwsA(isA<CachePurgeException>()),
+      );
+      expect(
+        (await store.load()).map((account) => account.id),
+        contains(accountA.id),
+      );
+      expect(await store.loadRemovalFailures(), contains(accountA.id));
+      expect(
+        () => firstImages.forAccount(accountA.id),
+        throwsA(isA<AccountCacheClosedException>()),
+      );
+      expect(
+        (await firstImages
+                .forAccount(accountB.id)
+                .getFileFromCache(imageKeyB, ignoreMemCache: true))!
+            .file
+            .readAsString(),
+        completion('B'),
+      );
+      await firstImages.dispose();
+      firstContainer.dispose();
+
+      final secondLifecycle = AccountCacheLifecycle();
+      final secondEnvelopes = EnvelopeCache(
+        directory: root,
+        lifecycle: secondLifecycle,
+      );
+      final secondImages = AccountImageCacheManager(
+        directory: root,
+        lifecycle: secondLifecycle,
+      );
+      final secondContainer = ProviderContainer(
+        overrides: [
+          accountStoreProvider.overrideWithValue(store),
+          envelopeCacheProvider.overrideWithValue(secondEnvelopes),
+          imageCacheProvider.overrideWithValue(secondImages),
+          cacheLifecycleProvider.overrideWithValue(secondLifecycle),
+        ],
+      );
+      await secondContainer.read(accountsProvider.future);
+      expect(await store.loadRemovalFailures(), contains(accountA.id));
+      await expectLater(
+        secondContainer
+            .read(accountsProvider.notifier)
+            .upsert(accountA.copyWith(token: 'reauth-after-failure-token')),
+        throwsA(isA<AccountCacheClosedException>()),
+      );
+      expect(await store.loadRemovalFailures(), contains(accountA.id));
+      expect(
+        secondEnvelopes.get(envelopeKeyA),
+        throwsA(isA<AccountCacheClosedException>()),
+      );
+      expect(
+        secondEnvelopes.put(
+          envelopeKeyA,
+          Envelope.parse({
+            'item': {'id': 'a', 'value': 'new'},
+          }),
+        ),
+        throwsA(isA<AccountCacheClosedException>()),
+      );
+      expect(
+        () => secondImages.forAccount(accountA.id),
+        throwsA(isA<AccountCacheClosedException>()),
+      );
+      expect((await secondEnvelopes.get(envelopeKeyB))!.raw, {
+        'item': {'id': 'b', 'value': 'B'},
+      });
+      expect(
+        (await secondImages
+                .forAccount(accountB.id)
+                .getFileFromCache(imageKeyB, ignoreMemCache: true))!
+            .file
+            .readAsString(),
+        completion('B'),
+      );
+
+      await secondContainer.read(accountsProvider.notifier).remove(accountA.id);
+      expect(await store.load(), hasLength(1));
+      expect((await store.load()).single.id, accountB.id);
+      expect(await store.loadRemovalFailures(), isEmpty);
+      expect(
+        secondEnvelopes.get(envelopeKeyA),
+        throwsA(isA<AccountCacheClosedException>()),
+      );
+      expect(
+        () => secondImages.forAccount(accountA.id),
+        throwsA(isA<AccountCacheClosedException>()),
+      );
+
+      final coldEnvelopes = EnvelopeCache(directory: root);
+      expect(await coldEnvelopes.get(envelopeKeyA), isNull);
+      expect((await coldEnvelopes.get(envelopeKeyB))!.raw, {
+        'item': {'id': 'b', 'value': 'B'},
+      });
+      final coldImages = AccountImageCacheManager(directory: root);
+      expect(
+        await coldImages
+            .forAccount(accountA.id)
+            .getFileFromCache(imageKeyA, ignoreMemCache: true),
+        isNull,
+      );
+      expect(
+        (await coldImages
+                .forAccount(accountB.id)
+                .getFileFromCache(imageKeyB, ignoreMemCache: true))!
+            .file
+            .readAsString(),
+        completion('B'),
+      );
+      await coldImages.dispose();
+      await secondImages.dispose();
+      secondContainer.dispose();
+      expect(await legacyA.exists(), isFalse);
     },
   );
 

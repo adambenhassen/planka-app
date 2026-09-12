@@ -136,6 +136,11 @@ final FileService plankaImageFileService = _RedactingFileService(
   HttpFileService(httpClient: _NoRedirectClient()),
 );
 
+// This is an in-process handoff from the account cache handle to its file
+// service. It lets the cache manager retain a sanitized URL while the
+// authenticated transport still receives the caller's complete URL.
+const _originalMediaUrlHeader = 'x-planka-original-url';
+
 /// Keeps the third-party cache manager from persisting credentials returned in
 /// a URL, response body, ETag, or content-type-derived filename. The wrapped
 /// service still receives the authenticated headers needed for the request.
@@ -152,7 +157,7 @@ class _RedactingFileService extends FileService {
     Map<String, String>? headers,
   }) async {
     try {
-      final response = await _delegate.get(cacheSafeUrl(url), headers: headers);
+      final response = await _delegate.get(url, headers: headers);
       return _RedactingFileServiceResponse(response);
     } catch (_) {
       throw CacheOperationException('fileService');
@@ -207,7 +212,9 @@ class _AccountFileService extends FileService {
     String url, {
     Map<String, String>? headers,
   }) async {
-    final response = await _delegate.get(url, headers: headers);
+    final requestHeaders = <String, String>{...?headers};
+    final originalUrl = requestHeaders.remove(_originalMediaUrlHeader) ?? url;
+    final response = await _delegate.get(originalUrl, headers: requestHeaders);
     final lease = _lifecycle.acquire(_accountId);
     return _AccountFileServiceResponse(response, lease, _lifecycle);
   }
@@ -318,6 +325,7 @@ class AccountImageCacheManager {
     AccountCacheLifecycle? lifecycle,
     AccountCacheRepositoryFactory? createRepository,
     AccountCacheDirectoryProvider? temporaryDirectory,
+    FileService? fileService,
   }) : _lifecycle = lifecycle ?? AccountCacheLifecycle() {
     _createManager =
         createManager ??
@@ -326,6 +334,7 @@ class AccountImageCacheManager {
           directory,
           createRepository,
           temporaryDirectory,
+          fileService,
           _lifecycle,
         ));
   }
@@ -499,6 +508,7 @@ class AccountImageCacheManager {
     Directory? directory,
     AccountCacheRepositoryFactory? createRepository,
     AccountCacheDirectoryProvider? temporaryDirectory,
+    FileService? fileService,
     AccountCacheLifecycle lifecycle,
   ) {
     final namespace = _plankaImageCacheNamespace(accountId);
@@ -510,11 +520,14 @@ class AccountImageCacheManager {
         temporaryDirectory ?? getTemporaryDirectory,
       ),
     );
+    final requestService = fileService == null
+        ? plankaImageFileService
+        : _RedactingFileService(fileService);
     final repository = createRepository?.call(namespace);
-    final fileService = _AccountFileService(
+    final accountFileService = _AccountFileService(
       accountId,
       lifecycle,
-      plankaImageFileService,
+      requestService,
     );
     late final Config baseConfig;
     if (repository != null) {
@@ -522,13 +535,13 @@ class AccountImageCacheManager {
         namespace,
         repo: repository,
         fileSystem: fileSystem,
-        fileService: fileService,
+        fileService: accountFileService,
       );
     } else if (directory == null) {
       baseConfig = Config(
         namespace,
         fileSystem: fileSystem,
-        fileService: fileService,
+        fileService: accountFileService,
       );
     } else {
       baseConfig = Config(
@@ -537,7 +550,7 @@ class AccountImageCacheManager {
           local.file(p.join(directory.path, '$namespace.json')),
         ),
         fileSystem: fileSystem,
-        fileService: fileService,
+        fileService: accountFileService,
       );
     }
     final config = Config(
@@ -795,6 +808,11 @@ class _AccountCacheHandle implements BaseCacheManager {
 
   String _safeUrl(String url) => cacheSafeUrl(url);
 
+  Map<String, String> _requestHeaders(
+    String url,
+    Map<String, String>? headers,
+  ) => {...?headers, _originalMediaUrlHeader: url};
+
   String _safeKey(String? key, String url) {
     final candidate = key ?? cacheSafeUrl(url);
     if (RegExp(r'^planka-image-[0-9a-f]{64}$').hasMatch(candidate)) {
@@ -926,7 +944,7 @@ class _AccountCacheHandle implements BaseCacheManager {
     () => _manager.getSingleFile(
       _safeUrl(url),
       key: _safeKey(key, url),
-      headers: headers ?? const {},
+      headers: _requestHeaders(url, headers),
     ),
   );
 
@@ -938,11 +956,14 @@ class _AccountCacheHandle implements BaseCacheManager {
     Map<String, String>? headers,
   }) => _stream(
     'getFile',
-    () => _manager.getFile(
-      _safeUrl(url),
-      key: _safeKey(key, url),
-      headers: headers ?? const {},
-    ),
+    () => _manager
+        .getFileStream(
+          _safeUrl(url),
+          key: _safeKey(key, url),
+          headers: _requestHeaders(url, headers),
+        )
+        .where((response) => response is FileInfo)
+        .cast<FileInfo>(),
   );
 
   @override
@@ -956,7 +977,7 @@ class _AccountCacheHandle implements BaseCacheManager {
     () => _manager.getFileStream(
       _safeUrl(url),
       key: _safeKey(key, url),
-      headers: headers,
+      headers: _requestHeaders(url, headers),
       withProgress: withProgress,
     ),
   );
@@ -972,7 +993,7 @@ class _AccountCacheHandle implements BaseCacheManager {
     () => _manager.downloadFile(
       _safeUrl(url),
       key: _safeKey(key, url),
-      authHeaders: authHeaders,
+      authHeaders: _requestHeaders(url, authHeaders),
       force: force,
     ),
   );

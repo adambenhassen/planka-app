@@ -24,7 +24,16 @@ String redactDiagnostic(Object? value) {
   final ordered = variants.where((variant) => variant.isNotEmpty).toList()
     ..sort((a, b) => b.length.compareTo(a.length));
   for (final variant in ordered) {
-    result = result.replaceAll(variant, '[REDACTED]');
+    if (variant.length >= 4) {
+      result = result.replaceAll(variant, '[REDACTED]');
+      continue;
+    }
+    // A short credential still needs redaction, but replacing it inside every
+    // word would corrupt unrelated metadata such as the JSON key "item".
+    result = result.replaceAll(
+      RegExp('(?<![A-Za-z0-9])${RegExp.escape(variant)}(?![A-Za-z0-9])'),
+      '[REDACTED]',
+    );
   }
   // Cover an unregistered server-side canary at a diagnostic boundary. Real
   // credentials are registered at account/API construction, while this guard
@@ -48,13 +57,7 @@ String cacheSafeUrl(String value) {
   final parsed = Uri.tryParse(value);
   if (parsed == null) return redactDiagnostic(value);
   return redactDiagnostic(
-    parsed
-        .replace(
-          userInfo: '',
-          query: '',
-          fragment: '',
-        )
-        .toString(),
+    parsed.replace(userInfo: '', query: '', fragment: '').toString(),
   );
 }
 
@@ -88,9 +91,7 @@ Set<String> _secretVariants() {
 
 int _indexOfBytes(List<int> bytes, List<int> needle, int start) {
   if (needle.isEmpty) return start;
-  for (var index = start;
-      index <= bytes.length - needle.length;
-      index++) {
+  for (var index = start; index <= bytes.length - needle.length; index++) {
     var matches = true;
     for (var offset = 0; offset < needle.length; offset++) {
       if (bytes[index + offset] != needle[offset]) {

@@ -4,6 +4,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/security_redaction.dart';
 
 void main() {
+  test(
+    'short registered secrets redact as values without corrupting words',
+    () {
+      registerSecret('t');
+
+      expect(redactDiagnostic('item'), 'item');
+      expect(redactDiagnostic('token=t'), 'token=[REDACTED]');
+    },
+  );
+
   test('redacts a token crossing a large emission boundary', () async {
     const token = 'boundary-canary-value-123456';
     registerSecret(token);

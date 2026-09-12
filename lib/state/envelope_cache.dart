@@ -68,13 +68,25 @@ class EnvelopeCache {
   Future<void> delete(String key) async {
     final lease = _lifecycle.acquireForKey(key);
     try {
+      final files = <File>[];
       try {
-        final file = await _file(key);
-        if (await file.exists()) await file.delete();
+        files.add(await _file(key));
       } catch (e) {
         if (e is AccountCacheClosedException) rethrow;
-        // A failed delete (IO error, missing platform support in tests) must
-        // never break the caller; the entry simply stays until overwritten.
+      }
+      try {
+        files.add(await _legacyFile(key));
+      } catch (e) {
+        if (e is AccountCacheClosedException) rethrow;
+      }
+      for (final file in files) {
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (e) {
+          if (e is AccountCacheClosedException) rethrow;
+          // A failed delete (IO error, missing platform support in tests) must
+          // never break the caller; the entry simply stays until overwritten.
+        }
       }
       lease.ensureOpen();
     } finally {

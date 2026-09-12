@@ -136,6 +136,16 @@ class AccountCacheLifecycle {
     _states.putIfAbsent(accountId, _AccountCacheState.new);
   }
 
+  /// Restores a durable failed-removal tombstone before startup registers the
+  /// account. Registration intentionally does not reopen this state.
+  void restoreRemovalFailure(String accountId) {
+    _validate(accountId);
+    final state = _states.putIfAbsent(accountId, _AccountCacheState.new);
+    state.removing = true;
+    state.removed = false;
+    state.removalFailure = AccountCacheQuiesceException();
+  }
+
   /// Admits one operation for [accountId], or fails after removal begins.
   AccountCacheLease acquire(String accountId, {int? generation}) {
     _validate(accountId);

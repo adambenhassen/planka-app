@@ -137,8 +137,45 @@ class _ControlledMediaCache implements BaseCacheManager {
   }
 }
 
+class _RecordingFileService extends FileService {
+  String? url;
+  Map<String, String>? headers;
+
+  @override
+  Future<FileServiceResponse> get(
+    String url, {
+    Map<String, String>? headers,
+  }) async {
+    this.url = url;
+    this.headers = headers;
+    return _TestFileServiceResponse();
+  }
+}
+
+class _TestFileServiceResponse implements FileServiceResponse {
+  @override
+  Stream<List<int>> get content => Stream.value('media'.codeUnits);
+
+  @override
+  int? get contentLength => 5;
+
+  @override
+  int get statusCode => 200;
+
+  @override
+  DateTime get validTill => DateTime.now().add(const Duration(days: 1));
+
+  @override
+  String? get eTag => null;
+
+  @override
+  String get fileExtension => 'file';
+}
+
 class _RepositoryFailure {
   var failNextUpdate = false;
+  Completer<void>? updateGate;
+  Completer<void>? updateStarted;
 }
 
 class _FailingCacheInfoRepository extends CacheInfoRepository {
@@ -154,10 +191,15 @@ class _FailingCacheInfoRepository extends CacheInfoRepository {
   Future<bool> open() => _delegate.open();
 
   @override
-  Future<dynamic> updateOrInsert(CacheObject cacheObject) {
+  Future<dynamic> updateOrInsert(CacheObject cacheObject) async {
+    final gate = _failure.updateGate;
+    if (gate != null) {
+      _failure.updateStarted?.complete();
+      await gate.future;
+    }
     if (_failure.failNextUpdate) {
       _failure.failNextUpdate = false;
-      return Future<dynamic>.error(StateError('metadata write failed'));
+      throw StateError('metadata write failed');
     }
     return _delegate.updateOrInsert(cacheObject);
   }
@@ -403,6 +445,56 @@ void main() {
     expect(utf8.decode(backend.entries.values.single), isNot(contains(token)));
   });
 
+  test(
+    'account media requests preserve query while cache storage stays safe',
+    () async {
+      const account = 'https://planka.example#query-account';
+      const token = 'account-query-token-canary';
+      final directory = await Directory.systemTemp.createTemp('media_query');
+      final service = _RecordingFileService();
+      final cache = AccountImageCacheManager(
+        directory: directory,
+        fileService: service,
+      );
+      var disposed = false;
+      addTearDown(() async {
+        if (!disposed) await cache.dispose();
+        await directory.delete(recursive: true);
+      });
+      final url =
+          'https://planka.example/attachments/a1.png?token=$token&size=large';
+      final handle = cache.forAccount(account, token: token);
+
+      final result = await handle.getSingleFile(
+        url,
+        headers: {'Cookie': 'accessToken=$token'},
+      );
+
+      expect(await result.readAsString(), 'media');
+      expect(service.url, url);
+      expect(service.headers, {'Cookie': 'accessToken=$token'});
+
+      final legacyUrl =
+          'https://planka.example/covers/c1.png?token=$token&variant=legacy';
+      // ignore: deprecated_member_use
+      final legacyStream = handle.getFile(
+        legacyUrl,
+        headers: {'Cookie': 'accessToken=$token'},
+      );
+      await legacyStream.drain<void>();
+      expect(service.url, legacyUrl);
+      expect(service.headers, {'Cookie': 'accessToken=$token'});
+      await cache.dispose();
+      disposed = true;
+      await for (final entry in directory.list(recursive: true)) {
+        if (entry is! File) continue;
+        final contents = await entry.readAsString();
+        expect(contents, isNot(contains(token)));
+        expect(entry.path, isNot(contains(token)));
+      }
+    },
+  );
+
   test('removal cancels a never-ending media response', () async {
     const account = 'https://planka.example#never-ending';
     final source = StreamController<FileResponse>();
@@ -569,6 +661,91 @@ void main() {
         isNull,
       );
       await cold.dispose();
+    },
+  );
+
+  test(
+    'a real media metadata commit crossing removal cannot survive cold reconstruction',
+    () async {
+      const imageUrl = 'https://planka.example/media/race.png';
+      final root = await Directory.systemTemp.createTemp('media_commit_race');
+      addTearDown(() => root.delete(recursive: true));
+      final metadata = Directory(p.join(root.path, 'metadata'));
+      await metadata.create(recursive: true);
+      final failure = _RepositoryFailure();
+      CacheInfoRepository createRepository(String namespace) =>
+          _FailingCacheInfoRepository(
+            JsonCacheInfoRepository.withFile(
+              File(p.join(metadata.path, '$namespace.json')),
+            ),
+            failure,
+          );
+      final lifecycle = AccountCacheLifecycle();
+      final cache = AccountImageCacheManager(
+        lifecycle: lifecycle,
+        temporaryDirectory: () async => root,
+        createRepository: createRepository,
+      );
+      addTearDown(cache.dispose);
+      const keyA = 'race-key-a';
+      const keyB = 'race-key-b';
+      final handleB = cache.forAccount(accountB);
+      await handleB.putFile(
+        imageUrl,
+        Uint8List.fromList('B'.codeUnits),
+        key: keyB,
+      );
+
+      final handleA = cache.forAccount(accountA);
+      final gate = Completer<void>();
+      final started = Completer<void>();
+      failure
+        ..updateGate = gate
+        ..updateStarted = started;
+      final pending = handleA.putFile(
+        imageUrl,
+        Uint8List.fromList('A'.codeUnits),
+        key: keyA,
+      );
+      await started.future;
+
+      final removal = cache.purgeAccount(accountA);
+      expect(
+        () => cache.forAccount(accountA),
+        throwsA(isA<AccountCacheClosedException>()),
+      );
+      gate.complete();
+      failure.updateGate = null;
+      await expectLater(pending, throwsA(isA<AccountCacheClosedException>()));
+      await removal;
+
+      expect(
+        (await handleB.getFileFromCache(
+          keyB,
+          ignoreMemCache: true,
+        ))!.file.readAsString(),
+        completion('B'),
+      );
+      await cache.dispose();
+      final cold = AccountImageCacheManager(
+        temporaryDirectory: () async => root,
+        createRepository: createRepository,
+      );
+      addTearDown(cold.dispose);
+      expect(
+        await cold
+            .forAccount(accountA)
+            .getFileFromCache(keyA, ignoreMemCache: true),
+        isNull,
+      );
+      expect(
+        (await cold
+                .forAccount(accountB)
+                .getFileFromCache(keyB, ignoreMemCache: true))!
+            .file
+            .readAsString(),
+        completion('B'),
+      );
     },
   );
 }

@@ -109,6 +109,35 @@ void main() {
       expect((await cache.get('k'))!.item['name'], 'stale');
     },
   );
+
+  test(
+    'deleting an envelope invalidates current and legacy representations',
+    () async {
+      const account = 'https://planka.example#user';
+      const otherAccount = 'https://planka.example#user2';
+      final key = '$account-projects';
+      final otherKey = '$otherAccount-projects';
+      final stale = env('stale');
+      await cache.put(key, stale);
+      await cache.put(otherKey, env('other'));
+
+      final legacy =
+          File(
+              '${dir.path}/envelope_cache/${base64Url.encode(utf8.encode(key))}.json',
+            )
+            ..createSync(recursive: true)
+            ..writeAsStringSync(jsonEncode(stale.raw));
+
+      await cache.delete(key);
+
+      expect(await cache.get(key), isNull);
+      final cold = EnvelopeCache(directory: dir);
+      expect(await cold.get(key), isNull);
+      expect((await cold.get(otherKey))!.item['name'], 'other');
+      expect(await legacy.exists(), isFalse);
+    },
+  );
+
   test('purges one account by its complete decoded key prefix', () async {
     const account = 'https://planka.example#user';
     const substringAccount = 'https://planka.example#user2';
@@ -188,6 +217,28 @@ void main() {
         lifecycle: AccountCacheLifecycle(),
       );
       expect(await cold.get(key), isNull);
+    },
+  );
+
+  test(
+    'a direct envelope put crossing removal cannot commit after the barrier',
+    () async {
+      const account = 'https://planka.example#direct-put';
+      const otherAccount = 'https://planka.example#other';
+      final key = '$account-projects';
+      final otherKey = '$otherAccount-projects';
+      await cache.put(otherKey, env('other'));
+
+      final pending = cache.put(key, env('late'));
+      final removal = cache.purgeAccount(account);
+
+      await expectLater(pending, throwsA(isA<AccountCacheClosedException>()));
+      await removal;
+
+      expect((await cache.get(otherKey))!.item['name'], 'other');
+      final cold = EnvelopeCache(directory: dir);
+      expect(await cold.get(key), isNull);
+      expect((await cold.get(otherKey))!.item['name'], 'other');
     },
   );
 }

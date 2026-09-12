@@ -15,7 +15,9 @@ abstract class SecureKeyValueStore {
 
 class FlutterSecureKeyValueStore implements SecureKeyValueStore {
   final FlutterSecureStorage _storage;
-  const FlutterSecureKeyValueStore([this._storage = const FlutterSecureStorage()]);
+  const FlutterSecureKeyValueStore([
+    this._storage = const FlutterSecureStorage(),
+  ]);
 
   @override
   Future<String?> read(String key) => _storage.read(key: key);
@@ -87,29 +89,30 @@ class Account {
   String get id => '$serverUrl#$userId';
 
   Map<String, dynamic> toJson() => {
-        'serverUrl': serverUrl,
-        'token': token,
-        'userId': userId,
-        'displayName': displayName,
-      };
+    'serverUrl': serverUrl,
+    'token': token,
+    'userId': userId,
+    'displayName': displayName,
+  };
 
   factory Account.fromJson(Map<String, dynamic> json) => Account(
-        serverUrl: json['serverUrl'] as String,
-        token: json['token'] as String,
-        userId: json['userId'] as String,
-        displayName: json['displayName'] as String,
-      );
+    serverUrl: json['serverUrl'] as String,
+    token: json['token'] as String,
+    userId: json['userId'] as String,
+    displayName: json['displayName'] as String,
+  );
 
   Account copyWith({String? token}) => Account(
-        serverUrl: serverUrl,
-        token: token ?? this.token,
-        userId: userId,
-        displayName: displayName,
-      );
+    serverUrl: serverUrl,
+    token: token ?? this.token,
+    userId: userId,
+    displayName: displayName,
+  );
 }
 
 class AccountStore {
   static const _key = 'accounts';
+  static const _removalFailuresKey = 'accountRemovalFailures';
   final SecureKeyValueStore _storage;
   AccountStore(this._storage);
 
@@ -127,18 +130,63 @@ class AccountStore {
       // silent forced-relogin, indistinguishable from "no saved accounts"
       // without this line.
       debugPrint(
-          'AccountStore.load failed, treating as no accounts: ${redactDiagnostic(e)}');
+        'AccountStore.load failed, treating as no accounts: ${redactDiagnostic(e)}',
+      );
       return [];
     }
   }
 
   Future<void> save(List<Account> accounts) => _storage.write(
-      _key, jsonEncode(accounts.map((a) => a.toJson()).toList()));
+    _key,
+    jsonEncode(accounts.map((a) => a.toJson()).toList()),
+  );
+
+  /// Returns account ids whose cache-removal barrier was durably left closed.
+  /// A malformed marker fails closed so startup cannot reopen an account whose
+  /// removal state is unknown.
+  Future<Set<String>> loadRemovalFailures() async {
+    final raw = await _storage.read(_removalFailuresKey);
+    if (raw == null) return <String>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List ||
+          decoded.any((entry) => entry is! String || entry.isEmpty)) {
+        throw const FormatException();
+      }
+      return decoded.cast<String>().toSet();
+    } catch (e) {
+      debugPrint(
+        'AccountStore.loadRemovalFailures failed: ${redactDiagnostic(e)}',
+      );
+      throw StateError('Account removal state unavailable');
+    }
+  }
+
+  Future<void> markRemovalFailed(String accountId) async {
+    if (accountId.isEmpty) throw ArgumentError.value(accountId, 'accountId');
+    final ids = await loadRemovalFailures()
+      ..add(accountId);
+    final sorted = ids.toList()..sort();
+    await _storage.write(_removalFailuresKey, jsonEncode(sorted));
+  }
+
+  Future<void> clearRemovalFailed(String accountId) async {
+    if (accountId.isEmpty) throw ArgumentError.value(accountId, 'accountId');
+    final ids = await loadRemovalFailures()
+      ..remove(accountId);
+    if (ids.isEmpty) {
+      await _storage.delete(_removalFailuresKey);
+      return;
+    }
+    final sorted = ids.toList()..sort();
+    await _storage.write(_removalFailuresKey, jsonEncode(sorted));
+  }
 
   static const _currentKey = 'currentAccountId';
 
   Future<String?> readCurrentId() => _storage.read(_currentKey);
 
-  Future<void> writeCurrentId(String? id) =>
-      id == null ? _storage.delete(_currentKey) : _storage.write(_currentKey, id);
+  Future<void> writeCurrentId(String? id) => id == null
+      ? _storage.delete(_currentKey)
+      : _storage.write(_currentKey, id);
 }
