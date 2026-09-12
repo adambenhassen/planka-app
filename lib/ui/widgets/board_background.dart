@@ -73,7 +73,6 @@ class BoardBackgroundView extends StatelessWidget {
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
-      fadeInDuration: const Duration(milliseconds: 500),
       imageBuilder: (_, imageProvider) => Image(
         key: ValueKey<String>('store-capture-loaded-background-image:$url'),
         image: imageProvider,
