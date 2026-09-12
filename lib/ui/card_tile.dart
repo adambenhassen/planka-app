@@ -108,7 +108,20 @@ class CardTile extends ConsumerWidget {
                 httpHeaders: imageAuthHeaders(token),
                 width: double.infinity,
                 fit: BoxFit.fitWidth,
-                errorWidget: (_, _, _) => const SizedBox.shrink(),
+                imageBuilder: (_, imageProvider) => Image(
+                  key: ValueKey<String>(
+                      'store-capture-loaded-card-cover:${card.id}'),
+                  image: imageProvider,
+                  width: double.infinity,
+                  fit: BoxFit.fitWidth,
+                ),
+                errorWidget: (_, error, _) {
+                  debugPrint(
+                      'Store capture image failed: cover $coverUrl: $error');
+                  return const SizedBox.shrink(
+                    key: ValueKey<String>('store-capture-image-error'),
+                  );
+                },
               ),
             Padding(
               padding: const EdgeInsets.all(12),

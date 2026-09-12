@@ -73,8 +73,21 @@ class BoardBackgroundView extends StatelessWidget {
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
+      imageBuilder: (_, imageProvider) => Image(
+        key: ValueKey<String>('store-capture-loaded-background-image:$url'),
+        image: imageProvider,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+      ),
       placeholder: (_, _) => fallback,
-      errorWidget: (_, _, _) => fallback,
+      errorWidget: (_, error, _) {
+        debugPrint('Store capture image failed: background $url: $error');
+        return KeyedSubtree(
+          key: const ValueKey<String>('store-capture-image-error'),
+          child: fallback,
+        );
+      },
     );
   }
 }

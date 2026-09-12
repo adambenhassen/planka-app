@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import 'envelope.dart';
@@ -71,6 +72,8 @@ class PlankaSocket {
   final String token;
   io.Socket? _socket;
   String? _currentBoardId;
+  var _isConnected = false;
+  var _disposed = false;
 
   /// Set once [subscribeUser] has been called, so a reconnect rejoins the room
   /// rather than leaving it silently lost.
@@ -86,13 +89,20 @@ class PlankaSocket {
 
   Stream<SocketEvent> get events => _events.stream;
   Stream<bool> get connected => _connected.stream;
+  bool get isConnected => _isConnected;
 
   Future<void> connect() async {
+    if (_disposed) return;
+    debugPrint('Planka socket opening: $serverUrl');
     final socket = io.io(
       serverUrl,
       io.OptionBuilder()
           .setPath('/socket.io')
           .setTransports(['websocket'])
+          // Each feature owns its lifecycle. Reusing socket.io's cached root
+          // namespace would attach a later board listener after the shared
+          // manager's connect event had already fired.
+          .enableForceNew()
           // sails rejects handshakes without the sails.io.js SDK version.
           .setQuery({
             '__sails_io_sdk_version': '1.2.1',
@@ -107,16 +117,34 @@ class PlankaSocket {
     _socket = socket;
 
     for (final name in kPlankaSocketEvents) {
-      socket.on(name, (payload) => _events.add(SocketEvent.parse(name, payload)));
+      socket.on(name, (payload) {
+        if (_disposed || _events.isClosed) return;
+        _events.add(SocketEvent.parse(name, payload));
+      });
     }
     socket.onConnect((_) {
+      if (_disposed) return;
+      debugPrint('Planka socket connected: $serverUrl');
+      _isConnected = true;
       _connected.add(true);
       final boardId = _currentBoardId;
       if (boardId != null) subscribeBoard(boardId);
       if (_userSubscribed) subscribeUser();
     });
-    socket.onDisconnect((_) => _connected.add(false));
-    socket.on('connect_error', (_) => _connected.add(false));
+    socket.onDisconnect((_) {
+      if (_disposed || _connected.isClosed) return;
+      debugPrint('Planka socket disconnected: $serverUrl');
+      _isConnected = false;
+      _connected.add(false);
+    });
+    socket.on('connect_error', (error) {
+      if (_disposed || _connected.isClosed) return;
+      debugPrint('Planka socket connect_error: $serverUrl ($error)');
+      _isConnected = false;
+      _connected.add(false);
+    });
+    socket.onError((error) =>
+        debugPrint('Planka socket transport error: $serverUrl ($error)'));
 
     socket.connect();
   }
@@ -178,6 +206,9 @@ class PlankaSocket {
   }
 
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _isConnected = false;
     _socket?.dispose();
     _events.close();
     _connected.close();

@@ -8,7 +8,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: store-assets
+  group: store-assets-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -34,6 +34,11 @@ jobs:
           cache: true
       - run: flutter pub get
       - name: Start seeded Planka
+        env:
+          # The Android emulator reaches the host through 10.0.2.2. Planka
+          # uses BASE_URL for both absolute image URLs and socket Origin
+          # checks, so its advertised origin must be emulator-reachable too.
+          PLANKA_BASE_URL: http://10.0.2.2:3000
         run: |
           docker compose -f dev/docker-compose.yml up -d
           ready=0
@@ -66,6 +71,9 @@ jobs:
           script: |
             mkdir -p "$SCREENSHOT_OUTPUT_DIR"
             flutter drive --driver=test_driver/screenshots_driver.dart --target=integration_test/screenshots_test.dart -d emulator-5554 --flavor store --dart-define=ENABLE_IN_APP_UPDATER=false --dart-define=PLANKA_URL=$PLANKA_URL --dart-define=PLANKA_EMAIL=$PLANKA_EMAIL --dart-define=PLANKA_PASSWORD=$PLANKA_PASSWORD
+      - name: Dump Android Planka diagnostics
+        if: always()
+        run: docker compose -f dev/docker-compose.yml logs --no-color --tail=300
       - uses: actions/upload-artifact@v4
         with:
           name: store-android-screenshots
@@ -168,6 +176,12 @@ jobs:
           ./dev/capture_store_ios.sh \
             "$device_id" \
             "$RUNNER_TEMP/store-ios/ipad"
+      - name: Dump Apple Planka diagnostics
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/planka-server.log" ]; then
+            tail -300 "$RUNNER_TEMP/planka-server.log"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: store-ios-screenshots
