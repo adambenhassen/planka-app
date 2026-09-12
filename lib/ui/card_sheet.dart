@@ -508,6 +508,7 @@ class _CardSheetState extends ConsumerState<CardSheet> {
           CardAttachmentsSection(
             attachments: state.attachmentsOf(cardId),
             token: account?.token,
+            serverUrl: account?.serverUrl,
             coverAttachmentId: card.coverAttachmentId,
             onSetCover: (id) =>
                 guardMutation(context, notifier.setCover(cardId, id)),

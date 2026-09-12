@@ -291,7 +291,7 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
   Widget build(BuildContext context) {
     final notifier = ref.read(boardProvider(widget.boardId).notifier);
     final columns = widget.state.columns;
-    final token = ref.watch(currentAccountProvider)?.token;
+    final account = ref.watch(currentAccountProvider);
     final background = boardBackgroundFor(ref, widget.state.board);
     // A photo needs a stronger scrim than a gradient to keep list text legible.
     final scrim = background.imageUrl != null
@@ -300,7 +300,11 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
     return Stack(
       children: [
         Positioned.fill(
-          child: BoardBackgroundView(background: background, token: token),
+          child: BoardBackgroundView(
+            background: background,
+            token: account?.token,
+            serverUrl: account?.serverUrl,
+          ),
         ),
         Positioned.fill(child: ColoredBox(color: scrim)),
         // extendBodyBehindAppBar puts the app bar height into the top

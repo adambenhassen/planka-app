@@ -88,7 +88,14 @@ class CardTile extends ConsumerWidget {
         (showAge && card.createdAt != null);
 
     // Downloads authenticate via the accessToken cookie, not a Bearer header.
-    final token = ref.watch(currentAccountProvider)?.token;
+    final account = ref.watch(currentAccountProvider);
+    final coverHeaders = coverUrl == null || account == null
+        ? null
+        : imageAuthHeaders(
+            account.token,
+            serverUrl: account.serverUrl,
+            imageUrl: coverUrl,
+          );
 
     return Card(
       color: context.tokens.cardSurface,
@@ -102,10 +109,11 @@ class CardTile extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (coverUrl != null && token != null)
+            if (coverHeaders != null)
               CachedNetworkImage(
-                imageUrl: coverUrl,
-                httpHeaders: imageAuthHeaders(token),
+                imageUrl: coverUrl!,
+                httpHeaders: coverHeaders,
+                cacheManager: plankaImageCacheManager,
                 width: double.infinity,
                 fit: BoxFit.fitWidth,
                 imageBuilder: (_, imageProvider) => Image(
