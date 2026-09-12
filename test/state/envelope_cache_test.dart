@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/cache_lifecycle.dart';
+import 'package:planka_app/cache_purge.dart';
 import 'package:planka_app/security_redaction.dart';
 import 'package:planka_app/state/envelope_cache.dart';
 
@@ -24,6 +26,12 @@ void main() {
   Envelope env(String name) => Envelope.parse({
     'item': {'id': '1', 'name': name},
   });
+
+  Future<void> chmod(String mode, String path) async {
+    if (Platform.isWindows) return;
+    final result = await Process.run('chmod', [mode, path]);
+    if (result.exitCode != 0) throw StateError('chmod failed');
+  }
 
   test('put/get round-trips an envelope', () async {
     await cache.put('k', env('hello'));
@@ -190,6 +198,60 @@ void main() {
     expect(await blockedDirectory.exists(), isTrue);
     expect((await cache.get(otherKey))!.item['name'], 'other');
   });
+
+  for (final format in ['current', 'legacy']) {
+    test(
+      'failed $format envelope deletion is surfaced and blocks stale fallback',
+      () async {
+        if (Platform.isWindows) return;
+        const account = 'https://planka.example#delete-failure';
+        const otherAccount = 'https://planka.example#other-delete-failure';
+        final key = '$account-projects';
+        final otherKey = '$otherAccount-projects';
+        await cache.put(key, env('current-stale'));
+        await cache.put(otherKey, env('other'));
+
+        final accountHash = sha256.convert(utf8.encode(account));
+        final keyHash = sha256.convert(utf8.encode(key));
+        final current = File(
+          '${dir.path}/envelope_cache/account-$accountHash/$keyHash.json',
+        );
+        final legacy = File(
+          '${dir.path}/envelope_cache/${base64Url.encode(utf8.encode(key))}.json',
+        );
+        if (format == 'legacy') {
+          await current.delete();
+          await legacy.create(recursive: true);
+          await legacy.writeAsString(jsonEncode(env('legacy-stale').raw));
+          await chmod('0555', '${dir.path}/envelope_cache');
+        } else {
+          await chmod('0555', current.parent.path);
+        }
+
+        try {
+          await expectLater(
+            cache.delete(key),
+            throwsA(isA<CachePurgeException>()),
+          );
+          expect(await cache.get(key), isNull);
+          final cold = EnvelopeCache(directory: dir);
+          expect(await cold.get(key), isNull);
+          expect((await cold.get(otherKey))!.item['name'], 'other');
+        } finally {
+          await chmod(
+            '0755',
+            format == 'legacy'
+                ? '${dir.path}/envelope_cache'
+                : current.parent.path,
+          );
+        }
+
+        await cache.delete(key);
+        expect(await cache.get(key), isNull);
+        expect(await legacy.exists(), isFalse);
+      },
+    );
+  }
 
   test(
     'purge blocks new writes and drains an admitted fetch before cold purge',

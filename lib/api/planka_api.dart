@@ -846,7 +846,7 @@ class _AccountCacheHandle implements BaseCacheManager {
   ) => {...?headers, _originalMediaUrlHeader: url};
 
   String _safeKey(String? key, String url) {
-    final candidate = key ?? cacheSafeUrl(url);
+    final candidate = key ?? cacheIdentityUrl(url);
     if (RegExp(r'^planka-image-[0-9a-f]{64}$').hasMatch(candidate)) {
       return candidate;
     }

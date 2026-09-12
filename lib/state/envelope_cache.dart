@@ -28,17 +28,34 @@ class EnvelopeCache {
   final AccountCacheLifecycle _lifecycle;
 
   Future<File> _file(String key) async {
-    final base = _override ?? await getApplicationSupportDirectory();
-    final accountId = _lifecycle.accountIdForKey(key);
-    final bucket = accountId == null
-        ? 'unscoped'
-        : 'account-${sha256.convert(utf8.encode(accountId))}';
+    final base = await _baseDirectory();
+    final bucket = _bucketForKey(key);
     final dir = Directory('${base.path}/envelope_cache/$bucket');
     await dir.create(recursive: true);
     // A digest is intentionally one-way: account URLs, user IDs, and any
     // accidental credential in a caller-provided key never become metadata.
     final safe = sha256.convert(utf8.encode(key));
     return File('${dir.path}/$safe.json');
+  }
+
+  Future<File> _invalidationFile(String key) async {
+    final base = await _baseDirectory();
+    final dir = Directory(
+      '${base.path}/envelope_cache_invalidations/${_bucketForKey(key)}',
+    );
+    await dir.create(recursive: true);
+    final safe = sha256.convert(utf8.encode(key));
+    return File('${dir.path}/$safe.invalidated');
+  }
+
+  Future<Directory> _baseDirectory() async =>
+      _override ?? await getApplicationSupportDirectory();
+
+  String _bucketForKey(String key) {
+    final accountId = _lifecycle.accountIdForKey(key);
+    return accountId == null
+        ? 'unscoped'
+        : 'account-${sha256.convert(utf8.encode(accountId))}';
   }
 
   Future<void> put(String key, Envelope env) async {
@@ -67,28 +84,64 @@ class EnvelopeCache {
   /// confirming refresh failed, so the cached value is pre-mutation).
   Future<void> delete(String key) async {
     final lease = _lifecycle.acquireForKey(key);
+    Object? firstFailure;
+    StackTrace? firstFailureStack;
+    void recordFailure(Object error, StackTrace stackTrace) {
+      firstFailure ??= error;
+      firstFailureStack ??= stackTrace;
+    }
+
     try {
       final files = <File>[];
       try {
         files.add(await _file(key));
-      } catch (e) {
+      } catch (e, s) {
         if (e is AccountCacheClosedException) rethrow;
+        recordFailure(e, s);
       }
       try {
         files.add(await _legacyFile(key));
-      } catch (e) {
+      } catch (e, s) {
         if (e is AccountCacheClosedException) rethrow;
+        recordFailure(e, s);
       }
       for (final file in files) {
         try {
           if (await file.exists()) await file.delete();
-        } catch (e) {
+        } catch (e, s) {
           if (e is AccountCacheClosedException) rethrow;
-          // A failed delete (IO error, missing platform support in tests) must
-          // never break the caller; the entry simply stays until overwritten.
+          recordFailure(e, s);
+        }
+        try {
+          if (await file.exists()) {
+            recordFailure(
+              StateError('Envelope cache target remains'),
+              StackTrace.current,
+            );
+          }
+        } catch (e, s) {
+          recordFailure(e, s);
         }
       }
+      try {
+        final invalidation = await _invalidationFile(key);
+        if (firstFailure != null) {
+          await invalidation.writeAsString('');
+        } else if (await invalidation.exists()) {
+          await invalidation.delete();
+        }
+      } catch (e, s) {
+        if (e is AccountCacheClosedException) rethrow;
+        recordFailure(e, s);
+      }
       lease.ensureOpen();
+      if (firstFailure != null) {
+        throw CachePurgeException(
+          'envelopes',
+          firstFailure!,
+          firstFailureStack ?? StackTrace.current,
+        );
+      }
     } finally {
       lease.release();
     }
@@ -118,8 +171,19 @@ class EnvelopeCache {
       final namespace = Directory(
         '${directory.path}/account-${sha256.convert(utf8.encode(accountId))}',
       );
+      final invalidationNamespace = Directory(
+        '${directory.parent.path}/envelope_cache_invalidations/account-${sha256.convert(utf8.encode(accountId))}',
+      );
       try {
         if (await namespace.exists()) await namespace.delete(recursive: true);
+      } catch (e, s) {
+        firstFailure ??= e;
+        firstFailureStack ??= s;
+      }
+      try {
+        if (await invalidationNamespace.exists()) {
+          await invalidationNamespace.delete(recursive: true);
+        }
       } catch (e, s) {
         firstFailure ??= e;
         firstFailureStack ??= s;
@@ -164,6 +228,11 @@ class EnvelopeCache {
         }
         if (await namespace.exists() && await _hasEntries(namespace)) {
           firstFailure ??= StateError('Envelope cache targets remain');
+          firstFailureStack ??= StackTrace.current;
+        }
+        if (await invalidationNamespace.exists() &&
+            await _hasEntries(invalidationNamespace)) {
+          firstFailure ??= StateError('Envelope invalidations remain');
           firstFailureStack ??= StackTrace.current;
         }
       } catch (e, s) {
@@ -237,6 +306,14 @@ class EnvelopeCache {
       // Envelope data normally contains board state, not credentials, but the
       // redaction boundary also protects an accidental server echo.
       await file.writeAsString(redactDiagnostic(jsonEncode(env.raw)));
+      try {
+        final invalidation = await _invalidationFile(key);
+        if (await invalidation.exists()) await invalidation.delete();
+      } catch (_) {
+        // Leaving an invalidation marker in place is fail-closed: a fresh
+        // result may be cached for a later retry, but it will not make a
+        // previously invalidated fallback readable.
+      }
     } catch (e) {
       if (e is AccountCacheClosedException) rethrow;
       // A failed cache write must never break the fetch that produced it.
@@ -246,6 +323,8 @@ class EnvelopeCache {
 
   Future<Envelope?> _getWithLease(String key, AccountCacheLease lease) async {
     try {
+      final invalidation = await _invalidationFile(key);
+      if (await invalidation.exists()) return null;
       final file = await _file(key);
       File source = file;
       if (!await source.exists()) {
@@ -266,7 +345,7 @@ class EnvelopeCache {
   }
 
   Future<Directory> _directory() async {
-    final base = _override ?? await getApplicationSupportDirectory();
+    final base = await _baseDirectory();
     final dir = Directory('${base.path}/envelope_cache');
     await dir.create(recursive: true);
     return dir;

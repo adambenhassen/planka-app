@@ -530,6 +530,35 @@ void main() {
     },
   );
 
+  test(
+    'no-key media identities distinguish sanitized query variants',
+    () async {
+      const account = 'https://planka.example#query-identity';
+      const token = 'query-identity-token-canary';
+      const base = 'https://planka.example/media/variant.png';
+      final backend = _ControlledMediaCache();
+      final cache = AccountImageCacheManager(createManager: (_) => backend);
+      addTearDown(cache.dispose);
+      final handle = cache.forAccount(account, token: token);
+
+      await handle.putFile(
+        '$base?token=$token&size=small',
+        Uint8List.fromList('small'.codeUnits),
+      );
+      await handle.putFile(
+        '$base?token=$token&size=large',
+        Uint8List.fromList('large'.codeUnits),
+      );
+
+      expect(backend.entries, hasLength(2));
+      expect(backend.entries.keys, everyElement(isNot(contains(token))));
+      expect(
+        backend.entries.values.map(utf8.decode),
+        containsAll(<String>['small', 'large']),
+      );
+    },
+  );
+
   test('removal cancels a never-ending media response', () async {
     const account = 'https://planka.example#never-ending';
     final source = StreamController<FileResponse>();

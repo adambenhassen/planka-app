@@ -61,6 +61,15 @@ String cacheSafeUrl(String value) {
   );
 }
 
+/// Returns a safe identity input that keeps non-secret query variants.
+String cacheIdentityUrl(String value) {
+  final parsed = Uri.tryParse(value);
+  if (parsed == null) return redactDiagnostic(value);
+  return redactDiagnostic(
+    parsed.replace(userInfo: '', fragment: '').toString(),
+  );
+}
+
 /// Prevents a registered credential accidentally being persisted as a cache
 /// payload. Normal media is binary and is returned unchanged.
 Uint8List redactCacheBytes(Uint8List bytes) {

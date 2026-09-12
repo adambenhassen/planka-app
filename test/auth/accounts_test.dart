@@ -61,6 +61,32 @@ class _DelayedStorage extends FakeStorage {
       Future<void>.delayed(Duration.zero, () => data[key] = value);
 }
 
+class _ConcurrentAccountStorage extends FakeStorage {
+  var coordinateAccountWrites = false;
+  var accountWriteCount = 0;
+  final firstWriteStarted = Completer<void>();
+  final secondWriteStarted = Completer<void>();
+  final allowFirstWrite = Completer<void>();
+  final allowSecondWrite = Completer<void>();
+
+  @override
+  Future<void> write(String key, String value) async {
+    if (!coordinateAccountWrites || key != 'accounts') {
+      await super.write(key, value);
+      return;
+    }
+    accountWriteCount++;
+    if (accountWriteCount == 1) {
+      firstWriteStarted.complete();
+      await allowFirstWrite.future;
+    } else if (accountWriteCount == 2) {
+      secondWriteStarted.complete();
+      await allowSecondWrite.future;
+    }
+    await super.write(key, value);
+  }
+}
+
 class _RecordingEnvelopeCache extends EnvelopeCache {
   _RecordingEnvelopeCache({bool shouldFail = false, int? failuresRemaining})
     : failuresRemaining = failuresRemaining ?? (shouldFail ? 1 : 0);
@@ -413,6 +439,106 @@ void main() {
       throwsA(isA<AccountCacheClosedException>()),
     );
   });
+
+  test(
+    'concurrent successful removals cannot resurrect either account',
+    () async {
+      final storage = _ConcurrentAccountStorage();
+      final store = AccountStore(storage);
+      final accountA = Account(
+        serverUrl: 'https://concurrent-success.example',
+        token: 'concurrent-success-a-token',
+        userId: 'a',
+        displayName: 'A',
+      );
+      final accountB = Account(
+        serverUrl: 'https://concurrent-success.example',
+        token: 'concurrent-success-b-token',
+        userId: 'b',
+        displayName: 'B',
+      );
+      await store.save([accountA, accountB]);
+      storage.coordinateAccountWrites = true;
+
+      final lifecycle = AccountCacheLifecycle();
+      final container = ProviderContainer(
+        overrides: [
+          accountStoreProvider.overrideWithValue(store),
+          envelopeCacheProvider.overrideWithValue(_RecordingEnvelopeCache()),
+          imageCacheProvider.overrideWithValue(
+            _RecordingImageCache(lifecycle: lifecycle),
+          ),
+          cacheLifecycleProvider.overrideWithValue(lifecycle),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(accountsProvider.future);
+      final notifier = container.read(accountsProvider.notifier);
+      final first = notifier.remove(accountA.id);
+      await storage.firstWriteStarted.future;
+      final second = notifier.remove(accountB.id);
+
+      var writesRaced = true;
+      try {
+        await storage.secondWriteStarted.future.timeout(
+          const Duration(milliseconds: 100),
+        );
+      } on TimeoutException {
+        writesRaced = false;
+      }
+
+      if (writesRaced) {
+        // Without serialized account mutations, both removals save snapshots
+        // based on [accountA, accountB]. Let the second write land first so the
+        // first stale snapshot deterministically resurrects one account.
+        storage.allowSecondWrite.complete();
+        storage.allowFirstWrite.complete();
+      } else {
+        // A serialized implementation has only the first snapshot in flight.
+        // Release it, then let the second removal observe the updated list.
+        storage.allowFirstWrite.complete();
+        await first;
+        await storage.secondWriteStarted.future;
+        storage.allowSecondWrite.complete();
+      }
+
+      await Future.wait([first, second]);
+      expect(await store.load(), isEmpty);
+    },
+  );
+
+  for (final record in ['missing', 'corrupt']) {
+    test(
+      '$record account records still restore durable removal closure before registration',
+      () async {
+        const accountId = 'https://missing-record.example#user';
+        final storage = FakeStorage();
+        storage.data['accountRemovalFailures'] = jsonEncode([accountId]);
+        if (record == 'corrupt') storage.data['accounts'] = '{not-json';
+        final store = AccountStore(storage);
+        final lifecycle = AccountCacheLifecycle();
+        final container = ProviderContainer(
+          overrides: [
+            accountStoreProvider.overrideWithValue(store),
+            cacheLifecycleProvider.overrideWithValue(lifecycle),
+          ],
+        );
+        final images = AccountImageCacheManager(
+          lifecycle: lifecycle,
+          createManager: (_) => _MemoryMediaCache(),
+        );
+        addTearDown(container.dispose);
+        addTearDown(images.dispose);
+
+        expect(await container.read(accountsProvider.future), isEmpty);
+        expect(
+          () => images.forAccount(accountId),
+          throwsA(isA<AccountCacheClosedException>()),
+        );
+      },
+    );
+  }
 
   test('removing an account purges both caches before deleting it', () async {
     final storage = FakeStorage();

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,22 +38,37 @@ final cacheLifecycleProvider = Provider<AccountCacheLifecycle>(
 );
 
 class AccountsNotifier extends AsyncNotifier<List<Account>> {
+  Future<void> _mutationTail = Future<void>.value();
+
+  Future<T> _serializeMutation<T>(Future<T> Function() mutation) {
+    final previous = _mutationTail;
+    final done = Completer<void>();
+    _mutationTail = done.future;
+    return previous.then((_) async {
+      try {
+        return await mutation();
+      } finally {
+        done.complete();
+      }
+    });
+  }
+
   @override
   Future<List<Account>> build() async {
     final store = ref.read(accountStoreProvider);
     final accounts = await store.load();
     final removalIntents = await store.loadRemovalFailures();
     final lifecycle = ref.read(cacheLifecycleProvider);
+    for (final accountId in removalIntents) {
+      lifecycle.restoreRemovalFailure(accountId);
+    }
     for (final account in accounts) {
-      if (removalIntents.contains(account.id)) {
-        lifecycle.restoreRemovalFailure(account.id);
-      }
       lifecycle.registerKnown(account.id);
     }
     return accounts;
   }
 
-  Future<void> upsert(Account account) async {
+  Future<void> upsert(Account account) => _serializeMutation(() async {
     // Await the loaded list so a call during loading can't drop stored accounts.
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == account.id)
@@ -62,9 +78,9 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     // newly persisted authenticated account may explicitly reopen that id.
     ref.read(cacheLifecycleProvider).reopen(account.id);
     state = AsyncData(list);
-  }
+  });
 
-  Future<void> remove(String accountId) async {
+  Future<void> remove(String accountId) => _serializeMutation(() async {
     // Persist the removal intent before closing the shared barrier. This makes
     // a crash between barrier establishment and purge fail closed on restart.
     final lifecycle = ref.read(cacheLifecycleProvider);
@@ -155,7 +171,7 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     if (current?.id == accountId) {
       await ref.read(currentAccountProvider.notifier).select(null);
     }
-  }
+  });
 }
 
 final currentAccountProvider =
