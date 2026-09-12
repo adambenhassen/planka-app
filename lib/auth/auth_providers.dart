@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../api/planka_api.dart';
 import '../api/repositories.dart';
+import '../cache_purge.dart';
+import '../state/envelope_cache.dart';
 import 'accounts.dart';
 
 final accountStoreProvider = Provider<AccountStore>((ref) {
@@ -26,6 +28,9 @@ final accountsProvider =
     AsyncNotifierProvider<AccountsNotifier, List<Account>>(
         AccountsNotifier.new);
 
+final imageCacheProvider = Provider<AccountImageCacheManager>(
+    (_) => plankaImageCacheManager);
+
 class AccountsNotifier extends AsyncNotifier<List<Account>> {
   @override
   Future<List<Account>> build() => ref.read(accountStoreProvider).load();
@@ -42,6 +47,32 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
   Future<void> remove(String accountId) async {
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == accountId);
+
+    // Both cache families are account-owned. Attempt both even when the first
+    // purge fails, and keep the account record until every target is gone so a
+    // caller cannot mistake a partial purge for successful removal.
+    Object? firstFailure;
+    StackTrace? firstFailureStack;
+    try {
+      await ref.read(envelopeCacheProvider).purgeAccount(accountId);
+    } catch (e, s) {
+      firstFailure = e;
+      firstFailureStack = s;
+    }
+    try {
+      await ref.read(imageCacheProvider).purgeAccount(accountId);
+    } catch (e, s) {
+      firstFailure ??= e;
+      firstFailureStack ??= s;
+    }
+    if (firstFailure != null) {
+      throw CachePurgeException(
+        'account',
+        firstFailure,
+        firstFailureStack ?? StackTrace.current,
+      );
+    }
+
     await ref.read(accountStoreProvider).save(list);
     state = AsyncData(list);
     final current = ref.read(currentAccountProvider);

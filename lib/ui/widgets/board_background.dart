@@ -56,11 +56,13 @@ class BoardBackgroundView extends StatelessWidget {
     required this.background,
     required this.token,
     this.serverUrl,
+    this.accountId,
   });
 
   final BoardBackground background;
   final String? token;
   final String? serverUrl;
+  final String? accountId;
 
   @override
   Widget build(BuildContext context) {
@@ -76,10 +78,12 @@ class BoardBackgroundView extends StatelessWidget {
             imageUrl: url,
           );
     if (headers == null) return fallback;
+    final cacheAccountId = accountId ?? 'server:$serverUrl';
     return CachedNetworkImage(
       imageUrl: url!,
       httpHeaders: headers,
-      cacheManager: plankaImageCacheManager,
+      cacheManager: plankaImageCacheManager.forAccount(cacheAccountId),
+      cacheKey: plankaImageCacheKey(cacheAccountId, url),
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,

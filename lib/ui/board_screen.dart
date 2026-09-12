@@ -304,6 +304,7 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
             background: background,
             token: account?.token,
             serverUrl: account?.serverUrl,
+            accountId: account?.id,
           ),
         ),
         Positioned.fill(child: ColoredBox(color: scrim)),

@@ -1,9 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/planka_api.dart';
+import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/auth/accounts.dart';
+import 'package:planka_app/cache_purge.dart';
+import 'package:planka_app/state/envelope_cache.dart';
 
 class FakeStorage implements SecureKeyValueStore {
   final Map<String, String> data = {};
@@ -13,6 +17,28 @@ class FakeStorage implements SecureKeyValueStore {
   Future<void> write(String key, String value) async => data[key] = value;
   @override
   Future<void> delete(String key) async => data.remove(key);
+}
+
+class _RecordingEnvelopeCache extends EnvelopeCache {
+  _RecordingEnvelopeCache({this.shouldFail = false});
+
+  final bool shouldFail;
+  final purgedAccountIds = <String>[];
+
+  @override
+  Future<void> purgeAccount(String accountId) async {
+    purgedAccountIds.add(accountId);
+    if (shouldFail) throw StateError('secret-access-token');
+  }
+}
+
+class _RecordingImageCache extends AccountImageCacheManager {
+  final purgedAccountIds = <String>[];
+
+  @override
+  Future<void> purgeAccount(String accountId) async {
+    purgedAccountIds.add(accountId);
+  }
 }
 
 void main() {
@@ -42,6 +68,73 @@ void main() {
 
   test('AccountStore load empty', () async {
     expect(await AccountStore(FakeStorage()).load(), isEmpty);
+  });
+
+  test('removing an account purges both caches before deleting it', () async {
+    final storage = FakeStorage();
+    final store = AccountStore(storage);
+    final account = Account(
+      serverUrl: 'https://p.example.com',
+      token: 'secret-access-token',
+      userId: 'u1',
+      displayName: 'Demo',
+    );
+    await store.save([account]);
+    final envelopes = _RecordingEnvelopeCache();
+    final images = _RecordingImageCache();
+    final container = ProviderContainer(
+      overrides: [
+        accountStoreProvider.overrideWithValue(store),
+        envelopeCacheProvider.overrideWithValue(envelopes),
+        imageCacheProvider.overrideWithValue(images),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(accountsProvider.future);
+    await container.read(accountsProvider.notifier).remove(account.id);
+
+    expect(envelopes.purgedAccountIds, [account.id]);
+    expect(images.purgedAccountIds, [account.id]);
+    expect(await store.load(), isEmpty);
+  });
+
+  test('removal reports purge failure without leaking the token or deleting the account',
+      () async {
+    final storage = FakeStorage();
+    final store = AccountStore(storage);
+    final account = Account(
+      serverUrl: 'https://p.example.com',
+      token: 'secret-access-token',
+      userId: 'u1',
+      displayName: 'Demo',
+    );
+    await store.save([account]);
+    final envelopes = _RecordingEnvelopeCache(shouldFail: true);
+    final images = _RecordingImageCache();
+    final container = ProviderContainer(
+      overrides: [
+        accountStoreProvider.overrideWithValue(store),
+        envelopeCacheProvider.overrideWithValue(envelopes),
+        imageCacheProvider.overrideWithValue(images),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(accountsProvider.future);
+    Object? error;
+    try {
+      await container.read(accountsProvider.notifier).remove(account.id);
+      fail('expected account removal to fail');
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error, isA<CachePurgeException>());
+    expect('$error', isNot(contains(account.token)));
+    expect(envelopes.purgedAccountIds, [account.id]);
+    expect(images.purgedAccountIds, [account.id]);
+    expect((await store.load()).single.id, account.id);
   });
 
   test('FileKeyValueStore read/write/delete round-trip', () async {

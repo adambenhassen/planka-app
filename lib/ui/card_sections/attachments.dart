@@ -12,6 +12,7 @@ class CardAttachmentsSection extends StatelessWidget {
     required this.attachments,
     required this.token,
     this.serverUrl,
+    this.accountId,
     required this.coverAttachmentId,
     required this.onUpload,
     required this.onDelete,
@@ -22,6 +23,7 @@ class CardAttachmentsSection extends StatelessWidget {
   final List<PlankaAttachment> attachments;
   final String? token;
   final String? serverUrl;
+  final String? accountId;
   final String? coverAttachmentId;
   final void Function(String filePath, String name) onUpload;
   final ValueChanged<String> onDelete;
@@ -61,7 +63,10 @@ class CardAttachmentsSection extends StatelessWidget {
                     child: CachedNetworkImage(
                       imageUrl: thumb!,
                       httpHeaders: thumbHeaders,
-                      cacheManager: plankaImageCacheManager,
+                      cacheManager: plankaImageCacheManager.forAccount(
+                          accountId ?? 'server:$serverUrl'),
+                      cacheKey: plankaImageCacheKey(
+                          accountId ?? 'server:$serverUrl', thumb),
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,

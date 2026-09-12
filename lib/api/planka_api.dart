@@ -1,7 +1,15 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:file/file.dart' as file;
+import 'package:file/local.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 
+import '../cache_purge.dart';
 import 'envelope.dart';
 
 class ApiException implements Exception {
@@ -113,15 +121,230 @@ class _NoRedirectClient extends http.BaseClient {
   void close() => _client.close();
 }
 
-final FileService plankaImageFileService =
-    HttpFileService(httpClient: _NoRedirectClient());
-
-final CacheManager plankaImageCacheManager = CacheManager(
-  Config(
-    'planka-images',
-    fileService: plankaImageFileService,
-  ),
+final FileService plankaImageFileService = HttpFileService(
+  httpClient: _NoRedirectClient(),
 );
+
+typedef AccountImageCacheFactory = BaseCacheManager Function(String accountId);
+
+/// Stable cache key for one authenticated media URL and one account.
+///
+/// Both parts are hashed so neither a URL query credential nor an account
+/// identifier can become a raw cache identity or filesystem name.
+String plankaImageCacheKey(String accountId, String imageUrl) =>
+    'planka-image-${sha256.convert(utf8.encode('$accountId\u0000$imageUrl'))}';
+
+String _plankaImageCacheNamespace(String accountId) =>
+    'planka-images-${sha256.convert(utf8.encode(accountId))}';
+
+/// Owns one persistent media cache namespace per account.
+///
+/// A manager is recreated from the same deterministic namespace after a
+/// process restart, while [purgeAccount] only empties the requested account's
+/// namespace.
+class AccountImageCacheManager {
+  AccountImageCacheManager({
+    AccountImageCacheFactory? createManager,
+    Directory? directory,
+  }) : _createManager = createManager ??
+            ((accountId) => _createDefaultManager(accountId, directory));
+
+  final AccountImageCacheFactory _createManager;
+  final Map<String, BaseCacheManager> _managers = {};
+
+  BaseCacheManager forAccount(String accountId) {
+    if (accountId.isEmpty) {
+      throw ArgumentError.value(accountId, 'accountId');
+    }
+    return _managers.putIfAbsent(accountId, () => _createManager(accountId));
+  }
+
+  /// Removes every media entry in one account namespace and verifies that a
+  /// fresh manager over the same on-disk namespace is empty before returning.
+  Future<void> purgeAccount(String accountId) async {
+    if (accountId.isEmpty) {
+      throw ArgumentError.value(accountId, 'accountId');
+    }
+    BaseCacheManager manager;
+    try {
+      manager = _managers.remove(accountId) ?? _createManager(accountId);
+    } catch (e, s) {
+      throw CachePurgeException('media', e, s);
+    }
+
+    Object? firstFailure;
+    StackTrace? firstFailureStack;
+    final targets = await _mediaFiles(manager, (e, s) {
+      firstFailure ??= e;
+      firstFailureStack ??= s;
+    });
+    if (targets != null) {
+      if (manager case CacheManager concrete) {
+        concrete.store.emptyMemoryCache();
+      }
+      await Future.wait(
+        targets.map((target) async {
+          try {
+            if (await target.exists()) await target.delete();
+          } catch (e, s) {
+            firstFailure ??= e;
+            firstFailureStack ??= s;
+          }
+        }),
+      );
+      for (final target in targets) {
+        try {
+          if (await target.exists()) {
+            firstFailure ??= StateError('Media cache targets remain');
+            firstFailureStack ??= StackTrace.current;
+          }
+        } catch (e, s) {
+          firstFailure ??= e;
+          firstFailureStack ??= s;
+        }
+      }
+    }
+    try {
+      if (firstFailure == null) {
+        await manager.emptyCache();
+        await _verifyEmpty(manager);
+      }
+    } catch (e, s) {
+      firstFailure ??= e;
+      firstFailureStack ??= s;
+    }
+
+    try {
+      await manager.dispose();
+    } catch (e, s) {
+      firstFailure ??= e;
+      firstFailureStack ??= s;
+    }
+
+    if (firstFailure == null) {
+      BaseCacheManager? reconstructed;
+      try {
+        reconstructed = _createManager(accountId);
+        await _verifyEmpty(reconstructed);
+      } catch (e, s) {
+        firstFailure = e;
+        firstFailureStack = s;
+      } finally {
+        try {
+          await reconstructed?.dispose();
+        } catch (e, s) {
+          firstFailure ??= e;
+          firstFailureStack ??= s;
+        }
+      }
+    }
+
+    if (firstFailure != null) {
+      throw CachePurgeException(
+        'media',
+        firstFailure!,
+        firstFailureStack ?? StackTrace.current,
+      );
+    }
+  }
+
+  Future<void> dispose() async {
+    final managers = _managers.values.toList();
+    _managers.clear();
+    Object? firstFailure;
+    StackTrace? firstFailureStack;
+    await Future.wait(
+      managers.map((manager) async {
+        try {
+          await manager.dispose();
+        } catch (e, s) {
+          firstFailure ??= e;
+          firstFailureStack ??= s;
+        }
+      }),
+    );
+    if (firstFailure != null) {
+      throw CachePurgeException(
+        'media',
+        firstFailure!,
+        firstFailureStack ?? StackTrace.current,
+      );
+    }
+  }
+
+  static BaseCacheManager _createDefaultManager(
+      String accountId, Directory? directory) {
+    final namespace = _plankaImageCacheNamespace(accountId);
+    if (directory == null) {
+      return CacheManager(
+        Config(namespace, fileService: plankaImageFileService),
+      );
+    }
+    final local = LocalFileSystem();
+    return CacheManager(
+      Config(
+        namespace,
+        repo: JsonCacheInfoRepository.withFile(
+            local.file(p.join(directory.path, '$namespace.json'))),
+        fileSystem: _DirectoryFileSystem(
+            local.directory(p.join(directory.path, namespace))),
+        fileService: plankaImageFileService,
+      ),
+    );
+  }
+
+  Future<List<file.File>?> _mediaFiles(
+      BaseCacheManager manager, void Function(Object, StackTrace) onFailure) async {
+    if (manager case CacheManager concrete) {
+      final repository = concrete.config.repo;
+      try {
+        await repository.open();
+        final objects = await repository.getAllObjects();
+        return await Future.wait(objects.map((object) =>
+            concrete.config.fileSystem.createFile(object.relativePath)));
+      } catch (e, s) {
+        onFailure(e, s);
+      } finally {
+        try {
+          await repository.close();
+        } catch (e, s) {
+          onFailure(e, s);
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<void> _verifyEmpty(BaseCacheManager manager) async {
+    if (manager case CacheManager concrete) {
+      final repository = concrete.config.repo;
+      await repository.open();
+      try {
+        final entries = await repository.getAllObjects();
+        if (entries.isNotEmpty) {
+          throw StateError('Media cache entries remain');
+        }
+      } finally {
+        await repository.close();
+      }
+    }
+  }
+}
+
+final AccountImageCacheManager plankaImageCacheManager =
+    AccountImageCacheManager();
+
+class _DirectoryFileSystem implements FileSystem {
+  _DirectoryFileSystem(this._directory);
+
+  final file.Directory _directory;
+
+  @override
+  Future<file.File> createFile(String name) async {
+    await _directory.create(recursive: true);
+    return _directory.childFile(name);
+  }
+}
 
 /// The `Authorization` header value for token auth. Single source for the REST
 /// interceptor, the accept-terms call, and the socket handshake.

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../api/envelope.dart';
+import '../cache_purge.dart';
 
 final envelopeCacheProvider = Provider<EnvelopeCache>((_) => EnvelopeCache());
 
@@ -60,6 +61,46 @@ class EnvelopeCache {
     }
   }
 
+  /// Removes every envelope whose decoded logical key starts with
+  /// [accountId] followed by a separator. The decoded comparison is
+  /// intentional: comparing encoded filenames would make account boundaries
+  /// depend on the encoding rather than the cache-key contract.
+  Future<void> purgeAccount(String accountId) async {
+    final prefix = '$accountId-';
+    final directory = await _directory();
+    final targets = <FileSystemEntity>[];
+    await for (final entry in directory.list(followLinks: false)) {
+      final key = _decodedKey(entry);
+      if (key != null && key.startsWith(prefix)) targets.add(entry);
+    }
+
+    Object? firstFailure;
+    StackTrace? firstFailureStack;
+    await Future.wait(
+      targets.map((target) async {
+        try {
+          await target.delete();
+        } catch (e, s) {
+          firstFailure ??= e;
+          firstFailureStack ??= s;
+        }
+      }),
+    );
+
+    final remaining = <FileSystemEntity>[];
+    await for (final entry in directory.list(followLinks: false)) {
+      final key = _decodedKey(entry);
+      if (key != null && key.startsWith(prefix)) remaining.add(entry);
+    }
+    if (firstFailure != null || remaining.isNotEmpty) {
+      throw CachePurgeException(
+        'envelopes',
+        firstFailure ?? StateError('Envelope cache targets remain'),
+        firstFailureStack ?? StackTrace.current,
+      );
+    }
+  }
+
   /// Fetches via [fetch], caching the result under [key]; on failure falls
   /// back to the cached copy, rethrowing only when there is none.
   Future<Envelope> fetchOrCached(
@@ -85,5 +126,25 @@ class EnvelopeCache {
     final env = await fetch();
     await put(key, env);
     return env;
+  }
+
+  Future<Directory> _directory() async {
+    final base = _override ?? await getApplicationSupportDirectory();
+    final dir = Directory('${base.path}/envelope_cache');
+    await dir.create(recursive: true);
+    return dir;
+  }
+
+  String? _decodedKey(FileSystemEntity entry) {
+    final name = entry.uri.pathSegments
+        .lastWhere((segment) => segment.isNotEmpty, orElse: () => '');
+    if (!name.endsWith('.json')) return null;
+    try {
+      return utf8.decode(
+        base64Url.decode(name.substring(0, name.length - '.json'.length)),
+      );
+    } on FormatException {
+      return null;
+    }
   }
 }

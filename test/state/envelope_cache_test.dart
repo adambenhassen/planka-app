@@ -76,4 +76,50 @@ void main() {
         throwsException);
     expect((await cache.get('k'))!.item['name'], 'stale');
   });
+  test('purges one account by its complete decoded key prefix', () async {
+    const account = 'https://planka.example#user';
+    const substringAccount = 'https://planka.example#user2';
+    final accountKey = '$account-projects';
+    final otherKey = '$substringAccount-projects';
+    final accountDetailKey = '$account-project-42';
+    final exactAccountKey = account;
+
+    await cache.put(accountKey, env('account'));
+    await cache.put(otherKey, env('substring'));
+    await cache.put(accountDetailKey, env('detail'));
+    await cache.put(exactAccountKey, env('exact'));
+
+    await cache.purgeAccount(account);
+
+    expect(await cache.get(accountKey), isNull);
+    expect(await cache.get(accountDetailKey), isNull);
+    expect((await cache.get(otherKey))!.item['name'], 'substring');
+    expect((await cache.get(exactAccountKey))!.item['name'], 'exact');
+
+    final reconstructed = EnvelopeCache(directory: dir);
+    expect(await reconstructed.get(accountKey), isNull);
+    expect(await reconstructed.get(accountDetailKey), isNull);
+    expect((await reconstructed.get(otherKey))!.item['name'], 'substring');
+    expect((await reconstructed.get(exactAccountKey))!.item['name'], 'exact');
+  });
+
+  test('account purge reports a target that cannot be deleted', () async {
+    const account = 'https://planka.example#user';
+    const otherAccount = 'https://planka.example#user2';
+    final blockedKey = '$account-projects';
+    final otherKey = '$otherAccount-projects';
+    await cache.put(blockedKey, env('blocked'));
+    await cache.put(otherKey, env('other'));
+
+    final encoded = base64Url.encode(utf8.encode(blockedKey));
+    final blockedFile = File('${dir.path}/envelope_cache/$encoded.json');
+    await blockedFile.delete();
+    final blockedDirectory = Directory(blockedFile.path);
+    await blockedDirectory.create();
+    await File('${blockedDirectory.path}/still-present').writeAsString('x');
+
+    await expectLater(cache.purgeAccount(account), throwsException);
+    expect(await blockedDirectory.exists(), isTrue);
+    expect((await cache.get(otherKey))!.item['name'], 'other');
+  });
 }

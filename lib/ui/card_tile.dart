@@ -113,7 +113,8 @@ class CardTile extends ConsumerWidget {
               CachedNetworkImage(
                 imageUrl: coverUrl!,
                 httpHeaders: coverHeaders,
-                cacheManager: plankaImageCacheManager,
+                cacheManager: plankaImageCacheManager.forAccount(account!.id),
+                cacheKey: plankaImageCacheKey(account.id, coverUrl),
                 width: double.infinity,
                 fit: BoxFit.fitWidth,
                 imageBuilder: (_, imageProvider) => Image(
