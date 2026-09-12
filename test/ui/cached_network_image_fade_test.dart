@@ -208,7 +208,7 @@ void main() {
           expect(tester.widget<FadeTransition>(fade).opacity.value, 1);
         }
       },
-      createHttpClient: (context) => HttpClient(context),
+      createHttpClient: (_) => HttpClient(),
     );
   });
 }
