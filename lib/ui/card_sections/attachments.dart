@@ -54,6 +54,7 @@ class CardAttachmentsSection extends StatelessWidget {
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
+                      fadeInDuration: const Duration(milliseconds: 500),
                       imageBuilder: (_, imageProvider) => Image(
                         key: ValueKey<String>(
                             'store-capture-loaded-attachment:${a.name}'),
@@ -62,6 +63,7 @@ class CardAttachmentsSection extends StatelessWidget {
                         height: 48,
                         fit: BoxFit.cover,
                       ),
+                      placeholder: (_, _) => const SizedBox.shrink(),
                       errorWidget: (_, error, _) {
                         debugPrint(
                             'Store capture image failed: attachment ${a.name} $thumb: $error');
