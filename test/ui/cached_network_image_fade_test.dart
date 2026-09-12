@@ -82,7 +82,9 @@ class _ControlledCacheManager implements BaseCacheManager {
     String? key,
     Map<String, String>? headers,
   }) =>
-      getFileStream(url, key: key, headers: headers).whereType<FileInfo>();
+      getFileStream(url, key: key, headers: headers)
+          .where((response) => response is FileInfo)
+          .cast<FileInfo>();
 
   @override
   Future<file.File> getSingleFile(
@@ -91,7 +93,8 @@ class _ControlledCacheManager implements BaseCacheManager {
     Map<String, String>? headers,
   }) async =>
       (await getFileStream(url, key: key, headers: headers)
-              .whereType<FileInfo>()
+              .where((response) => response is FileInfo)
+              .cast<FileInfo>()
               .first)
           .file;
 
@@ -103,7 +106,8 @@ class _ControlledCacheManager implements BaseCacheManager {
     bool force = false,
   }) async =>
       (await getFileStream(url, key: key, headers: authHeaders)
-              .whereType<FileInfo>()
+              .where((response) => response is FileInfo)
+              .cast<FileInfo>()
               .first);
 
   @override
