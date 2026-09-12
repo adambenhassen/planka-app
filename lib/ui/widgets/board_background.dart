@@ -79,6 +79,7 @@ class BoardBackgroundView extends StatelessWidget {
     return CachedNetworkImage(
       imageUrl: url!,
       httpHeaders: headers,
+      cacheManager: plankaImageCacheManager,
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,

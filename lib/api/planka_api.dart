@@ -1,4 +1,6 @@
 import 'package:dio/dio.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:http/http.dart' as http;
 
 import 'envelope.dart';
 
@@ -93,6 +95,30 @@ int _originPort(Uri uri) {
     _ => -1,
   };
 }
+
+/// Cached media requests carry the session cookie in their headers. Disabling
+/// redirects keeps a response from replaying that cookie to another origin.
+class _NoRedirectClient extends http.BaseClient {
+  _NoRedirectClient() : _client = http.Client();
+
+  final http.Client _client;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.followRedirects = false;
+    return _client.send(request);
+  }
+
+  @override
+  void close() => _client.close();
+}
+
+final CacheManager plankaImageCacheManager = CacheManager(
+  Config(
+    'planka-images',
+    fileService: HttpFileService(httpClient: _NoRedirectClient()),
+  ),
+);
 
 /// The `Authorization` header value for token auth. Single source for the REST
 /// interceptor, the accept-terms call, and the socket handshake.
@@ -244,7 +270,14 @@ class PlankaApi {
       throw ApiException(null, 'Invalid download URL');
     }
     try {
-      await dio.download(url, savePath, options: Options(headers: headers));
+      await dio.download(
+        url,
+        savePath,
+        options: Options(
+          headers: headers,
+          followRedirects: false,
+        ),
+      );
     } on DioException catch (e) {
       // Same session-expiry handling as _request: 401 with a token means the
       // session died, so kick off the re-login flow.

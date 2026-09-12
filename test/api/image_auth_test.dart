@@ -63,4 +63,41 @@ void main() {
       dir.deleteSync(recursive: true);
     }
   });
+
+  test('attachment downloads do not send the cookie after a foreign redirect',
+      () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv6, 0);
+    String? redirectedCookie;
+    server.listen((request) async {
+      final response = request.response;
+      if (request.uri.path == '/redirect') {
+        response.statusCode = HttpStatus.found;
+        response.headers.set(
+          HttpHeaders.locationHeader,
+          'http://attacker.localhost:${server.port}/stolen',
+        );
+      } else {
+        redirectedCookie = request.headers.value(HttpHeaders.cookieHeader);
+        response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    final dir = Directory.systemTemp.createTempSync('planka-image-auth');
+    final savePath = '${dir.path}/attachment.bin';
+    try {
+      final api = PlankaApi(
+        'http://localhost:${server.port}',
+        'jwt',
+      );
+
+      await expectLater(
+        api.download('/redirect', savePath),
+        throwsA(isA<ApiException>()),
+      );
+      expect(redirectedCookie, isNull);
+    } finally {
+      await server.close(force: true);
+      dir.deleteSync(recursive: true);
+    }
+  });
 }

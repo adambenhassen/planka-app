@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -85,5 +87,41 @@ void main() {
     ));
 
     expect(find.byType(CachedNetworkImage), findsNothing);
+  });
+
+  testWidgets(
+      'same-origin board background does not send cookie after foreign redirect',
+      (tester) async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv6, 0);
+    String? redirectedCookie;
+    server.listen((request) async {
+      final response = request.response;
+      if (request.uri.path == '/redirect') {
+        response.statusCode = HttpStatus.found;
+        response.headers.set(
+          HttpHeaders.locationHeader,
+          'http://attacker.localhost:${server.port}/stolen',
+        );
+      } else {
+        redirectedCookie = request.headers.value(HttpHeaders.cookieHeader);
+        response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    try {
+      await tester.pumpWidget(host(
+        imageUrl: 'http://localhost:${server.port}/redirect',
+        serverUrl: 'http://localhost:${server.port}',
+      ));
+      await tester.pumpAndSettle();
+
+      expect(redirectedCookie, isNull);
+      expect(
+        find.byKey(const ValueKey<String>('store-capture-image-error')),
+        findsOneWidget,
+      );
+    } finally {
+      await server.close(force: true);
+    }
   });
 }

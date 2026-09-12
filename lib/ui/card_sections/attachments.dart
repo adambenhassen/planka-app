@@ -61,6 +61,7 @@ class CardAttachmentsSection extends StatelessWidget {
                     child: CachedNetworkImage(
                       imageUrl: thumb!,
                       httpHeaders: thumbHeaders,
+                      cacheManager: plankaImageCacheManager,
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
