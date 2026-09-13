@@ -308,46 +308,74 @@ void main() {
     },
   );
 
-  test(
-    'blocked pending and failed markers fail closed live and cold',
-    () async {
-      const account = 'https://planka.example#blocked-marker-paths';
-      const otherAccount = 'https://planka.example#other-blocked-markers';
-      final key = '$account-projects';
-      final otherKey = '$otherAccount-projects';
-      await cache.put(key, env('stale'));
-      await cache.put(otherKey, env('other'));
+  for (final marker in const ['pending', 'failed', 'invalidated']) {
+    test(
+      'a blocked .$marker marker fails closed live and cold',
+      () async {
+        if (Platform.isWindows) return;
+        final account = 'https://planka.example#blocked-$marker-marker';
+        final otherAccount =
+            'https://planka.example#other-blocked-$marker-marker';
+        final key = '$account-projects';
+        final otherKey = '$otherAccount-projects';
+        await cache.put(key, env('stale'));
+        await cache.put(otherKey, env('other'));
 
-      final accountHash = sha256.convert(utf8.encode(account));
-      final keyHash = sha256.convert(utf8.encode(key));
-      final current = File(
-        '${dir.path}/envelope_cache/account-$accountHash/$keyHash.json',
-      );
-      final pending = Directory(
-        '${dir.path}/envelope_cache_delete_intents/account-$accountHash/$keyHash.pending',
-      );
-      final failed = Directory(
-        '${dir.path}/envelope_cache_fail_closed/account-$accountHash/$keyHash.failed',
-      );
-      final invalidated = Directory(
-        '${dir.path}/envelope_cache_invalidations/account-$accountHash/$keyHash.invalidated',
-      );
-      await pending.create(recursive: true);
-      await failed.create(recursive: true);
-      await invalidated.create(recursive: true);
+        final accountHash = sha256.convert(utf8.encode(account));
+        final keyHash = sha256.convert(utf8.encode(key));
+        final current = File(
+          '${dir.path}/envelope_cache/account-$accountHash/$keyHash.json',
+        );
+        final markerPaths = <String, File>{
+          'pending': File(
+            '${dir.path}/envelope_cache_delete_intents/account-$accountHash/$keyHash.pending',
+          ),
+          'failed': File(
+            '${dir.path}/envelope_cache_fail_closed/account-$accountHash/$keyHash.failed',
+          ),
+          'invalidated': File(
+            '${dir.path}/envelope_cache_invalidations/account-$accountHash/$keyHash.invalidated',
+          ),
+        };
+        final blocked = Directory(markerPaths[marker]!.path);
+        await blocked.create(recursive: true);
+        await chmod('0555', current.parent.path);
 
-      await expectLater(
-        cache.delete(key),
-        throwsA(isA<CachePurgeException>()),
-      );
-      expect(await current.exists(), isTrue);
-      expect(await cache.get(key), isNull);
+        try {
+          await expectLater(
+            cache.delete(key),
+            throwsA(isA<CachePurgeException>()),
+          );
+          // The target remains, while any regular fallback markers are
+          // removed so the non-file path under test is the only obstruction.
+          for (final entry in markerPaths.entries) {
+            if (entry.key == marker) continue;
+            if (await entry.value.exists()) await entry.value.delete();
+          }
 
-      final cold = EnvelopeCache(directory: dir);
-      expect(await cold.get(key), isNull);
-      expect((await cold.get(otherKey))!.item['name'], 'other');
-    },
-  );
+          expect(await current.exists(), isTrue);
+          for (final entry in markerPaths.entries) {
+            expect(
+              await FileSystemEntity.type(
+                entry.value.path,
+                followLinks: false,
+              ),
+              entry.key == marker
+                  ? FileSystemEntityType.directory
+                  : FileSystemEntityType.notFound,
+            );
+          }
+          expect(await cache.get(key), isNull);
+
+          final cold = EnvelopeCache(directory: dir);
+          expect(await cold.get(key), isNull);
+          expect((await cold.get(otherKey))!.item['name'], 'other');
+        } finally {
+          await chmod('0755', current.parent.path);
+        }
+      },
+    );
+  }
 
   test(
     'purge blocks new writes and drains an admitted fetch before cold purge',
