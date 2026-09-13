@@ -12,6 +12,7 @@ class CardAttachmentsSection extends StatelessWidget {
     required this.attachments,
     required this.token,
     this.serverUrl,
+    this.accountId,
     required this.coverAttachmentId,
     required this.onUpload,
     required this.onDelete,
@@ -22,6 +23,7 @@ class CardAttachmentsSection extends StatelessWidget {
   final List<PlankaAttachment> attachments;
   final String? token;
   final String? serverUrl;
+  final String? accountId;
   final String? coverAttachmentId;
   final void Function(String filePath, String name) onUpload;
   final ValueChanged<String> onDelete;
@@ -46,7 +48,10 @@ class CardAttachmentsSection extends StatelessWidget {
         ...attachments.map((a) {
           final thumb = a.listThumbnailUrl;
           final thumbHeaders =
-              thumb == null || token == null || serverUrl == null
+              thumb == null ||
+                  token == null ||
+                  serverUrl == null ||
+                  accountId == null
                   ? null
                   : imageAuthHeaders(
                       token!,
@@ -61,21 +66,22 @@ class CardAttachmentsSection extends StatelessWidget {
                     child: CachedNetworkImage(
                       imageUrl: thumb!,
                       httpHeaders: thumbHeaders,
-                      cacheManager: plankaImageCacheManager,
+                      cacheManager: plankaImageCacheManager.forAccount(
+                          accountId!, token: token),
+                      cacheKey: plankaImageCacheKey(accountId!, thumb),
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
                       imageBuilder: (_, imageProvider) => Image(
                         key: ValueKey<String>(
-                            'store-capture-loaded-attachment:${a.name}'),
+                            'store-capture-loaded-attachment:${a.id}'),
                         image: imageProvider,
                         width: 48,
                         height: 48,
                         fit: BoxFit.cover,
                       ),
                       errorWidget: (_, error, _) {
-                        debugPrint(
-                            'Store capture image failed: attachment ${a.name} $thumb: $error');
+                        debugPrint('Store capture attachment image failed');
                         return Icon(
                           Icons.broken_image_outlined,
                           key: ValueKey<String>(

@@ -6,6 +6,7 @@ import '../api/planka_api.dart';
 import '../api/planka_socket.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
+import '../security_redaction.dart';
 
 final notificationsProvider =
     AsyncNotifierProvider<NotificationsNotifier, List<PlankaNotification>>(
@@ -30,7 +31,8 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     // surface it. ponytail: no degraded-state indicator — add one if stale
     // notification counts become a visible problem.
     socket.events.listen(applyEvent,
-        onError: (Object e) => debugPrint('notifications socket error: $e'));
+        onError: (Object e) =>
+            debugPrint('notifications socket error: ${redactDiagnostic(e)}'));
     await socket.connect();
     final env = await _repo.notifications();
     return env.items.map(PlankaNotification.fromJson).toList();

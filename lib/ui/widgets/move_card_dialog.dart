@@ -6,6 +6,7 @@ import '../../api/models.dart';
 import '../../api/repositories.dart';
 import '../../auth/auth_providers.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../security_redaction.dart';
 import '../../state/board_state.dart';
 import '../../state/positions.dart';
 import '../../state/projects_state.dart';
@@ -127,7 +128,7 @@ class _MoveCardDialogState extends ConsumerState<_MoveCardDialog> {
                   );
                 }
                 if (snapshot.hasError) {
-                  return Text('${snapshot.error}');
+                  return Text(redactDiagnostic(snapshot.error));
                 }
                 final lists = snapshot.data!.included.lists.where((l) =>
                     l.type == PlankaListType.active ||

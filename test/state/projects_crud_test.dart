@@ -9,15 +9,18 @@ import 'package:planka_app/api/models.dart';
 import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
+import 'package:planka_app/cache_purge.dart';
 import 'package:planka_app/state/envelope_cache.dart';
 import 'package:planka_app/state/projects_state.dart';
+import 'package:planka_app/state/user_socket.dart';
 
 /// The default fixed account used by the tests.
 final Account _fixed = Account(
-    serverUrl: 'https://planka.example.com',
-    token: 'tok',
-    userId: 'u1',
-    displayName: 'Test');
+  serverUrl: 'https://planka.example.com',
+  token: 'tok',
+  userId: 'u1',
+  displayName: 'Test',
+);
 
 /// The default account's cache key.
 const String _defaultKey = 'https://planka.example.com#u1-projects';
@@ -45,6 +48,20 @@ class _MutableAccount extends CurrentAccountNotifier {
     this.account = account;
     state = account;
   }
+}
+
+class _FailingDeleteEnvelopeCache extends EnvelopeCache {
+  _FailingDeleteEnvelopeCache({required Directory directory})
+    : super(directory: directory);
+
+  @override
+  Future<void> delete(String key) => Future<void>.error(
+    CachePurgeException(
+      'envelopes',
+      StateError('cache cleanup failed'),
+      StackTrace.current,
+    ),
+  );
 }
 
 Map<String, dynamic> _fixture() =>
@@ -123,9 +140,11 @@ void main() {
   /// state rather than awaiting the provider's future, which Riverpod does
   /// not complete once a build has errored.
   Future<void> settle(ProviderContainer container) async {
-    for (var i = 0;
-        i < 200 && container.read(projectsProvider).isLoading;
-        i++) {
+    for (
+      var i = 0;
+      i < 200 && container.read(projectsProvider).isLoading;
+      i++
+    ) {
       await Future<void>.delayed(const Duration(milliseconds: 1));
       await container.pump();
     }
@@ -140,15 +159,17 @@ void main() {
     bool initialLoad = true,
   }) async {
     final api = _FakeApi();
-    final dir = cacheDir ??
-        Directory.systemTemp.createTempSync('projects_crud_cache');
+    final dir =
+        cacheDir ?? Directory.systemTemp.createTempSync('projects_crud_cache');
     if (cacheDir == null) addTearDown(() => dir.deleteSync(recursive: true));
     final active = account ?? _fixed;
-    final container = ProviderContainer(overrides: [
-      apiProvider.overrideWithValue(api),
-      currentAccountProvider.overrideWith(() => _FixedAccount(active)),
-      envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: dir)),
-    ]);
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        currentAccountProvider.overrideWith(() => _FixedAccount(active)),
+        envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: dir)),
+      ],
+    );
     if (initialLoad) await container.read(projectsProvider.future);
     return (container, container.read(projectsProvider.notifier), api);
   }
@@ -184,16 +205,25 @@ void main() {
     PlankaProject p(String id, {bool favorite = false}) =>
         PlankaProject(id: id, name: id, isFavorite: favorite);
     const nullFavorite = PlankaProject(id: 'x', name: 'x');
-    final view = ProjectsView(projects: [
-      p('a'),
-      p('b', favorite: true),
-      p('c'),
-      p('d', favorite: true),
-      nullFavorite,
-    ], boards: const [], backgroundImages: const []);
+    final view = ProjectsView(
+      projects: [
+        p('a'),
+        p('b', favorite: true),
+        p('c'),
+        p('d', favorite: true),
+        nullFavorite,
+      ],
+      boards: const [],
+      backgroundImages: const [],
+    );
 
-    expect(view.orderedProjects.map((p) => p.id).toList(),
-        ['b', 'd', 'a', 'c', 'x']);
+    expect(view.orderedProjects.map((p) => p.id).toList(), [
+      'b',
+      'd',
+      'a',
+      'c',
+      'x',
+    ]);
   });
 
   test('a failed refresh after a successful mutation surfaces an error, '
@@ -207,8 +237,9 @@ void main() {
     // The mutation rejects with the refresh failure, so the caller can
     // surface it (guardMutation shows the snackbar).
     await expectLater(
-        notifier.setProjectFavorite('p1', favorite: true),
-        throwsA(isA<ApiException>()));
+      notifier.setProjectFavorite('p1', favorite: true),
+      throwsA(isA<ApiException>()),
+    );
 
     expect(api.calls, ['PATCH /projects/p1']);
 
@@ -218,14 +249,53 @@ void main() {
     expect(state.error, isA<ApiException>());
   });
 
+  test(
+    'combined refresh and cache cleanup failure publishes a sanitized error',
+    () async {
+      final api = _FakeApi();
+      final cacheDir = Directory.systemTemp.createTempSync(
+        'projects_crud_cleanup_failure',
+      );
+      addTearDown(() => cacheDir.deleteSync(recursive: true));
+      final container = ProviderContainer(
+        overrides: [
+          apiProvider.overrideWithValue(api),
+          currentAccountProvider.overrideWith(() => _FixedAccount(_fixed)),
+          userEventsProvider.overrideWithValue(const Stream.empty()),
+          userConnectedProvider.overrideWithValue(const Stream.empty()),
+          envelopeCacheProvider.overrideWithValue(
+            _FailingDeleteEnvelopeCache(directory: cacheDir),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(projectsProvider.future);
+
+      api.failGets = true;
+      await expectLater(
+        container
+            .read(projectsProvider.notifier)
+            .setProjectFavorite('p1', favorite: true),
+        throwsA(isA<CachePurgeException>()),
+      );
+
+      final state = container.read(projectsProvider);
+      expect(state.hasError, isTrue);
+      expect(state.value, isNull);
+      expect(state.error, isA<CachePurgeException>());
+    },
+  );
+
   test('a successful mutation leaves the offline cache holding the '
       'post-mutation state', () async {
     final (container, notifier, api) = await boot();
     addTearDown(container.dispose);
 
     // Before the mutation the cache holds the initial load, unfavourited.
-    expect((await cached(container, _defaultKey))!.items[0]['isFavorite'],
-        isFalse);
+    expect(
+      (await cached(container, _defaultKey))!.items[0]['isFavorite'],
+      isFalse,
+    );
 
     // The server now reports the project favourited, so the post-mutation
     // refresh is distinguishable from the initial load.
@@ -253,13 +323,16 @@ void main() {
     addTearDown(container.dispose);
 
     // The initial load populated the cache with the pre-mutation copy.
-    expect((await cached(container, _defaultKey))!.items[0]['isFavorite'],
-        isFalse);
+    expect(
+      (await cached(container, _defaultKey))!.items[0]['isFavorite'],
+      isFalse,
+    );
 
     api.failGets = true;
     await expectLater(
-        notifier.setProjectFavorite('p1', favorite: true),
-        throwsA(isA<ApiException>()));
+      notifier.setProjectFavorite('p1', favorite: true),
+      throwsA(isA<ApiException>()),
+    );
 
     // The write landed but the confirming refresh failed, so the pre-mutation
     // copy must not remain available: the cache entry is deleted.
@@ -269,36 +342,43 @@ void main() {
   test('a cold start after a failed confirming refresh errors rather than '
       'serving the pre-mutation copy', () async {
     final api = _FakeApi();
-    final cacheDir =
-        Directory.systemTemp.createTempSync('projects_crud_cold');
+    final cacheDir = Directory.systemTemp.createTempSync('projects_crud_cold');
     addTearDown(() => cacheDir.deleteSync(recursive: true));
 
     // First "session": load (populates the cache), then a mutation whose
     // confirming refresh fails (deletes the stale copy).
-    final first = ProviderContainer(overrides: [
-      apiProvider.overrideWithValue(api),
-      currentAccountProvider.overrideWith(() => _FixedAccount(_fixed)),
-      envelopeCacheProvider
-          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
-    ]);
+    final first = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        currentAccountProvider.overrideWith(() => _FixedAccount(_fixed)),
+        envelopeCacheProvider.overrideWithValue(
+          EnvelopeCache(directory: cacheDir),
+        ),
+      ],
+    );
     await first.read(projectsProvider.future);
     api.failGets = true;
     await expectLater(
-        first.read(projectsProvider.notifier)
-            .setProjectFavorite('p1', favorite: true),
-        throwsA(isA<ApiException>()));
+      first
+          .read(projectsProvider.notifier)
+          .setProjectFavorite('p1', favorite: true),
+      throwsA(isA<ApiException>()),
+    );
     first.dispose();
 
     // "Cold start": a fresh container over the same on-disk cache, still
     // offline. It must not resurrect the pre-mutation copy — with the stale
     // entry gone and the server down, the load errors rather than serving
     // the old values.
-    final second = ProviderContainer(overrides: [
-      apiProvider.overrideWithValue(api),
-      currentAccountProvider.overrideWith(() => _FixedAccount(_fixed)),
-      envelopeCacheProvider
-          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
-    ]);
+    final second = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        currentAccountProvider.overrideWith(() => _FixedAccount(_fixed)),
+        envelopeCacheProvider.overrideWithValue(
+          EnvelopeCache(directory: cacheDir),
+        ),
+      ],
+    );
     addTearDown(second.dispose);
     second.read(projectsProvider); // start the build
     await settle(second);
@@ -311,19 +391,22 @@ void main() {
   test('a failed write on one account leaves the other account\'s cache '
       'fallback intact', () async {
     final api = _FakeApi();
-    final cacheDir =
-        Directory.systemTemp.createTempSync('projects_crud_accounts');
+    final cacheDir = Directory.systemTemp.createTempSync(
+      'projects_crud_accounts',
+    );
     addTearDown(() => cacheDir.deleteSync(recursive: true));
     final accountA = Account(
-        serverUrl: 'https://a.example.com',
-        token: 'tok',
-        userId: 'u1',
-        displayName: 'A');
+      serverUrl: 'https://a.example.com',
+      token: 'tok',
+      userId: 'u1',
+      displayName: 'A',
+    );
     final accountB = Account(
-        serverUrl: 'https://b.example.com',
-        token: 'tok',
-        userId: 'u1',
-        displayName: 'B');
+      serverUrl: 'https://b.example.com',
+      token: 'tok',
+      userId: 'u1',
+      displayName: 'B',
+    );
     final keyA = '${accountA.id}-projects';
     final keyB = '${accountB.id}-projects';
 
@@ -334,16 +417,23 @@ void main() {
     await cache.put(keyB, good);
 
     // A failed confirming refresh on account A deletes only A's key.
-    final containerA = ProviderContainer(overrides: [
-      apiProvider.overrideWithValue(api),
-      currentAccountProvider.overrideWith(() => _FixedAccount(accountA)),
-      envelopeCacheProvider
-          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
-    ]);
+    final containerA = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        currentAccountProvider.overrideWith(() => _FixedAccount(accountA)),
+        envelopeCacheProvider.overrideWithValue(
+          EnvelopeCache(directory: cacheDir),
+        ),
+      ],
+    );
     addTearDown(containerA.dispose);
     api.failGets = true;
-    await expectLater(containerA.read(projectsProvider.notifier)
-        .setProjectFavorite('p1', favorite: true), throwsA(isA<ApiException>()));
+    await expectLater(
+      containerA
+          .read(projectsProvider.notifier)
+          .setProjectFavorite('p1', favorite: true),
+      throwsA(isA<ApiException>()),
+    );
 
     // A's stale copy is gone; B's is untouched, so B can still fall back to
     // its last good copy while offline.
@@ -354,19 +444,22 @@ void main() {
   test('a write in flight across an account switch cleans up the write\'s '
       'account, not the newly active one', () async {
     final api = _FakeApi();
-    final cacheDir =
-        Directory.systemTemp.createTempSync('projects_crud_switch');
+    final cacheDir = Directory.systemTemp.createTempSync(
+      'projects_crud_switch',
+    );
     addTearDown(() => cacheDir.deleteSync(recursive: true));
     final accountA = Account(
-        serverUrl: 'https://a.example.com',
-        token: 'tok',
-        userId: 'u1',
-        displayName: 'A');
+      serverUrl: 'https://a.example.com',
+      token: 'tok',
+      userId: 'u1',
+      displayName: 'A',
+    );
     final accountB = Account(
-        serverUrl: 'https://b.example.com',
-        token: 'tok',
-        userId: 'u1',
-        displayName: 'B');
+      serverUrl: 'https://b.example.com',
+      token: 'tok',
+      userId: 'u1',
+      displayName: 'B',
+    );
     final keyA = '${accountA.id}-projects';
     final keyB = '${accountB.id}-projects';
     final cache = EnvelopeCache(directory: cacheDir);
@@ -376,12 +469,15 @@ void main() {
     await cache.put(keyB, good);
 
     final mutable = _MutableAccount()..account = accountA;
-    final container = ProviderContainer(overrides: [
-      apiProvider.overrideWithValue(api),
-      currentAccountProvider.overrideWith(() => mutable),
-      envelopeCacheProvider
-          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
-    ]);
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        currentAccountProvider.overrideWith(() => mutable),
+        envelopeCacheProvider.overrideWithValue(
+          EnvelopeCache(directory: cacheDir),
+        ),
+      ],
+    );
     addTearDown(container.dispose);
     container.read(currentAccountProvider); // build the notifier
     await container.read(projectsProvider.future); // initial load as A
@@ -410,31 +506,38 @@ void main() {
   test('a background-image upload held in flight across an account switch '
       'sends its follow-up patch to the write\'s client', () async {
     final accountA = Account(
-        serverUrl: 'https://a.example.com',
-        token: 'tok',
-        userId: 'u1',
-        displayName: 'A');
+      serverUrl: 'https://a.example.com',
+      token: 'tok',
+      userId: 'u1',
+      displayName: 'A',
+    );
     final accountB = Account(
-        serverUrl: 'https://b.example.com',
-        token: 'tok',
-        userId: 'u1',
-        displayName: 'B');
+      serverUrl: 'https://b.example.com',
+      token: 'tok',
+      userId: 'u1',
+      displayName: 'B',
+    );
     // One client per account: if the follow-up patch is routed through the
     // ambient (newly active) client it lands on apiB, not apiA.
     final apiA = _FakeApi();
     final apiB = _FakeApi();
-    final cacheDir =
-        Directory.systemTemp.createTempSync('projects_crud_upload');
+    final cacheDir = Directory.systemTemp.createTempSync(
+      'projects_crud_upload',
+    );
     addTearDown(() => cacheDir.deleteSync(recursive: true));
 
     final mutable = _MutableAccount()..account = accountA;
-    final container = ProviderContainer(overrides: [
-      apiProvider.overrideWith((ref) =>
-          ref.watch(currentAccountProvider) == accountA ? apiA : apiB),
-      currentAccountProvider.overrideWith(() => mutable),
-      envelopeCacheProvider
-          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
-    ]);
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWith(
+          (ref) => ref.watch(currentAccountProvider) == accountA ? apiA : apiB,
+        ),
+        currentAccountProvider.overrideWith(() => mutable),
+        envelopeCacheProvider.overrideWithValue(
+          EnvelopeCache(directory: cacheDir),
+        ),
+      ],
+    );
     addTearDown(container.dispose);
     container.read(currentAccountProvider); // build the notifier
     await container.read(projectsProvider.future); // initial load as A
@@ -445,8 +548,13 @@ void main() {
     // the mutation — never B's.
     final gate = Completer<void>();
     apiA.postGate = gate;
-    final mutation = container.read(projectsProvider.notifier).setProjectBackgroundImage(
-        'p1', filePath: 'test/fixtures/projects_index.json', name: 'bg.png');
+    final mutation = container
+        .read(projectsProvider.notifier)
+        .setProjectBackgroundImage(
+          'p1',
+          filePath: 'test/fixtures/projects_index.json',
+          name: 'bg.png',
+        );
     // Let the upload reach the gate before switching accounts.
     await Future<void>.delayed(const Duration(milliseconds: 10));
     mutable.switchTo(accountB);
@@ -473,18 +581,22 @@ void main() {
   /// whose [apiProvider] resolves to a distinct fake per account (watching the
   /// account, like the real provider), so a state leak from one account into
   /// the other is detectable.
-  Future<(ProviderContainer, _MutableAccount, _FakeApi, _FakeApi)> bootSwitchable(
-      Account accountA, Account accountB, Directory cacheDir) async {
+  Future<(ProviderContainer, _MutableAccount, _FakeApi, _FakeApi)>
+  bootSwitchable(Account accountA, Account accountB, Directory cacheDir) async {
     final apiA = _FakeApi()..projectName = 'Project A';
     final apiB = _FakeApi()..projectName = 'Project B';
     final mutable = _MutableAccount()..account = accountA;
-    final container = ProviderContainer(overrides: [
-      apiProvider.overrideWith((ref) =>
-          ref.watch(currentAccountProvider) == accountA ? apiA : apiB),
-      currentAccountProvider.overrideWith(() => mutable),
-      envelopeCacheProvider
-          .overrideWithValue(EnvelopeCache(directory: cacheDir)),
-    ]);
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWith(
+          (ref) => ref.watch(currentAccountProvider) == accountA ? apiA : apiB,
+        ),
+        currentAccountProvider.overrideWith(() => mutable),
+        envelopeCacheProvider.overrideWithValue(
+          EnvelopeCache(directory: cacheDir),
+        ),
+      ],
+    );
     container.read(currentAccountProvider); // build the notifier
     await container.read(projectsProvider.future); // initial load as A
     return (container, mutable, apiA, apiB);
@@ -493,21 +605,27 @@ void main() {
   test('a mutation that completes after an account switch does not publish '
       'the captured account\'s data onto the new account\'s screen', () async {
     final accountA = Account(
-        serverUrl: 'https://a.example.com',
-        token: 'tok',
-        userId: 'u1',
-        displayName: 'A');
+      serverUrl: 'https://a.example.com',
+      token: 'tok',
+      userId: 'u1',
+      displayName: 'A',
+    );
     final accountB = Account(
-        serverUrl: 'https://b.example.com',
-        token: 'tok',
-        userId: 'u1',
-        displayName: 'B');
-    final cacheDir =
-        Directory.systemTemp.createTempSync('projects_crud_publish');
+      serverUrl: 'https://b.example.com',
+      token: 'tok',
+      userId: 'u1',
+      displayName: 'B',
+    );
+    final cacheDir = Directory.systemTemp.createTempSync(
+      'projects_crud_publish',
+    );
     addTearDown(() => cacheDir.deleteSync(recursive: true));
 
-    final (container, mutable, apiA, apiB) =
-        await bootSwitchable(accountA, accountB, cacheDir);
+    final (container, mutable, apiA, apiB) = await bootSwitchable(
+      accountA,
+      accountB,
+      cacheDir,
+    );
     addTearDown(container.dispose);
 
     // A's mutation is in flight (write landed, confirming refresh pending).
@@ -523,8 +641,10 @@ void main() {
     // new account, so B's own load settles while A's refresh is still pending.
     container.invalidate(projectsProvider);
     await settle(container);
-    expect(container.read(projectsProvider).value!.projects.first.name,
-        'Project B');
+    expect(
+      container.read(projectsProvider).value!.projects.first.name,
+      'Project B',
+    );
 
     // A's refresh now resolves with A's data. The notifier is not disposed by
     // the switch — it is preserved across the rebuild — so without the guard
@@ -538,61 +658,77 @@ void main() {
     await settle(container);
     final view = container.read(projectsProvider);
     expect(view.hasError, isFalse);
-    expect(view.value!.projects.first.name, 'Project B',
-        reason: 'A\'s late refresh must not publish A\'s data on B\'s screen');
+    expect(
+      view.value!.projects.first.name,
+      'Project B',
+      reason: 'A\'s late refresh must not publish A\'s data on B\'s screen',
+    );
   });
 
-  test('a mutation that fails after an account switch neither publishes the '
-      'captured account\'s error nor replaces it with a disposal error',
-      () async {
-    final accountA = Account(
+  test(
+    'a mutation that fails after an account switch neither publishes the '
+    'captured account\'s error nor replaces it with a disposal error',
+    () async {
+      final accountA = Account(
         serverUrl: 'https://a.example.com',
         token: 'tok',
         userId: 'u1',
-        displayName: 'A');
-    final accountB = Account(
+        displayName: 'A',
+      );
+      final accountB = Account(
         serverUrl: 'https://b.example.com',
         token: 'tok',
         userId: 'u1',
-        displayName: 'B');
-    final cacheDir =
-        Directory.systemTemp.createTempSync('projects_crud_publish_err');
-    addTearDown(() => cacheDir.deleteSync(recursive: true));
+        displayName: 'B',
+      );
+      final cacheDir = Directory.systemTemp.createTempSync(
+        'projects_crud_publish_err',
+      );
+      addTearDown(() => cacheDir.deleteSync(recursive: true));
 
-    final (container, mutable, apiA, apiB) =
-        await bootSwitchable(accountA, accountB, cacheDir);
-    addTearDown(container.dispose);
+      final (container, mutable, apiA, apiB) = await bootSwitchable(
+        accountA,
+        accountB,
+        cacheDir,
+      );
+      addTearDown(container.dispose);
 
-    // A's mutation is in flight (write landed, confirming refresh pending).
-    final gate = Completer<void>();
-    apiA.getGate = gate;
-    final mutation = container
-        .read(projectsProvider.notifier)
-        .setProjectFavorite('p1', favorite: true);
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    mutable.switchTo(accountB);
-    container.invalidate(projectsProvider);
-    await settle(container);
-    expect(container.read(projectsProvider).value!.projects.first.name,
-        'Project B');
+      // A's mutation is in flight (write landed, confirming refresh pending).
+      final gate = Completer<void>();
+      apiA.getGate = gate;
+      final mutation = container
+          .read(projectsProvider.notifier)
+          .setProjectFavorite('p1', favorite: true);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      mutable.switchTo(accountB);
+      container.invalidate(projectsProvider);
+      await settle(container);
+      expect(
+        container.read(projectsProvider).value!.projects.first.name,
+        'Project B',
+      );
 
-    // A's refresh now fails. The error must not land on B's screen, and the
-    // mutation's own future must still reject with the real refresh error —
-    // not a disposal error from a state write.
-    apiA.failGets = true;
-    gate.complete();
-    await expectLater(mutation, throwsA(isA<ApiException>()));
-    await settle(container);
-    final view = container.read(projectsProvider);
-    expect(view.hasError, isFalse,
-        reason: 'A\'s refresh error must not publish on B\'s screen');
-    expect(view.value!.projects.first.name, 'Project B');
+      // A's refresh now fails. The error must not land on B's screen, and the
+      // mutation's own future must still reject with the real refresh error —
+      // not a disposal error from a state write.
+      apiA.failGets = true;
+      gate.complete();
+      await expectLater(mutation, throwsA(isA<ApiException>()));
+      await settle(container);
+      final view = container.read(projectsProvider);
+      expect(
+        view.hasError,
+        isFalse,
+        reason: 'A\'s refresh error must not publish on B\'s screen',
+      );
+      expect(view.value!.projects.first.name, 'Project B');
 
-    // The cache cleanup still ran for the account that was written to.
-    final cache = container.read(envelopeCacheProvider);
-    expect(await cache.get('${accountA.id}-projects'), isNull);
-    expect(await cache.get('${accountB.id}-projects'), isNotNull);
-  });
+      // The cache cleanup still ran for the account that was written to.
+      final cache = container.read(envelopeCacheProvider);
+      expect(await cache.get('${accountA.id}-projects'), isNull);
+      expect(await cache.get('${accountB.id}-projects'), isNotNull);
+    },
+  );
 
   test('a still-offline retry after a failed mutation refresh stays in '
       'error, then recovers on a live fetch', () async {
@@ -601,8 +737,9 @@ void main() {
 
     api.failGets = true;
     await expectLater(
-        notifier.setProjectFavorite('p1', favorite: true),
-        throwsA(isA<ApiException>()));
+      notifier.setProjectFavorite('p1', favorite: true),
+      throwsA(isA<ApiException>()),
+    );
     expect(container.read(projectsProvider).hasError, isTrue);
 
     // The error UI's Retry invalidates the provider. While the server is
@@ -628,8 +765,9 @@ void main() {
 
     api.failGets = true;
     await expectLater(
-        notifier.setProjectFavorite('p1', favorite: true),
-        throwsA(isA<ApiException>()));
+      notifier.setProjectFavorite('p1', favorite: true),
+      throwsA(isA<ApiException>()),
+    );
     expect(container.read(projectsProvider).hasError, isTrue);
 
     // The list's pull-to-refresh calls refresh(projectsProvider.future) with
@@ -646,8 +784,7 @@ void main() {
     expect(container.read(projectsProvider).hasError, isTrue);
   });
 
-  test('an ordinary list load still falls back to the offline cache',
-      () async {
+  test('an ordinary list load still falls back to the offline cache', () async {
     final (container, notifier, api) = await boot();
     addTearDown(container.dispose);
 
@@ -655,8 +792,7 @@ void main() {
     container.invalidate(projectsProvider);
 
     // The fetch fails, but the last good copy is served from the cache.
-    await expectLater(container.read(projectsProvider.future),
-        completes);
+    await expectLater(container.read(projectsProvider.future), completes);
     final state = container.read(projectsProvider);
     expect(state.hasError, isFalse);
     expect(state.value!.projects, isNotEmpty);
@@ -668,8 +804,11 @@ void main() {
 
     await notifier.renameProject('p1', 'Renamed');
     await notifier.setProjectGradient('p1', 'ocean-dive');
-    await notifier.setProjectBackgroundImage('p1',
-        filePath: 'test/fixtures/projects_index.json', name: 'bg.png');
+    await notifier.setProjectBackgroundImage(
+      'p1',
+      filePath: 'test/fixtures/projects_index.json',
+      name: 'bg.png',
+    );
     await notifier.clearProjectBackground('p1');
     await notifier.addProjectManager('p1', 'u1');
     await notifier.removeProjectManager('pm1');

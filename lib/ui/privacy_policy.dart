@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/gen/app_localizations.dart';
+import '../security_redaction.dart';
 
 const privacyPolicyUrl =
     'https://github.com/adambenhassen/planka-app/blob/main/docs/store/privacy-policy.md';
@@ -25,7 +26,7 @@ Future<void> openPrivacyPolicy(
       _showPrivacyPolicyLaunchFailure(context, l10n);
     }
   } catch (error) {
-    debugPrint('privacy policy launch failed: $error');
+    debugPrint('privacy policy launch failed: ${redactDiagnostic(error)}');
     if (context.mounted) {
       _showPrivacyPolicyLaunchFailure(context, l10n);
     }

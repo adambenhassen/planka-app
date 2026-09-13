@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
+import '../security_redaction.dart';
 import 'envelope.dart';
 import 'planka_api.dart';
 
@@ -93,7 +94,7 @@ class PlankaSocket {
 
   Future<void> connect() async {
     if (_disposed) return;
-    debugPrint('Planka socket opening: $serverUrl');
+    debugPrint('Planka socket opening');
     final socket = io.io(
       serverUrl,
       io.OptionBuilder()
@@ -124,7 +125,7 @@ class PlankaSocket {
     }
     socket.onConnect((_) {
       if (_disposed) return;
-      debugPrint('Planka socket connected: $serverUrl');
+      debugPrint('Planka socket connected');
       _isConnected = true;
       _connected.add(true);
       final boardId = _currentBoardId;
@@ -133,18 +134,18 @@ class PlankaSocket {
     });
     socket.onDisconnect((_) {
       if (_disposed || _connected.isClosed) return;
-      debugPrint('Planka socket disconnected: $serverUrl');
+      debugPrint('Planka socket disconnected');
       _isConnected = false;
       _connected.add(false);
     });
     socket.on('connect_error', (error) {
       if (_disposed || _connected.isClosed) return;
-      debugPrint('Planka socket connect_error: $serverUrl ($error)');
+      debugPrint('Planka socket connect_error: ${redactDiagnostic(error)}');
       _isConnected = false;
       _connected.add(false);
     });
     socket.onError((error) =>
-        debugPrint('Planka socket transport error: $serverUrl ($error)'));
+        debugPrint('Planka socket transport error: ${redactDiagnostic(error)}'));
 
     socket.connect();
   }
@@ -202,7 +203,8 @@ class PlankaSocket {
       if (ack is Map && ack['statusCode'] == 200) return;
     }
     if (_events.isClosed) return;
-    _events.addError(StateError('$room subscribe failed: $ack'));
+    _events.addError(
+        StateError('$room subscribe failed: ${redactDiagnostic(ack)}'));
   }
 
   void dispose() {

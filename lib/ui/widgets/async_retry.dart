@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/gen/app_localizations.dart';
+import '../../security_redaction.dart';
 
 /// Renders an [AsyncValue]'s three states with the app's standard affordances:
 /// loading -> centered spinner; error -> message plus a Retry button that calls
@@ -17,7 +18,7 @@ Widget asyncRetry<T>(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('$e'),
+          Text(redactDiagnostic(e)),
           const SizedBox(height: 8),
           Builder(
             builder: (context) => FilledButton(

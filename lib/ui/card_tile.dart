@@ -113,7 +113,9 @@ class CardTile extends ConsumerWidget {
               CachedNetworkImage(
                 imageUrl: coverUrl!,
                 httpHeaders: coverHeaders,
-                cacheManager: plankaImageCacheManager,
+                cacheManager: plankaImageCacheManager.forAccount(account!.id,
+                    token: account.token),
+                cacheKey: plankaImageCacheKey(account.id, coverUrl),
                 width: double.infinity,
                 fit: BoxFit.fitWidth,
                 imageBuilder: (_, imageProvider) => Image(
@@ -124,8 +126,7 @@ class CardTile extends ConsumerWidget {
                   fit: BoxFit.fitWidth,
                 ),
                 errorWidget: (_, error, _) {
-                  debugPrint(
-                      'Store capture image failed: cover $coverUrl: $error');
+                  debugPrint('Store capture cover image failed');
                   return const SizedBox.shrink(
                     key: ValueKey<String>('store-capture-image-error'),
                   );

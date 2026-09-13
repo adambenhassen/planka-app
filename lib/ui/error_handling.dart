@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/planka_api.dart';
 import '../l10n/gen/app_localizations.dart';
+import '../security_redaction.dart';
 
 /// Single place all API errors surface to the user.
 void showApiError(BuildContext context, Object error) {
@@ -9,7 +10,7 @@ void showApiError(BuildContext context, Object error) {
     ApiException(statusCode: 401) =>
       AppLocalizations.of(context).errorInvalidCredentials,
     ApiException(:final message) => message,
-    _ => '$error',
+    _ => redactDiagnostic(error),
   };
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
     content: Text(message),
@@ -28,7 +29,8 @@ void guardMutation(BuildContext context, Future<void> future) {
       // The widget that issued the mutation is gone (e.g. an optimistic delete
       // removed its own list column), so the snackbar can't be shown — but the
       // failure still happened. Log rather than swallow it silently.
-      debugPrint('guardMutation: mutation failed after context unmounted: $e');
+      debugPrint('guardMutation: mutation failed after context unmounted: '
+          '${redactDiagnostic(e)}');
     }
   });
 }

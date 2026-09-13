@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../api/planka_api.dart';
 import '../api/repositories.dart';
+import '../cache_lifecycle.dart';
+import '../cache_purge.dart';
+import '../state/envelope_cache.dart';
 import 'accounts.dart';
 
 final accountStoreProvider = Provider<AccountStore>((ref) {
@@ -22,38 +26,158 @@ String _desktopHome() =>
     Platform.environment['USERPROFILE'] ??
     Directory.systemTemp.path;
 
-final accountsProvider =
-    AsyncNotifierProvider<AccountsNotifier, List<Account>>(
-        AccountsNotifier.new);
+final accountsProvider = AsyncNotifierProvider<AccountsNotifier, List<Account>>(
+  AccountsNotifier.new,
+);
+
+final imageCacheProvider = Provider<AccountImageCacheManager>(
+  (_) => plankaImageCacheManager,
+);
+final cacheLifecycleProvider = Provider<AccountCacheLifecycle>(
+  (_) => accountCacheLifecycle,
+);
 
 class AccountsNotifier extends AsyncNotifier<List<Account>> {
-  @override
-  Future<List<Account>> build() => ref.read(accountStoreProvider).load();
+  Future<void> _mutationTail = Future<void>.value();
 
-  Future<void> upsert(Account account) async {
+  Future<T> _serializeMutation<T>(Future<T> Function() mutation) {
+    final previous = _mutationTail;
+    final done = Completer<void>();
+    _mutationTail = done.future;
+    return previous.then((_) async {
+      try {
+        return await mutation();
+      } finally {
+        done.complete();
+      }
+    });
+  }
+
+  @override
+  Future<List<Account>> build() async {
+    final store = ref.read(accountStoreProvider);
+    final accounts = await store.load();
+    final removalIntents = await store.loadRemovalFailures();
+    final lifecycle = ref.read(cacheLifecycleProvider);
+    for (final accountId in removalIntents) {
+      lifecycle.restoreRemovalFailure(accountId);
+    }
+    for (final account in accounts) {
+      lifecycle.registerKnown(account.id);
+    }
+    return accounts;
+  }
+
+  Future<void> upsert(Account account) => _serializeMutation(() async {
     // Await the loaded list so a call during loading can't drop stored accounts.
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == account.id)
       ..add(account);
     await ref.read(accountStoreProvider).save(list);
+    // A successful removal leaves its old handles permanently closed. Only a
+    // newly persisted authenticated account may explicitly reopen that id.
+    ref.read(cacheLifecycleProvider).reopen(account.id);
     state = AsyncData(list);
-  }
+  });
 
-  Future<void> remove(String accountId) async {
+  Future<void> remove(String accountId) => _serializeMutation(() async {
+    // Persist the removal intent before closing the shared barrier. This makes
+    // a crash between barrier establishment and purge fail closed on restart.
+    final lifecycle = ref.read(cacheLifecycleProvider);
+    final store = ref.read(accountStoreProvider);
+    try {
+      // The durable intent must precede the in-memory barrier. A process crash
+      // after the barrier and before this write must not reopen the account.
+      await store.markRemovalFailed(accountId);
+    } catch (e, s) {
+      throw CachePurgeException('account', e, s);
+    }
+    // The barrier covers every cache family and every caller that retained a
+    // handle before removal began.
+    Object? firstFailure;
+    StackTrace? firstFailureStack;
+    try {
+      await lifecycle.beginRemoval(accountId);
+    } catch (e, s) {
+      firstFailure = e;
+      firstFailureStack = s;
+    }
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == accountId);
-    await ref.read(accountStoreProvider).save(list);
+
+    // Both cache families are account-owned. Attempt both even when the first
+    // purge fails, and keep the account record until every target is gone so a
+    // caller cannot mistake a partial purge for successful removal.
+    try {
+      await ref.read(envelopeCacheProvider).purgeAccount(accountId);
+    } catch (e, s) {
+      firstFailure = e;
+      firstFailureStack = s;
+    }
+    try {
+      await ref.read(imageCacheProvider).purgeAccount(accountId);
+    } catch (e, s) {
+      firstFailure ??= e;
+      firstFailureStack ??= s;
+    }
+    if (firstFailure != null) {
+      Object? markerFailure;
+      StackTrace? markerFailureStack;
+      try {
+        await store.markRemovalFailed(accountId);
+      } catch (e, s) {
+        markerFailure = e;
+        markerFailureStack = s;
+      }
+      throw CachePurgeException(
+        'account',
+        markerFailure ?? firstFailure,
+        markerFailureStack ?? firstFailureStack ?? StackTrace.current,
+      );
+    }
+
+    final accountsBeforeRemoval = <Account>[...await future];
+    var accountListSaved = false;
+    try {
+      await store.save(list);
+      accountListSaved = true;
+      await store.clearRemovalFailed(accountId);
+    } catch (e, s) {
+      Object? persistenceFailure = e;
+      StackTrace persistenceFailureStack = s;
+      try {
+        await store.markRemovalFailed(accountId);
+      } catch (markerError, markerStack) {
+        persistenceFailure = markerError;
+        persistenceFailureStack = markerStack;
+      }
+      if (accountListSaved) {
+        try {
+          await store.save(accountsBeforeRemoval);
+        } catch (restoreError, restoreStack) {
+          persistenceFailure = restoreError;
+          persistenceFailureStack = restoreStack;
+        }
+      }
+      throw CachePurgeException(
+        'account',
+        persistenceFailure,
+        persistenceFailureStack,
+      );
+    }
     state = AsyncData(list);
+    lifecycle.completeRemoval(accountId);
     final current = ref.read(currentAccountProvider);
     if (current?.id == accountId) {
       await ref.read(currentAccountProvider.notifier).select(null);
     }
-  }
+  });
 }
 
 final currentAccountProvider =
     NotifierProvider<CurrentAccountNotifier, Account?>(
-        CurrentAccountNotifier.new);
+      CurrentAccountNotifier.new,
+    );
 
 class CurrentAccountNotifier extends Notifier<Account?> {
   @override
@@ -91,8 +215,9 @@ class CurrentAccountNotifier extends Notifier<Account?> {
 
 /// Set when a request 401s with a token: the session expired.
 /// Carries the expired account so the login screen can prefill.
-final authExpiredProvider =
-    NotifierProvider<AuthExpiredNotifier, Account?>(AuthExpiredNotifier.new);
+final authExpiredProvider = NotifierProvider<AuthExpiredNotifier, Account?>(
+  AuthExpiredNotifier.new,
+);
 
 class AuthExpiredNotifier extends Notifier<Account?> {
   @override
@@ -106,13 +231,19 @@ class AuthExpiredNotifier extends Notifier<Account?> {
 /// the login flow before an account exists. A provider so tests can inject a
 /// fake API.
 final apiFactoryProvider = Provider<PlankaApi Function(String serverUrl)>(
-    (ref) => (url) => PlankaApi(url, null));
+  (ref) =>
+      (url) => PlankaApi(url, null),
+);
 
 final apiProvider = Provider<PlankaApi>((ref) {
   final account = ref.watch(currentAccountProvider);
   if (account == null) throw StateError('No account selected');
-  return PlankaApi(account.serverUrl, account.token, onUnauthorized: () {
-    ref.read(authExpiredProvider.notifier).expire(account);
-    ref.read(currentAccountProvider.notifier).select(null);
-  });
+  return PlankaApi(
+    account.serverUrl,
+    account.token,
+    onUnauthorized: () {
+      ref.read(authExpiredProvider.notifier).expire(account);
+      ref.read(currentAccountProvider.notifier).select(null);
+    },
+  );
 });
