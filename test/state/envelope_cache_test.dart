@@ -329,8 +329,12 @@ void main() {
       final failed = Directory(
         '${dir.path}/envelope_cache_fail_closed/account-$accountHash/$keyHash.failed',
       );
+      final invalidated = Directory(
+        '${dir.path}/envelope_cache_invalidations/account-$accountHash/$keyHash.invalidated',
+      );
       await pending.create(recursive: true);
       await failed.create(recursive: true);
+      await invalidated.create(recursive: true);
 
       await expectLater(
         cache.delete(key),
