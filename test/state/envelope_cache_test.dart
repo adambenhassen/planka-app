@@ -309,6 +309,43 @@ void main() {
   );
 
   test(
+    'blocked pending and failed markers fail closed live and cold',
+    () async {
+      const account = 'https://planka.example#blocked-marker-paths';
+      const otherAccount = 'https://planka.example#other-blocked-markers';
+      final key = '$account-projects';
+      final otherKey = '$otherAccount-projects';
+      await cache.put(key, env('stale'));
+      await cache.put(otherKey, env('other'));
+
+      final accountHash = sha256.convert(utf8.encode(account));
+      final keyHash = sha256.convert(utf8.encode(key));
+      final current = File(
+        '${dir.path}/envelope_cache/account-$accountHash/$keyHash.json',
+      );
+      final pending = Directory(
+        '${dir.path}/envelope_cache_delete_intents/account-$accountHash/$keyHash.pending',
+      );
+      final failed = Directory(
+        '${dir.path}/envelope_cache_fail_closed/account-$accountHash/$keyHash.failed',
+      );
+      await pending.create(recursive: true);
+      await failed.create(recursive: true);
+
+      await expectLater(
+        cache.delete(key),
+        throwsA(isA<CachePurgeException>()),
+      );
+      expect(await current.exists(), isTrue);
+      expect(await cache.get(key), isNull);
+
+      final cold = EnvelopeCache(directory: dir);
+      expect(await cold.get(key), isNull);
+      expect((await cold.get(otherKey))!.item['name'], 'other');
+    },
+  );
+
+  test(
     'purge blocks new writes and drains an admitted fetch before cold purge',
     () async {
       const account = 'https://planka.example#user';

@@ -443,11 +443,11 @@ class EnvelopeCache {
   Future<Envelope?> _getWithLease(String key, AccountCacheLease lease) async {
     try {
       final failClosed = await _failClosedFile(key);
-      if (await failClosed.exists()) return null;
+      if (await _markerExists(failClosed)) return null;
       final intent = await _deletionIntentFile(key);
-      if (await intent.exists()) return null;
+      if (await _markerExists(intent)) return null;
       final invalidation = await _invalidationFile(key);
-      if (await invalidation.exists()) return null;
+      if (await _markerExists(invalidation)) return null;
       final file = await _file(key);
       File source = file;
       if (!await source.exists()) {
@@ -465,6 +465,17 @@ class EnvelopeCache {
       lease.ensureOpen();
       return null; // Corrupt or unreadable cache entry — treat as a miss.
     }
+  }
+
+  /// A marker path is reserved for a marker file. Any other persisted entity
+  /// at that path is treated as fail-closed too, because a blocked marker
+  /// write must never make stale content readable again.
+  Future<bool> _markerExists(File marker) async {
+    return await FileSystemEntity.type(
+          marker.path,
+          followLinks: false,
+        ) !=
+        FileSystemEntityType.notFound;
   }
 
   Future<Directory> _directory() async {
