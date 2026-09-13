@@ -210,6 +210,28 @@ class _StatusFileServiceResponse implements FileServiceResponse {
   String get fileExtension => 'file';
 }
 
+class _DelayedStatusFileService extends FileService {
+  _DelayedStatusFileService(this.statusCode);
+
+  final int statusCode;
+  String? url;
+  Map<String, String>? headers;
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<FileServiceResponse> get(
+    String url, {
+    Map<String, String>? headers,
+  }) async {
+    this.url = url;
+    this.headers = headers;
+    started.complete();
+    await release.future;
+    return _StatusFileServiceResponse(statusCode);
+  }
+}
+
 class _DelayedFileService extends FileService {
   final started = Completer<void>();
   final release = Completer<void>();
@@ -436,6 +458,9 @@ class _RepositoryFailure {
   Completer<void>? updateStarted;
   final updateGates = <String, Completer<void>>{};
   final updateStartedByKey = <String, Completer<void>>{};
+  final updateGatesByKey = <String, List<Completer<void>>>{};
+  final updateStartedByCall = <String, Map<int, Completer<void>>>{};
+  final updateCounts = <String, int>{};
   final failKeys = <String>{};
 }
 
@@ -453,10 +478,16 @@ class _FailingCacheInfoRepository extends CacheInfoRepository {
 
   @override
   Future<dynamic> updateOrInsert(CacheObject cacheObject) async {
-    final gate = _failure.updateGates[cacheObject.key] ?? _failure.updateGate;
+    final call = (_failure.updateCounts[cacheObject.key] ?? 0) + 1;
+    _failure.updateCounts[cacheObject.key] = call;
+    final queuedGates = _failure.updateGatesByKey[cacheObject.key];
+    final gate = queuedGates != null && queuedGates.isNotEmpty
+        ? queuedGates.removeAt(0)
+        : _failure.updateGates[cacheObject.key] ?? _failure.updateGate;
     if (gate != null) {
       _failure.updateStarted?.complete();
       _failure.updateStartedByKey[cacheObject.key]?.complete();
+      _failure.updateStartedByCall[cacheObject.key]?[call]?.complete();
       await gate.future;
     }
     if (_failure.failNextUpdate || _failure.failKeys.remove(cacheObject.key)) {
@@ -1453,6 +1484,169 @@ void main() {
         await retry.whereType<FileInfo>().single.file.readAsString(),
         'media',
       );
+    },
+  );
+
+  test(
+    'delayed authenticated 304 metadata is drained before media removal',
+    () async {
+      const imageUrl = 'https://production.example/media/delayed-304.png';
+      const token = 'delayed-304-token-canary';
+      final keyA = plankaImageCacheKey(accountA, imageUrl);
+      final keyB = plankaImageCacheKey(accountB, imageUrl);
+
+      for (final releaseBeforeRemoval in [false, true]) {
+        final root = await Directory.systemTemp.createTemp('media_delayed_304');
+        final metadata = Directory(p.join(root.path, 'metadata'));
+        await metadata.create(recursive: true);
+        final failure = _RepositoryFailure();
+        CacheInfoRepository createRepository(String namespace) =>
+            _FailingCacheInfoRepository(
+              JsonCacheInfoRepository.withFile(
+                File(p.join(metadata.path, '$namespace.json')),
+              ),
+              failure,
+            );
+        final seed = AccountImageCacheManager(
+          temporaryDirectory: () async => root,
+          createRepository: createRepository,
+        );
+        var seedDisposed = false;
+
+        try {
+          await seed
+              .forAccount(accountA)
+              .putFile(
+                imageUrl,
+                Uint8List.fromList('A'.codeUnits),
+                key: keyA,
+                maxAge: Duration.zero,
+              );
+          await seed
+              .forAccount(accountB)
+              .putFile(imageUrl, Uint8List.fromList('B'.codeUnits), key: keyB);
+          await seed.dispose();
+          seedDisposed = true;
+
+          final metadataGate = Completer<void>();
+          final metadataStarted = Completer<void>();
+          final firstTouch = Completer<void>()..complete();
+          failure.updateCounts.clear();
+          failure.updateGatesByKey[keyA] = [firstTouch, metadataGate];
+          failure.updateStartedByCall[keyA] = {2: metadataStarted};
+          final service = _DelayedStatusFileService(HttpStatus.notModified);
+          final cache = AccountImageCacheManager(
+            lifecycle: AccountCacheLifecycle(
+              removalTimeout: const Duration(milliseconds: 20),
+            ),
+            temporaryDirectory: () async => root,
+            createRepository: createRepository,
+            fileService: service,
+          );
+          var disposed = false;
+          final namespaceA =
+              'planka-images-${sha256.convert(utf8.encode(accountA))}';
+
+          Future<void> expectAStorageEmpty() async {
+            final namespaceFiles = Directory(p.join(root.path, namespaceA));
+            if (await namespaceFiles.exists()) {
+              expect(
+                await namespaceFiles
+                    .list(recursive: true, followLinks: false)
+                    .where((entry) => entry is File)
+                    .toList(),
+                isEmpty,
+              );
+            }
+            final metadataFile =
+                File(p.join(metadata.path, '$namespaceA.json'));
+            if (await metadataFile.exists()) {
+              final repository =
+                  JsonCacheInfoRepository.withFile(metadataFile);
+              await repository.open();
+              try {
+                expect(await repository.getAllObjects(), isEmpty);
+              } finally {
+                await repository.close();
+              }
+            }
+          }
+
+          try {
+            final handleA = cache.forAccount(accountA, token: token);
+            final delayed304 = handleA.getSingleFile(
+              imageUrl,
+              key: keyA,
+              headers: {'Authorization': 'Bearer $token'},
+            );
+            final delayed304Outcome = delayed304.then<Object?>(
+              (_) => null,
+              onError: (Object error, StackTrace _) => error,
+            );
+            await service.started.future.timeout(
+              const Duration(milliseconds: 250),
+            );
+            expect(service.url, imageUrl);
+            expect(service.headers, {'Authorization': 'Bearer $token'});
+
+            Future<void> expectRemovalFailure(Future<void> removal) async {
+              await expectLater(removal, throwsA(isA<CachePurgeException>()));
+            }
+
+            if (releaseBeforeRemoval) {
+              service.release.complete();
+              await metadataStarted.future.timeout(
+                const Duration(milliseconds: 250),
+              );
+              final removal = cache.purgeAccount(accountA);
+              await expectRemovalFailure(removal);
+            } else {
+              var removalCompleted = false;
+              final removal = cache
+                  .purgeAccount(accountA)
+                  .whenComplete(() => removalCompleted = true);
+              await Future<void>.delayed(Duration.zero);
+              expect(removalCompleted, isFalse);
+              service.release.complete();
+              await removal;
+            }
+
+            metadataGate.complete();
+            expect(await delayed304Outcome, isA<AccountCacheClosedException>());
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+            if (!releaseBeforeRemoval) await expectAStorageEmpty();
+            await cache.purgeAccount(accountA);
+
+            await cache.dispose();
+            disposed = true;
+            await expectAStorageEmpty();
+            final cold = AccountImageCacheManager(
+              temporaryDirectory: () async => root,
+              createRepository: createRepository,
+            );
+            expect(
+              await cold
+                  .forAccount(accountA)
+                  .getFileFromCache(keyA, ignoreMemCache: true),
+              isNull,
+            );
+            expect(
+              (await cold
+                      .forAccount(accountB)
+                      .getFileFromCache(keyB, ignoreMemCache: true))!
+                  .file
+                  .readAsString(),
+              completion('B'),
+            );
+            await cold.dispose();
+          } finally {
+            if (!disposed) await cache.dispose();
+          }
+        } finally {
+          if (!seedDisposed) await seed.dispose();
+          await root.delete(recursive: true);
+        }
+      }
     },
   );
 

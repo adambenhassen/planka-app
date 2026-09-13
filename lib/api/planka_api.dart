@@ -620,7 +620,12 @@ class AccountImageCacheManager {
       baseConfig.cacheKey,
       stalePeriod: baseConfig.stalePeriod,
       maxNrOfCacheObjects: baseConfig.maxNrOfCacheObjects,
-      repo: _TrackedCacheInfoRepository(baseConfig.repo),
+      repo: _TrackedCacheInfoRepository(
+        baseConfig.repo,
+        lifecycle: lifecycle,
+        accountId: accountId,
+        generation: lifecycle.generationFor(accountId),
+      ),
       fileSystem: _SafeFileSystem(baseConfig.fileSystem),
       fileService: baseConfig.fileService,
     );
@@ -753,9 +758,17 @@ class AccountImageCacheManager {
 /// the namespace, otherwise a late repository update can recreate an entry
 /// after the cold check has passed.
 class _TrackedCacheInfoRepository extends CacheInfoRepository {
-  _TrackedCacheInfoRepository(this._delegate);
+  _TrackedCacheInfoRepository(
+    this._delegate, {
+    this._lifecycle,
+    this._accountId,
+    this._generation,
+  });
 
   final CacheInfoRepository _delegate;
+  final AccountCacheLifecycle? _lifecycle;
+  final String? _accountId;
+  final int? _generation;
   final _TrackedCacheOperation _unowned = _TrackedCacheOperation();
 
   _TrackedCacheOperation beginOperation() => _TrackedCacheOperation();
@@ -818,12 +831,50 @@ class _TrackedCacheInfoRepository extends CacheInfoRepository {
 
   @override
   Future<dynamic> updateOrInsert(CacheObject cacheObject) {
-    final operation = _delegate.updateOrInsert(cacheObject);
-    _trackCompletion(operation);
+    AccountCacheLease? lease;
+    final lifecycle = _lifecycle;
+    final accountId = _accountId;
+    final generation = _generation;
+    if (lifecycle != null && accountId != null && generation != null) {
+      try {
+        // CacheManager starts this write without awaiting it. Admit the
+        // metadata mutation itself, not only the caller that started the
+        // response, so a late 304 update remains inside removal's drain.
+        lease = lifecycle.acquire(accountId, generation: generation);
+      } on AccountCacheClosedException {
+        // An old-generation write that starts after removal is already closed
+        // must be a no-op. Returning a completed future also prevents the
+        // third-party cache manager's unhandled `.then` chain from surfacing a
+        // raw backend error.
+        return Future<dynamic>.value(null);
+      }
+    }
+
+    late final Future<dynamic> operation;
+    try {
+      operation = _delegate.updateOrInsert(cacheObject);
+    } catch (_) {
+      lease?.release();
+      rethrow;
+    }
+    final guarded = operation.then<dynamic>(
+      (value) {
+        // The lifecycle lease keeps removal behind the actual backend future.
+        // A generation that was closed while the write was in flight is
+        // deleted by the purge after this future settles.
+        lease?.release();
+        return value;
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        lease?.release();
+        return Future<dynamic>.error(error, stackTrace);
+      },
+    );
+    _trackCompletion(guarded);
     // CacheManager.putFile intentionally does not await this operation. Keep
     // its returned future error-free so the tracked, sanitized failure is
     // surfaced by the owning handle instead of as an unhandled exception.
-    return operation.catchError((Object _, StackTrace _) => null);
+    return guarded.catchError((Object _, StackTrace _) => null);
   }
 
   @override
