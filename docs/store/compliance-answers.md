@@ -3,9 +3,9 @@
 The questionnaires both consoles ask, answered once here so every submission
 gives the same answers. Source of truth for the claims below:
 `lib/` has no analytics, ads or crash-reporting dependency (see `pubspec.yaml`),
-and the only network destinations are the server URL the user types and — in
-the sideloaded Android build only — `api.github.com` for the update check
-(`lib/update/update_service.dart`).
+and the network destinations are the configured Planka server origin and — in
+the sideloaded Android build only — GitHub's release API plus the release-asset
+URL and redirect destination returned by that API (`lib/update/update_service.dart`).
 
 ## Google Play — Data safety form
 
@@ -23,13 +23,14 @@ data reaches the user's own server and never the developer changes the
     body's `emailOrUsername`, sent to `POST /access-tokens`. Nothing in the app
     works before sign-in. Also `PATCH /users/:id/email`, and an admin creating
     someone else's account with `POST /users`.
-  - *Personal info → User IDs* — **required**. The username half of the login
-    body's `emailOrUsername` is a User ID under Play's taxonomy, and it is sent
-    at sign-in. Also `PATCH /users/:id/username`, and the `userId` of other
-    people when assigning project managers, board members and card members. Not
-    the account id: that arrives from `GET /users/me`, is kept on the device,
-    and leaves it only on the optional paths below — ordinary requests carry a
-    bearer token, not an id.
+  - *Personal info → User IDs* — **optional**. The username half of the login
+    body's `emailOrUsername` is a User ID under Play's taxonomy, but a user can
+    sign in with an email address and does not have to provide a username. It is
+    also sent by `PATCH /users/:id/username`, and the `userId` of other people
+    is sent when assigning project managers, board members and card members.
+    Not the account id: that arrives from `GET /users/me`, is kept on the
+    device, and leaves it only on the optional paths below — ordinary requests
+    carry a bearer token, not an id.
   - *Personal info → Name* — **optional**. `name` on `PATCH /users/:id` when the
     user edits their profile, and on `POST /users` when an admin creates
     someone. Not sent at sign-in.
@@ -57,23 +58,21 @@ data reaches the user's own server and never the developer changes the
   - *App activity → Other user-generated content* — **optional**. The content
     fields of the board: card `name`, `description`, `dueDate` and `stopwatch`;
     list, task-list and task `name`; project and board `name`; label `name` and
-    `color`.
+    `color`; custom-field group and field `name`, and per-card custom-field
+    value `content`.
   - *App activity → Other actions* — **optional**. The structural and status
     changes: `position`, `listId` and `boardId` moves, duplication, archive and
     trash, `isCompleted`, `isDueCompleted`, `isSubscribed`, `coverAttachmentId`,
     list `sort`, notification `isRead`, label and member assignment, and the
     admin `role` and `isDeactivated` changes — which are account permissions
-    rather than personal information about the person.
+    rather than personal information about the person. Custom-field `position`,
+    `showOnFrontOfCard`, create/delete, and value-delete actions are included
+    here too.
 
-  **Email address and User IDs are both required, and that is settled.** One
-  sign-in field carries either, so exactly one of the two goes up at any given
-  sign-in and the app cannot know which in advance. The test is not whether the
-  user had a choice between two fields but whether anyone can use the app having
-  supplied neither, and they cannot. Marking either *optional* would assert on
-  the form that the user can decline it, which is false. *Required* overstates
-  only which of the two a given user supplies, and the paragraph you are reading
-  states that on the same page. An answer whose imprecision is written down
-  beats one that is simply false; do not "correct" this to optional.
+  **Email address is required; User IDs are optional.** The sign-in field accepts
+  either value, and a user can proceed without a username. User IDs still need
+  to be declared because the optional username, manager, assignee, membership,
+  and user-management paths above can transmit them.
 
   Checked and deliberately **not** declared, because the app transmits none of
   them: location, contacts, calendar, device or other IDs, installed apps, web
@@ -111,24 +110,30 @@ data reaches the user's own server and never the developer changes the
   `lib/api/planka_api.dart`. Two kinds of request do not go through the
   repository layer and are easy to miss: `PlankaApi.download`, and the
   `CachedNetworkImage` widgets in `card_tile.dart`, `board_background.dart` and
-  `card_sections/attachments.dart`. Both authenticate with the access token as a
-  cookie and send no other user data. The untyped `patch` and `body` maps are
-  the part a reader cannot check from the repository layer alone: their fields
-  are set in
+  `card_sections/attachments.dart`. The image widgets attach the access-token
+  cookie only when `imageAuthHeaders` confirms the URL has the configured
+  server's scheme, host and port; a foreign URL renders the no-image state.
+  Redirects are disabled for these credentialed media requests. `PlankaApi.download`
+  builds its URL from that same configured server. These requests send no other
+  user data. The untyped `patch` and `body` maps are the part a reader cannot
+  check from the repository layer alone: their fields are set in
   `lib/state/board_state.dart` (card, list, label, task and board patches),
   `lib/state/projects_state.dart` (project patches),
   `lib/ui/widgets/profile_dialog.dart` (`name`, `phone`, `organization`,
   `avatar`) and `lib/ui/widgets/user_management_dialog.dart` (`role`,
-  `isDeactivated`, and the `POST /users` body). Custom fields are read-only and
-  send nothing.
+  `isDeactivated`, and the `POST /users` body). Custom-field group, field,
+  position, display-flag, value, and deletion requests are sent through the
+  methods in `lib/api/repositories.dart:105-165`; those paths justify the
+  custom-field entries in the declared categories above.
 
   *Websocket, to the same server.* `lib/api/planka_socket.dart`. It contributes
   no data type today and is in the surface anyway, because it can: the handshake
-  sends the three constant `__sails_io_sdk_*` parameters, and the one emission
-  in the file — `subscribeBoard` — sends `/api/boards/:id?subscribe=true` with
-  the access token in the frame headers and an empty `data`. `sailsRequestFrame`
-  takes a `data` payload, so the day anything is emitted through it with a
-  body, this channel starts carrying user data and must be re-walked.
+  sends the three constant `__sails_io_sdk_*` parameters, and both empty-body
+  emissions in the file — `subscribeBoard` to `/api/boards/:id?subscribe=true`
+  and `subscribeUser` to `/api/users/me?subscribe=true` — carry the access token
+  in the frame headers. `sailsRequestFrame` takes a `data` payload, so the day
+  anything is emitted through it with a body, this channel starts carrying user
+  data and must be re-walked.
 
   Query parameters count as much as bodies, on either channel — they carry data
   off the device the same way. On HTTP, `beforeId` on `GET /cards/:id/actions`
@@ -139,9 +144,11 @@ data reaches the user's own server and never the developer changes the
   *App activity → Search history* is correctly absent — and would stop being
   absent the day search moves server-side.
 
-  A third destination exists but is not a third channel: the sideloaded Android
-  build's update check calls `api.github.com` over HTTP and sends no user data
-  (see the top of this file).
+  The updater adds GitHub destinations without adding a third data channel: the
+  sideloaded Android build checks `api.github.com` over HTTP and, when a newer
+  APK exists, `downloadUpdate` downloads the `browser_download_url` returned by
+  that response and follows its release-asset host or redirects. Neither
+  request sends user data (see `lib/update/update_service.dart:23-68`).
 
   Re-walk both channels when the API surface changes; do not patch this list one
   type at a time.
@@ -156,11 +163,16 @@ data reaches the user's own server and never the developer changes the
   supplies, and a self-hosted Planka on a local network commonly has no TLS
   certificate, so plain HTTP has to keep working. HTTPS is used whenever the
   user's server offers it, and the address field defaults to `https://`.
-- **Do you provide a way for users to request that their data is deleted?** The
-  app creates no account on any developer-operated service and holds no
-  server-side data to delete. Data lives on the user's own Planka server and is
-  deleted there; signing out removes the account and its stored credentials
-  from the device.
+- **Do you provide a way for users to request that their data is deleted?**
+  **No.** The app supports in-app Planka account creation: an administrator can
+  create a user through `lib/ui/widgets/user_management_dialog.dart:86-90,104-171`,
+  which calls `POST /users` through `lib/api/repositories.dart:225-227`. This
+  build has no user-facing self-deletion or local sign-out/account-removal path:
+  the signed-in user is excluded from the delete menu at
+  `lib/ui/widgets/user_management_dialog.dart:209-232`, and no reachable UI calls
+  `AccountsNotifier.remove` or `PlankaApi.logout` (`lib/auth/auth_providers.dart:42-50`,
+  `lib/api/planka_api.dart:243-246`). No deletion-request URL is declared. A
+  server operator controls deletion of the Planka data on that server.
 
 Do not soften the two answers above into "No collection" or "encrypted in
 transit: Yes" because the developer receives nothing — that reasoning was
@@ -198,8 +210,11 @@ App privacy section below for why the two tests differ.
   shims.
 - **Tracking:** no. The app does not use IDFA and shows no ATT prompt.
 - **Account deletion requirement (App Store Review Guideline 5.1.1(v)):** the
-  app does not create accounts on a developer-operated service, so the
-  in-app-deletion requirement does not apply. State this in the review notes.
+  app supports in-app creation of Planka user accounts through the admin user
+  management flow, even though the server is self-hosted and not operated by
+  the developer. The current build has no user-facing self-deletion or local
+  sign-out/account-removal path, so answer **No** until that capability exists;
+  do not state that the requirement is inapplicable.
 
 ## Export compliance
 
