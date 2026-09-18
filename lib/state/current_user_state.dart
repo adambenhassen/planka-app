@@ -33,6 +33,7 @@ class CurrentUserNotifier extends AsyncNotifier<PlankaUser?> {
         _removeAccountEpochListener = null;
       });
     }
+    final account = ref.watch(currentAccountProvider);
     ref.listen(currentAccountProvider, (previous, next) {
       if (previous?.id != next?.id ||
           previous?.serverUrl != next?.serverUrl ||
@@ -40,7 +41,6 @@ class CurrentUserNotifier extends AsyncNotifier<PlankaUser?> {
         _invalidateAccountState();
       }
     });
-    final account = ref.watch(currentAccountProvider);
     if (account == null ||
         !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
       return null;
