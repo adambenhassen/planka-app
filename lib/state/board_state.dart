@@ -774,12 +774,7 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
     _connectedSub = null;
     ref.invalidateSelf();
     if (ref.mounted) {
-      state = AsyncLoading<List<PlankaUser>>().copyWithPrevious(
-        AsyncError<List<PlankaUser>>(
-          StateError('Account changed'),
-          StackTrace.current,
-        ),
-      );
+      state = const AsyncData<List<PlankaUser>>([]);
     }
   }
 
@@ -965,9 +960,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       // Riverpod carries the previous AsyncData value into a dependency
       // refresh. A nullable data slot lets the notifier publish an explicit
       // value-free barrier before the replacement account can load.
-      state = AsyncLoading<BoardState?>().copyWithPrevious(
-        const AsyncData<BoardState?>(null),
-      );
+      state = const AsyncData<BoardState?>(null);
     }
   }
 

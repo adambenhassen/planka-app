@@ -44,12 +44,7 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     if (ref.mounted) {
       // A dependency refresh otherwise carries the previous account's
       // notifications as AsyncData while the replacement account loads.
-      state = AsyncLoading<List<PlankaNotification>>().copyWithPrevious(
-        AsyncError<List<PlankaNotification>>(
-          StateError('Account changed'),
-          StackTrace.current,
-        ),
-      );
+      state = const AsyncData<List<PlankaNotification>>([]);
     }
   }
 

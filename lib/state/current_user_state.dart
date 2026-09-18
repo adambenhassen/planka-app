@@ -17,12 +17,7 @@ class CurrentUserNotifier extends AsyncNotifier<PlankaUser?> {
   void _invalidateAccountState() {
     ref.invalidateSelf();
     if (ref.mounted) {
-      state = AsyncLoading<PlankaUser?>().copyWithPrevious(
-        AsyncError<PlankaUser?>(
-          StateError('Account changed'),
-          StackTrace.current,
-        ),
-      );
+      state = const AsyncData<PlankaUser?>(null);
     }
   }
 

@@ -437,10 +437,11 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
     if (ref.mounted) {
       // AsyncNotifier refreshes retain the old value by default. Projects are
       // account-owned, so make the old view unavailable before rebuilding.
-      state = AsyncLoading<ProjectsView>().copyWithPrevious(
-        AsyncError<ProjectsView>(
-          StateError('Account changed'),
-          StackTrace.current,
+      state = const AsyncData<ProjectsView>(
+        ProjectsView(
+          projects: [],
+          boards: [],
+          backgroundImages: [],
         ),
       );
     }
