@@ -124,6 +124,9 @@ void main() {
     addTearDown(() => cacheDir.delete(recursive: true));
 
     final boardId = 'b1';
+    final boardSubscription =
+        container.listen(boardProvider(boardId), (_, _) {});
+    addTearDown(boardSubscription.close);
     await container.read(boardProvider(boardId).future);
     expect(container.read(boardProvider(boardId)).value?.board.name, 'http://a');
 
