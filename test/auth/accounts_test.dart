@@ -10,12 +10,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/api/envelope.dart';
+import 'package:planka_app/api/planka_socket.dart';
 import 'package:planka_app/auth/account_removal.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/cache_lifecycle.dart';
 import 'package:planka_app/cache_purge.dart';
+import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/state/envelope_cache.dart';
+import 'package:planka_app/state/projects_state.dart';
+import 'package:planka_app/state/user_socket.dart';
 
 class FakeStorage implements SecureKeyValueStore {
   final Map<String, String> data = {};
@@ -47,7 +51,7 @@ class _PauseAfterRemovalLifecycle extends AccountCacheLifecycle {
   @override
   Future<void> beginRemoval(String accountId) async {
     await super.beginRemoval(accountId);
-    reachedBarrier.complete();
+    if (!reachedBarrier.isCompleted) reachedBarrier.complete();
     await releaseBarrier.future;
   }
 }
@@ -244,6 +248,54 @@ class _GatedLogoutApi extends PlankaApi {
   }
 }
 
+class _AccountStateApi extends PlankaApi {
+  _AccountStateApi(super.serverUrl, super.token);
+
+  @override
+  Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
+    if (path == '/projects') {
+      return Envelope.parse({
+        'items': [
+          {'id': 'project-$serverUrl', 'name': 'Project @ $serverUrl'},
+        ],
+      });
+    }
+    if (path == '/users') {
+      return Envelope.parse({
+        'items': [
+          {
+            'id': 'user-$serverUrl',
+            'name': 'User @ $serverUrl',
+            'role': 'admin',
+          },
+        ],
+      });
+    }
+    throw StateError('unexpected GET $path');
+  }
+}
+
+class _RecordingSocket extends PlankaSocket {
+  _RecordingSocket(super.serverUrl, super.token);
+
+  var disposed = false;
+
+  @override
+  Stream<SocketEvent> get events => const Stream.empty();
+
+  @override
+  Stream<bool> get connected => const Stream.empty();
+
+  @override
+  Future<void> connect() async {}
+
+  @override
+  Future<void> subscribeUser() async {}
+
+  @override
+  void dispose() => disposed = true;
+}
+
 void main() {
   test('account removal clears the selected account after local cleanup',
       () async {
@@ -387,6 +439,61 @@ void main() {
     expect(container.read(authExpiredProvider), isNull);
   });
 
+  test('a late 401 from an old token cannot expire its replacement', () async {
+    final requestStarted = Completer<void>();
+    final releaseResponse = Completer<void>();
+    String? authorization;
+    final server = await HttpServer.bind('127.0.0.1', 0);
+    server.listen((request) async {
+      authorization = request.headers.value(HttpHeaders.authorizationHeader);
+      requestStarted.complete();
+      await releaseResponse.future;
+      request.response.statusCode = 401;
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('{"message":"expired old token"}');
+      await request.response.close();
+    });
+    addTearDown(() => server.close());
+
+    final oldAccount = Account(
+      serverUrl: 'http://127.0.0.1:${server.port}',
+      token: 'old-token',
+      userId: 'same-user',
+      displayName: 'Old session',
+    );
+    final replacement = Account(
+      serverUrl: oldAccount.serverUrl,
+      token: 'replacement-token',
+      userId: oldAccount.userId,
+      displayName: 'Replacement session',
+    );
+    final store = AccountStore(FakeStorage());
+    await store.save([oldAccount]);
+    final container = ProviderContainer(
+      overrides: [accountStoreProvider.overrideWithValue(store)],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(accountsProvider.future);
+    await container.read(currentAccountProvider.notifier).select(oldAccount);
+    final oldApi = container.read(apiProvider);
+    final lateRequest = oldApi.get('/protected');
+    await requestStarted.future;
+    expect(authorization, 'Bearer old-token');
+
+    await container.read(accountsProvider.notifier).upsert(replacement);
+    await container
+        .read(currentAccountProvider.notifier)
+        .select(replacement);
+    releaseResponse.complete();
+
+    await expectLater(lateRequest, throwsA(isA<ApiException>()));
+    await pumpEventQueue();
+    expect(container.read(currentAccountProvider), same(replacement));
+    expect(container.read(apiProvider).token, replacement.token);
+    expect(container.read(authExpiredProvider), isNull);
+  });
+
   test('replacement account stays selected while target revocation waits',
       () async {
     final accountA = Account(
@@ -404,22 +511,59 @@ void main() {
     final store = AccountStore(FakeStorage());
     await store.save([accountA, accountB]);
     final lifecycle = _PauseAfterRemovalLifecycle();
-    final images = _RecordingImageCache(lifecycle: lifecycle);
+    final cacheDirectory =
+        await Directory.systemTemp.createTemp('account_removal_switch');
+    final envelopes = EnvelopeCache(
+      directory: cacheDirectory,
+      lifecycle: lifecycle,
+    );
+    final evictedImages = <Object>[];
+    final images = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => _MemoryMediaCache(),
+      evictImageKey: (key) async => evictedImages.add(key),
+    );
+    final sockets = <_RecordingSocket>[];
     final gateApi = _GatedLogoutApi(accountA.serverUrl, accountA.token);
     final container = ProviderContainer(
       overrides: [
         accountStoreProvider.overrideWithValue(store),
         cacheLifecycleProvider.overrideWithValue(lifecycle),
-        envelopeCacheProvider.overrideWithValue(_RecordingEnvelopeCache()),
+        envelopeCacheProvider.overrideWithValue(envelopes),
         imageCacheProvider.overrideWithValue(images),
         accountApiFactoryProvider.overrideWithValue((_) => gateApi),
+        apiProvider.overrideWith((ref) {
+          final account = ref.watch(currentAccountProvider)!;
+          return _AccountStateApi(account.serverUrl, account.token);
+        }),
+        userSocketFactoryProvider.overrideWithValue((serverUrl, token) {
+          final socket = _RecordingSocket(serverUrl, token);
+          sockets.add(socket);
+          return socket;
+        }),
       ],
     );
     addTearDown(container.dispose);
-    addTearDown(images.dispose);
+    addTearDown(() async {
+      await images.dispose();
+      await cacheDirectory.delete(recursive: true);
+    });
+    final projectsSubscription =
+        container.listen(projectsProvider, (_, _) {});
+    final usersSubscription =
+        container.listen(allUsersProvider, (_, _) {});
+    addTearDown(projectsSubscription.close);
+    addTearDown(usersSubscription.close);
 
     await container.read(accountsProvider.future);
     await container.read(currentAccountProvider.notifier).select(accountA);
+    await container.read(projectsProvider.future);
+    await container.read(allUsersProvider.future);
+    final socketA = container.read(userSocketProvider)! as _RecordingSocket;
+    final imageA = Object();
+    images.forAccount(accountA.id);
+    images.trackImageKey(accountA.id, imageA);
+    final imageCacheB = images.forAccount(accountB.id);
     final removal = container.read(accountRemovalProvider).remove(accountA);
     await Future.wait([
       gateApi.started.future,
@@ -433,6 +577,10 @@ void main() {
     );
     await container.read(currentAccountProvider.notifier).select(accountB);
     expect(container.read(currentAccountProvider), same(accountB));
+    final apiB = container.read(apiProvider);
+    final socketB = container.read(userSocketProvider)! as _RecordingSocket;
+    await container.read(projectsProvider.future);
+    await container.read(allUsersProvider.future);
 
     lifecycle.releaseBarrier.complete();
     gateApi.release.complete();
@@ -442,6 +590,25 @@ void main() {
     );
     expect(container.read(currentAccountProvider), same(accountB));
     expect((await store.load()).map((account) => account.id), [accountB.id]);
+    expect(container.read(apiProvider), same(apiB));
+    expect(apiB.serverUrl, accountB.serverUrl);
+    expect(apiB.token, accountB.token);
+    expect(
+      container.read(projectsProvider).value?.projects.single.name,
+      'Project @ ${accountB.serverUrl}',
+    );
+    expect(
+      container.read(allUsersProvider).value?.single.name,
+      'User @ ${accountB.serverUrl}',
+    );
+    expect(await envelopes.get('${accountB.id}-projects'), isNotNull);
+    expect(images.forAccount(accountB.id), same(imageCacheB));
+    expect(socketA.disposed, isTrue);
+    expect(container.read(userSocketProvider), same(socketB));
+    expect(socketB.disposed, isFalse);
+    expect(socketB.serverUrl, accountB.serverUrl);
+    expect(socketB.token, accountB.token);
+    expect(evictedImages, [same(imageA)]);
   });
 
   test('Account json round-trip', () {
@@ -834,17 +1001,23 @@ void main() {
   );
 
   test(
-    'independent purge failures retain the account and retry idempotently',
+    'selected purge failure is not reported removed and retries safely',
     () async {
       final storage = FakeStorage();
       final store = AccountStore(storage);
-      final account = Account(
+      final accountA = Account(
         serverUrl: 'https://retry.example',
         token: 'retry-secret-token',
         userId: 'u1',
         displayName: 'Retry',
       );
-      await store.save([account]);
+      final accountB = Account(
+        serverUrl: 'https://intact.example',
+        token: 'intact-secret-token',
+        userId: 'u2',
+        displayName: 'Intact',
+      );
+      await store.save([accountA, accountB]);
       final envelopes = _RecordingEnvelopeCache(failuresRemaining: 1);
       final images = _RecordingImageCache(failuresRemaining: 1);
       final lifecycle = AccountCacheLifecycle();
@@ -854,23 +1027,34 @@ void main() {
           envelopeCacheProvider.overrideWithValue(envelopes),
           imageCacheProvider.overrideWithValue(images),
           cacheLifecycleProvider.overrideWithValue(lifecycle),
+          accountApiFactoryProvider.overrideWithValue(
+            (account) => _LogoutApi(account.serverUrl, account.token),
+          ),
         ],
       );
       addTearDown(container.dispose);
+      addTearDown(images.dispose);
 
       await container.read(accountsProvider.future);
-      await expectLater(
-        container.read(accountsProvider.notifier).remove(account.id),
-        throwsA(isA<CachePurgeException>()),
+      await container.read(currentAccountProvider.notifier).select(accountA);
+      final failed =
+          await container.read(accountRemovalProvider).remove(accountA);
+      expect(failed.status, AccountRemovalStatus.localCleanupFailed);
+      expect(container.read(currentAccountProvider), same(accountA));
+      expect(
+        (await store.load()).map((account) => account.id),
+        [accountA.id, accountB.id],
       );
-      expect(envelopes.purgedAccountIds, [account.id]);
-      expect(images.purgedAccountIds, [account.id]);
-      expect((await store.load()).single.id, account.id);
+      expect(envelopes.purgedAccountIds, [accountA.id]);
+      expect(images.purgedAccountIds, [accountA.id]);
 
-      await container.read(accountsProvider.notifier).remove(account.id);
-      expect(envelopes.purgedAccountIds, [account.id, account.id]);
-      expect(images.purgedAccountIds, [account.id, account.id]);
-      expect(await store.load(), isEmpty);
+      final retried =
+          await container.read(accountRemovalProvider).remove(accountA);
+      expect(retried.status, AccountRemovalStatus.removed);
+      expect(container.read(currentAccountProvider), isNull);
+      expect(envelopes.purgedAccountIds, [accountA.id, accountA.id]);
+      expect(images.purgedAccountIds, [accountA.id, accountA.id]);
+      expect((await store.load()).map((account) => account.id), [accountB.id]);
     },
   );
 
