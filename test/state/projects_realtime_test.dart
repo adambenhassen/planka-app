@@ -130,8 +130,15 @@ class _TestAccountNotifier extends CurrentAccountNotifier {
         token: 'tok',
         userId: 'realtime-user',
         displayName: 'Realtime user',
-      );
+  );
 }
+
+List<Override> _accountStateOverrides(Directory cacheDir) => [
+      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+      envelopeCacheProvider.overrideWithValue(
+        EnvelopeCache(directory: cacheDir),
+      ),
+    ];
 
 Future<(ProviderContainer, _FakeApi, StreamController<SocketEvent>,
         StreamController<bool>)>
@@ -309,8 +316,10 @@ void main() {
     final api = _FakeApi()..projectError = true;
     final events = StreamController<SocketEvent>.broadcast();
     final connected = StreamController<bool>.broadcast();
+    final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
+      ..._accountStateOverrides(cacheDir),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -319,6 +328,7 @@ void main() {
         fireImmediately: true);
     addTearDown(subscription.close);
     addTearDown(container.dispose);
+    addTearDown(() => cacheDir.delete(recursive: true));
     addTearDown(events.close);
     addTearDown(connected.close);
 
@@ -339,8 +349,10 @@ void main() {
     final api = _FakeApi()..userError = true;
     final events = StreamController<SocketEvent>.broadcast();
     final connected = StreamController<bool>.broadcast();
+    final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
+      ..._accountStateOverrides(cacheDir),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -349,6 +361,7 @@ void main() {
         fireImmediately: true);
     addTearDown(subscription.close);
     addTearDown(container.dispose);
+    addTearDown(() => cacheDir.delete(recursive: true));
     addTearDown(events.close);
     addTearDown(connected.close);
 
@@ -371,8 +384,10 @@ void main() {
     api.projectGate = Completer<void>();
     final events = StreamController<SocketEvent>.broadcast();
     final connected = StreamController<bool>.broadcast();
+    final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
+      ..._accountStateOverrides(cacheDir),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -381,6 +396,7 @@ void main() {
         fireImmediately: true);
     addTearDown(subscription.close);
     addTearDown(container.dispose);
+    addTearDown(() => cacheDir.delete(recursive: true));
     addTearDown(events.close);
     addTearDown(connected.close);
 
@@ -404,8 +420,10 @@ void main() {
     api.userGate = Completer<void>();
     final events = StreamController<SocketEvent>.broadcast();
     final connected = StreamController<bool>.broadcast();
+    final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
+      ..._accountStateOverrides(cacheDir),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -414,6 +432,7 @@ void main() {
         fireImmediately: true);
     addTearDown(subscription.close);
     addTearDown(container.dispose);
+    addTearDown(() => cacheDir.delete(recursive: true));
     addTearDown(events.close);
     addTearDown(connected.close);
 
@@ -436,8 +455,10 @@ void main() {
     final api = _FakeApi();
     final events = StreamController<SocketEvent>.broadcast();
     final connected = StreamController<bool>.broadcast();
+    final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
+      ..._accountStateOverrides(cacheDir),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -449,6 +470,7 @@ void main() {
     addTearDown(projectsSubscription.close);
     addTearDown(usersSubscription.close);
     addTearDown(container.dispose);
+    addTearDown(() => cacheDir.delete(recursive: true));
     addTearDown(events.close);
     addTearDown(connected.close);
     await container.read(projectsProvider.future);
