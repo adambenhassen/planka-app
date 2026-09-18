@@ -181,18 +181,20 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
       body: asyncRetry(
         board,
         () => ref.invalidate(boardProvider(boardId)),
-        (state) => _BoardBody(
-          boardId: boardId,
-          state: state,
-          filter: _filter,
-          filterBar: !_showFilter
-              ? null
-              : _FilterBar(
-                  state: state,
-                  filter: _filter,
-                  onChanged: (f) => setState(() => _filter = f),
-                ),
-        ),
+        (state) => state == null
+            ? const Center(child: CircularProgressIndicator())
+            : _BoardBody(
+                boardId: boardId,
+                state: state,
+                filter: _filter,
+                filterBar: !_showFilter
+                    ? null
+                    : _FilterBar(
+                        state: state,
+                        filter: _filter,
+                        onChanged: (f) => setState(() => _filter = f),
+                      ),
+              ),
       ),
     );
   }

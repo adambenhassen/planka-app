@@ -294,6 +294,9 @@ class _CustomFieldsManagerSheetState
                   boardAsync!,
                   () => ref.invalidate(boardProvider(widget.boardId!)),
                   (state) {
+                    if (state == null) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
                     final notifier =
                         ref.read(boardProvider(widget.boardId!).notifier);
                     final isViewer = state.boardMemberships.any(
