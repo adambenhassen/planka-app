@@ -46,10 +46,13 @@ class AccountStateEpochNotifier extends Notifier<int> {
   int build() => 0;
 
   void invalidate() {
-    state++;
+    // Clear account-owned state while its current refs are still mounted.
+    // Updating the epoch first would dispose those refs before their local
+    // barrier callbacks could remove the prior account's value.
     for (final listener in List<void Function()>.of(_listeners)) {
       listener();
     }
+    state++;
   }
 
   void Function() listen(void Function() listener) {
