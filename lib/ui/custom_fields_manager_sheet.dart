@@ -294,17 +294,18 @@ class _CustomFieldsManagerSheetState
                   boardAsync!,
                   () => ref.invalidate(boardProvider(widget.boardId!)),
                   (state) {
-                    if (state == null) {
+                    final boardState = state;
+                    if (boardState == null) {
                       return const Center(child: CircularProgressIndicator());
                     }
                     final notifier =
                         ref.read(boardProvider(widget.boardId!).notifier);
-                    final isViewer = state.boardMemberships.any(
+                    final isViewer = boardState.boardMemberships.any(
                         (m) => m.userId == currentUserId && m.role == 'viewer');
                     return _ManagerBody(
                       boardId: widget.boardId!,
                       cardId: widget.cardId,
-                      state: state,
+                      state: boardState,
                       notifier: notifier,
                       projectsView: projectsAsync.value,
                       projectsLoading:
