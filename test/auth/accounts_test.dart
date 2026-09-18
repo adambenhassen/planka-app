@@ -429,7 +429,7 @@ void main() {
     expect(container.read(currentAccountProvider), same(accountA));
     expect(
       () => container.read(apiProvider),
-      throwsA(isA<AccountCacheClosedException>()),
+      throwsA(isA<ProviderException>()),
     );
     await container.read(currentAccountProvider.notifier).select(accountB);
     expect(container.read(currentAccountProvider), same(accountB));

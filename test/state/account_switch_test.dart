@@ -260,7 +260,8 @@ void main() {
     await container.read(allUsersProvider.future);
 
     await container.read(currentAccountProvider.notifier).select(null);
-    await pumpEventQueue();
+    await container.read(projectsProvider.future);
+    await container.read(allUsersProvider.future);
 
     expect(container.read(projectsProvider).hasError, isFalse);
     expect(container.read(projectsProvider).value?.projects, isEmpty);

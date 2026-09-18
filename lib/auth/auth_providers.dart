@@ -203,7 +203,9 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     state = AsyncData(list);
     lifecycle.completeRemoval(accountId);
     if (ref.read(currentAccountProvider)?.id == accountId) {
-      await ref.read(currentAccountProvider.notifier).select(null);
+      await ref
+          .read(currentAccountProvider.notifier)
+          .select(null, invalidateState: false);
     }
   });
 }

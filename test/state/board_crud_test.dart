@@ -8,6 +8,7 @@ import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/models.dart';
 import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/api/planka_socket.dart';
+import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
 
@@ -123,6 +124,16 @@ class _SocketlessNotifier extends BoardNotifier {
   }
 }
 
+class _BoardAccountNotifier extends CurrentAccountNotifier {
+  @override
+  Account build() => Account(
+        serverUrl: 'http://board-crud',
+        token: 'tok',
+        userId: 'board-crud-user',
+        displayName: 'Board CRUD user',
+      );
+}
+
 Future<(ProviderContainer, BoardNotifier, String)> boot({
   bool fail = false,
   BoardState Function(BoardState)? seed,
@@ -131,6 +142,7 @@ Future<(ProviderContainer, BoardNotifier, String)> boot({
   final client = api ?? _FakeApi(fail: fail);
   final container = ProviderContainer(overrides: [
     apiProvider.overrideWithValue(client),
+    currentAccountProvider.overrideWith(_BoardAccountNotifier.new),
     boardProvider.overrideWith2((arg) => _SocketlessNotifier(arg, seed: seed)),
   ]);
   final boardId = _fixture()['item']['id'] as String;

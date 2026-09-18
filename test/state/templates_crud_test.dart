@@ -8,6 +8,7 @@ import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
+import 'package:planka_app/state/envelope_cache.dart';
 import 'package:planka_app/state/projects_state.dart';
 
 const _projectId = 'p1';
@@ -95,8 +96,17 @@ class _FakeApi extends PlankaApi {
 void main() {
   Future<(ProviderContainer, ProjectsNotifier, _FakeApi)> boot() async {
     final api = _FakeApi();
-    final container =
-        ProviderContainer(overrides: [apiProvider.overrideWithValue(api)]);
+    final cacheDir = await Directory.systemTemp.createTemp('templates_crud');
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        currentAccountProvider.overrideWith(_AccNotifier.new),
+        envelopeCacheProvider.overrideWithValue(
+          EnvelopeCache(directory: cacheDir),
+        ),
+      ],
+    );
+    addTearDown(() => cacheDir.delete(recursive: true));
     await container.read(projectsProvider.future);
     return (container, container.read(projectsProvider.notifier), api);
   }
