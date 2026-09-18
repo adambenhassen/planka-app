@@ -1325,7 +1325,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       return;
     }
     final accountId = boundAccountId ?? currentAccount?.id;
-    final api = _accountApi ?? ref.read(apiProvider);
+    final PlankaApi api = _accountApi ?? ref.read(apiProvider);
     final seenBeforeFetch = _stateChangesSeen;
     try {
       final env = await PlankaRepo(api).board(boardId);
