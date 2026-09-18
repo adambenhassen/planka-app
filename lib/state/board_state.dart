@@ -964,7 +964,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       // Riverpod carries the previous AsyncData value into a dependency
       // refresh. A nullable data slot lets the notifier publish an explicit
       // value-free barrier before the replacement account can load.
-      state = const AsyncData<BoardState?>(null);
+      state = AsyncLoading<BoardState?>().copyWithPrevious(
+        const AsyncData<BoardState?>(null),
+      );
     }
   }
 
@@ -1268,7 +1270,6 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   @override
   Future<BoardState?> build() async {
     final buildGeneration = ++_buildGeneration;
-    state = const AsyncLoading<BoardState?>();
     ref.watch(accountStateEpochProvider);
     if (_removeAccountEpochListener == null) {
       _removeAccountEpochListener = ref
