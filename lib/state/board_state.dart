@@ -784,6 +784,7 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
 
   @override
   Future<List<PlankaUser>> build() async {
+    state = const AsyncLoading<List<PlankaUser>>();
     ref.watch(accountStateEpochProvider);
     if (_removeAccountEpochListener == null) {
       _removeAccountEpochListener = ref
@@ -795,13 +796,6 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
       });
     }
     final account = ref.watch(currentAccountProvider);
-    ref.listen(currentAccountProvider, (previous, next) {
-      if (previous?.id != next?.id ||
-          previous?.serverUrl != next?.serverUrl ||
-          previous?.token != next?.token) {
-        _invalidateAccountState();
-      }
-    });
     if (account == null ||
         !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
       return [];
@@ -1300,6 +1294,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
 
   @override
   Future<BoardState?> build() async {
+    state = const AsyncLoading<BoardState?>();
     final buildGeneration = ++_buildGeneration;
     ref.watch(accountStateEpochProvider);
     if (_removeAccountEpochListener == null) {
@@ -1311,13 +1306,6 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         _removeAccountEpochListener = null;
       });
     }
-    ref.listen(currentAccountProvider, (previous, next) {
-      if (previous?.id != next?.id ||
-          previous?.serverUrl != next?.serverUrl ||
-          previous?.token != next?.token) {
-        _invalidateAccountState();
-      }
-    });
     final account = ref.watch(currentAccountProvider);
     _disposeAccountResources();
     if (account == null) {

@@ -448,6 +448,7 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
 
   @override
   Future<ProjectsView> build() async {
+    state = const AsyncLoading<ProjectsView>();
     // Re-fetch when the active account (and thus the API client) changes.
     ref.watch(accountStateEpochProvider);
     if (_removeAccountEpochListener == null) {
@@ -460,13 +461,6 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
       });
     }
     final account = ref.watch(currentAccountProvider);
-    ref.listen(currentAccountProvider, (previous, next) {
-      if (previous?.id != next?.id ||
-          previous?.serverUrl != next?.serverUrl ||
-          previous?.token != next?.token) {
-        _invalidateAccountState();
-      }
-    });
     if (account == null ||
         !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
       return const ProjectsView(

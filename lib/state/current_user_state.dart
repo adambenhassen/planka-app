@@ -22,6 +22,7 @@ class CurrentUserNotifier extends AsyncNotifier<PlankaUser?> {
 
   @override
   Future<PlankaUser?> build() async {
+    state = const AsyncLoading<PlankaUser?>();
     ref.watch(accountStateEpochProvider);
     if (_removeAccountEpochListener == null) {
       _removeAccountEpochListener = ref
@@ -33,13 +34,6 @@ class CurrentUserNotifier extends AsyncNotifier<PlankaUser?> {
       });
     }
     final account = ref.watch(currentAccountProvider);
-    ref.listen(currentAccountProvider, (previous, next) {
-      if (previous?.id != next?.id ||
-          previous?.serverUrl != next?.serverUrl ||
-          previous?.token != next?.token) {
-        _invalidateAccountState();
-      }
-    });
     if (account == null ||
         !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
       return null;

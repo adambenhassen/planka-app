@@ -49,6 +49,7 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
 
   @override
   Future<List<PlankaNotification>> build() async {
+    state = const AsyncLoading<List<PlankaNotification>>();
     _disposeSocket();
     ref.watch(accountStateEpochProvider);
     if (_removeAccountEpochListener == null) {
@@ -61,13 +62,6 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
       });
     }
     final account = ref.watch(currentAccountProvider);
-    ref.listen(currentAccountProvider, (previous, next) {
-      if (previous?.id != next?.id ||
-          previous?.serverUrl != next?.serverUrl ||
-          previous?.token != next?.token) {
-        _invalidateAccountState();
-      }
-    });
     if (account == null ||
         !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
       return [];
