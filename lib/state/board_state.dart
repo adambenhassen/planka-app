@@ -1271,6 +1271,11 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     });
     await socket.connect();
     await socket.subscribeBoard(boardId);
+    if (ref.read(currentAccountProvider)?.id != account.id) {
+      socket.dispose();
+      if (identical(_socket, socket)) _socket = null;
+      throw StateError('Account changed');
+    }
     return foldUserRoom(loaded);
   }
 
