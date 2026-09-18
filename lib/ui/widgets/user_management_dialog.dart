@@ -52,7 +52,10 @@ class _UserManagementDialogState extends ConsumerState<_UserManagementDialog> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final selfId = ref.watch(currentUserProvider).value?.id;
+    final currentUser = ref.watch(currentUserProvider);
+    final selfId = currentUser.isLoading || currentUser.hasError
+        ? null
+        : currentUser.value?.id;
     final users = ref.watch(allUsersProvider);
 
     return AlertDialog(

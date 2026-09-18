@@ -82,7 +82,7 @@ void main() {
     expect(second.projects.map((p) => p.name), ['Project @ http://b']);
   });
 
-  test('switching accounts clears same-board state before the new load',
+  test('switching accounts hides same-board state before the new load',
       () async {
     final accountA = account('http://a');
     final accountB = account('http://b');
@@ -118,17 +118,17 @@ void main() {
 
     await container.read(currentAccountProvider.notifier).select(accountB);
     await pumpEventQueue();
-    expect(container.read(boardProvider(boardId)).value, isNull);
+    expect(container.read(boardProvider(boardId)).isLoading, isTrue);
 
     final loading = container.read(boardProvider(boardId).future);
     await pumpEventQueue();
-    expect(container.read(boardProvider(boardId)).value, isNull);
+    expect(container.read(boardProvider(boardId)).isLoading, isTrue);
     bGate.complete();
     await loading;
     expect(container.read(boardProvider(boardId)).value?.board.name, 'http://b');
 
     await container.read(currentAccountProvider.notifier).select(null);
     await pumpEventQueue();
-    expect(container.read(boardProvider(boardId)).value, isNull);
+    expect(container.read(boardProvider(boardId)).hasError, isTrue);
   });
 }

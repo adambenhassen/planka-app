@@ -23,7 +23,9 @@ class _ProjectManagersDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final view = ref.watch(projectsProvider).value;
+    final projects = ref.watch(projectsProvider);
+    final view =
+        projects.isLoading || projects.hasError ? null : projects.value;
     final notifier = ref.read(projectsProvider.notifier);
     if (view == null) return const SizedBox.shrink();
     final managers = view.managersOf(projectId);

@@ -134,7 +134,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final board = ref.watch(boardProvider(boardId));
-    final state = board.value;
+    final state = board.isLoading || board.hasError ? null : board.value;
     final b = state?.board;
     return Scaffold(
       // Let the board background run behind the app bar; like the web

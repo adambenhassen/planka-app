@@ -418,7 +418,10 @@ class _AccountSwitcher extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final accounts = ref.watch(accountsProvider).value ?? [];
     final current = ref.watch(currentAccountProvider);
-    final isAdmin = ref.watch(currentUserProvider).value?.role == 'admin';
+    final currentUser = ref.watch(currentUserProvider);
+    final isAdmin = !currentUser.isLoading &&
+        !currentUser.hasError &&
+        currentUser.value?.role == 'admin';
     return PopupMenuButton<String>(
       icon: const Icon(Icons.account_circle_outlined),
       onSelected: (id) async {

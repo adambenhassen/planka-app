@@ -20,7 +20,10 @@ class _ProfileDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final user = ref.watch(currentUserProvider).value;
+    final userAsync = ref.watch(currentUserProvider);
+    final user = userAsync.isLoading || userAsync.hasError
+        ? null
+        : userAsync.value;
     if (user == null) return const SizedBox.shrink();
 
     Future<void> mutate(Future<void> Function(PlankaRepo repo) run) async {

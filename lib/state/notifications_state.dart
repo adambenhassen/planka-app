@@ -14,10 +14,11 @@ final notificationsProvider =
     AsyncNotifierProvider<NotificationsNotifier, List<PlankaNotification>>(
         NotificationsNotifier.new);
 
-final unreadCountProvider = Provider<int>((ref) =>
-    (ref.watch(notificationsProvider).value ?? [])
-        .where((n) => !n.isRead)
-        .length);
+final unreadCountProvider = Provider<int>((ref) {
+  final notifications = ref.watch(notificationsProvider);
+  if (notifications.isLoading || notifications.hasError) return 0;
+  return (notifications.value ?? []).where((n) => !n.isRead).length;
+});
 
 class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
   PlankaSocket? _socket;
