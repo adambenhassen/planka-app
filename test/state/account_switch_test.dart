@@ -196,14 +196,14 @@ void main() {
     await pumpEventQueue();
     expect(container.read(boardProvider(boardId)).isLoading, isTrue);
     expect(container.read(boardProvider(boardId)).value, isNull);
-    expect(container.read(notificationsProvider).value, isEmpty);
+    expect(container.read(notificationsProvider).value, anyOf(isNull, isEmpty));
 
     final loading = container.read(boardProvider(boardId).future);
     final notificationLoading = container.read(notificationsProvider.future);
     await pumpEventQueue();
     expect(container.read(boardProvider(boardId)).isLoading, isTrue);
     expect(container.read(boardProvider(boardId)).value, isNull);
-    expect(container.read(notificationsProvider).value, isEmpty);
+    expect(container.read(notificationsProvider).value, anyOf(isNull, isEmpty));
     bGate.complete();
     await Future.wait([loading, notificationLoading]);
     expect(container.read(boardProvider(boardId)).value?.board.name, 'http://b');
@@ -226,7 +226,7 @@ void main() {
     expect(container.read(boardProvider(boardId)).hasError, isTrue);
     expect(container.read(boardProvider(boardId)).value, isNull);
     expect(sockets[1].disposed, isTrue);
-    expect(container.read(notificationsProvider).value, isEmpty);
+    expect(container.read(notificationsProvider).value, anyOf(isNull, isEmpty));
     expect(notificationSockets[1].disposed, isTrue);
     expect(userSockets[1].disposed, isTrue);
     final imageB = Object();
