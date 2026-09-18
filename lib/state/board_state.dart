@@ -713,9 +713,10 @@ final cardActionsProvider = FutureProvider.autoDispose
     .family<List<PlankaAction>, String>((ref, cardId) async {
   ref.watch(accountStateEpochProvider);
   final account = ref.watch(currentAccountProvider);
-  if (account == null) return [];
   final env = await PlankaRepo(ref.watch(apiProvider)).cardActions(cardId);
-  if (ref.read(currentAccountProvider)?.id != account.id) return [];
+  if (account != null && ref.read(currentAccountProvider)?.id != account.id) {
+    return [];
+  }
   return env.items.map(PlankaAction.fromJson).toList();
 });
 
@@ -765,7 +766,7 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
   Future<List<PlankaUser>> build() async {
     state = const AsyncLoading<List<PlankaUser>>();
     ref.watch(accountStateEpochProvider);
-    if (ref.watch(currentAccountProvider) == null) return [];
+    ref.watch(currentAccountProvider);
     ref.watch(apiProvider);
     final userEvents = ref.watch(userEventsProvider);
     final userConnected = ref.watch(userConnectedProvider);
@@ -875,12 +876,13 @@ final cardCommentsProvider = FutureProvider.autoDispose
     .family<List<PlankaComment>, (String, String)>((ref, args) async {
   ref.watch(accountStateEpochProvider);
   final account = ref.watch(currentAccountProvider);
-  if (account == null) return [];
   final notifier = ref.read(boardProvider(args.$1).notifier);
   notifier._registerCommentProvider(args.$2);
   ref.onDispose(() => notifier._unregisterCommentProvider(args.$2));
   final comments = await notifier.fetchComments(args.$2);
-  if (ref.read(currentAccountProvider)?.id != account.id) return [];
+  if (account != null && ref.read(currentAccountProvider)?.id != account.id) {
+    return [];
+  }
   return comments;
 });
 
@@ -996,13 +998,15 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     PlankaApi? api,
   }) async {
     final account = ref.read(currentAccountProvider);
-    if (account == null || (accountId != null && account.id != accountId)) {
+    if ((accountId != null && account?.id != accountId) ||
+        (account == null && api == null)) {
       return null;
     }
     final repo = api == null ? _repo : PlankaRepo(api);
     try {
       final env = await ref.read(envelopeCacheProvider).fetchOrCached(
-          '${account.id}-project-$projectId', () => repo.project(projectId));
+          '${accountId ?? account?.id ?? ''}-project-$projectId',
+          () => repo.project(projectId));
       return env;
     } on ApiException catch (e) {
       // Reachable offline on the first open after an upgrade: the board
@@ -1027,14 +1031,19 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     PlankaApi? api,
   }) async {
     final account = ref.read(currentAccountProvider);
-    if (account == null || (accountId != null && account.id != accountId)) {
+    if ((accountId != null && account?.id != accountId) ||
+        (account == null && api == null)) {
       return null;
     }
     final repo = api == null ? _repo : PlankaRepo(api);
     try {
       final env = await repo.project(projectId);
-      unawaited(
-          ref.read(envelopeCacheProvider).put('${account.id}-project-$projectId', env));
+      final cacheAccountId = accountId ?? account?.id;
+      if (cacheAccountId != null) {
+        unawaited(ref
+            .read(envelopeCacheProvider)
+            .put('$cacheAccountId-project-$projectId', env));
+      }
       return env;
     } on ApiException catch (e) {
       debugPrint('board base custom fields resync failed: ${redactDiagnostic(e)}');
@@ -1210,6 +1219,11 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   Future<BoardState> build() async {
     state = const AsyncLoading<BoardState>();
     ref.watch(accountStateEpochProvider);
+    ref.listen(currentAccountProvider, (previous, next) {
+      if (previous?.id != next?.id) {
+        state = const AsyncLoading<BoardState>();
+      }
+    });
     final account = ref.watch(currentAccountProvider);
     _disposeAccountResources();
     if (account == null) {
@@ -1305,17 +1319,23 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   /// server pushes no event for a mutation it refused, so nothing would heal
   /// it.
   Future<void> _refetch({bool discardOnEvent = false}) async {
-    final accountId = _accountId;
-    final api = _accountApi;
-    if (accountId == null || api == null) return;
+    final currentAccount = ref.read(currentAccountProvider);
+    final boundAccountId = _accountId;
+    if (boundAccountId != null && currentAccount?.id != boundAccountId) {
+      return;
+    }
+    final accountId = boundAccountId ?? currentAccount?.id;
+    final api = _accountApi ?? ref.read(apiProvider);
     final seenBeforeFetch = _stateChangesSeen;
     try {
       final env = await PlankaRepo(api).board(boardId);
       final account = ref.read(currentAccountProvider);
-      if (account?.id != accountId) return;
-      await ref
-          .read(envelopeCacheProvider)
-          .put('$accountId-board-$boardId', env);
+      if (boundAccountId != null && account?.id != boundAccountId) return;
+      if (accountId != null) {
+        await ref
+            .read(envelopeCacheProvider)
+            .put('$accountId-board-$boardId', env);
+      }
       final prev = state.value;
       var next = BoardState.fromEnvelope(env);
       next = await _withBaseCustomFields(
@@ -1324,7 +1344,10 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
         accountId: accountId,
         api: api,
       );
-      if (ref.read(currentAccountProvider)?.id != accountId) return;
+      if (boundAccountId != null &&
+          ref.read(currentAccountProvider)?.id != boundAccountId) {
+        return;
+      }
       // When the fresh project fetch fails, the fold above returns the raw
       // board snapshot — which carries no base data at all. Installing that
       // would drop every instantiated group's name and fields off the open

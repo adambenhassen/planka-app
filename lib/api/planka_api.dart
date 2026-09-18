@@ -474,16 +474,25 @@ class AccountImageCacheManager {
     _purgedImageAccounts.add(accountId);
     Object? firstFailure;
     StackTrace? firstFailureStack;
+    final evictFuture = _evictTrackedImageKeys(accountId);
     try {
-      await _evictTrackedImageKeys(accountId);
+      await _lifecycle.beginRemoval(accountId);
     } catch (e, s) {
       firstFailure = e;
       firstFailureStack = s;
     }
     try {
-      await _lifecycle.beginRemoval(accountId);
+      await evictFuture;
     } catch (e, s) {
-      throw CachePurgeException('media', e, s);
+      firstFailure ??= e;
+      firstFailureStack ??= s;
+    }
+    if (firstFailure != null) {
+      throw CachePurgeException(
+        'media',
+        firstFailure,
+        firstFailureStack ?? StackTrace.current,
+      );
     }
     BaseCacheManager manager;
     try {
