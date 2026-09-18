@@ -10,7 +10,6 @@ import 'package:file/file.dart' as fs;
 import 'package:file/local.dart' as local;
 import 'package:file/memory.dart' as file_memory;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path/path.dart' as p;
@@ -143,24 +142,24 @@ class _ControlledMediaCache implements BaseCacheManager {
 }
 
 class _GatedMemoryImage extends MemoryImage {
-  _GatedMemoryImage(
-    super.bytes, {
-    required this.evictionStarted,
-    required this.releaseEviction,
-  });
+  _GatedMemoryImage(super.bytes, this.gate);
 
-  final Completer<void> evictionStarted;
-  final Completer<void> releaseEviction;
-  var gateKeyResolution = false;
+  final _ImageKeyGate gate;
 
   @override
   Future<MemoryImage> obtainKey(ImageConfiguration configuration) async {
-    if (gateKeyResolution) {
-      if (!evictionStarted.isCompleted) evictionStarted.complete();
-      await releaseEviction.future;
+    if (gate.enabled) {
+      if (!gate.started.isCompleted) gate.started.complete();
+      await gate.release.future;
     }
     return this;
   }
+}
+
+class _ImageKeyGate {
+  final started = Completer<void>();
+  final release = Completer<void>();
+  var enabled = false;
 }
 
 class _RecordingFileService extends FileService {
@@ -637,17 +636,15 @@ void main() {
         imageCache.clear();
         imageCache.clearLiveImages();
       });
-      final evictionStarted = Completer<void>();
-      final releaseEviction = Completer<void>();
+      final gate = _ImageKeyGate();
       addTearDown(() {
-        if (!releaseEviction.isCompleted) releaseEviction.complete();
+        if (!gate.release.isCompleted) gate.release.complete();
       });
       final provider = _GatedMemoryImage(
         base64Decode(
           'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
         ),
-        evictionStarted: evictionStarted,
-        releaseEviction: releaseEviction,
+        gate,
       );
       await tester.pumpWidget(
         const Directionality(
@@ -663,18 +660,18 @@ void main() {
       final manager = AccountImageCacheManager();
       addTearDown(manager.dispose);
       manager.trackImageKey(accountId, provider);
-      provider.gateKeyResolution = true;
+      gate.enabled = true;
       var completed = false;
       final eviction = manager.evictDecodedAccount(accountId).then((_) {
         completed = true;
       });
       await tester.pump();
 
-      expect(evictionStarted.isCompleted, isTrue);
+      expect(gate.started.isCompleted, isTrue);
       expect(completed, isFalse);
       expect(imageCache.containsKey(provider), isTrue);
 
-      releaseEviction.complete();
+      gate.release.complete();
       await eviction;
 
       expect(completed, isTrue);
