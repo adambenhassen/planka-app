@@ -168,8 +168,10 @@ void main() {
       }),
     ]);
     addTearDown(container.dispose);
-    addTearDown(images.dispose);
-    addTearDown(() => cacheDir.delete(recursive: true));
+    addTearDown(() async {
+      await images.dispose();
+      await cacheDir.delete(recursive: true);
+    });
 
     final boardId = 'b1';
     await container.read(currentAccountProvider.notifier).select(accountA);

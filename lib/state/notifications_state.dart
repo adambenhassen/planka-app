@@ -44,16 +44,17 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     if (ref.mounted) {
       // A dependency refresh otherwise carries the previous account's
       // notifications as AsyncData while the replacement account loads.
-      state = AsyncError<List<PlankaNotification>>(
-        StateError('Account changed'),
-        StackTrace.current,
+      state = AsyncLoading<List<PlankaNotification>>().copyWithPrevious(
+        AsyncError<List<PlankaNotification>>(
+          StateError('Account changed'),
+          StackTrace.current,
+        ),
       );
     }
   }
 
   @override
   Future<List<PlankaNotification>> build() async {
-    state = const AsyncLoading<List<PlankaNotification>>();
     _disposeSocket();
     ref.watch(accountStateEpochProvider);
     if (_removeAccountEpochListener == null) {

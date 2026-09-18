@@ -774,16 +774,17 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
     _connectedSub = null;
     ref.invalidateSelf();
     if (ref.mounted) {
-      state = AsyncError<List<PlankaUser>>(
-        StateError('Account changed'),
-        StackTrace.current,
+      state = AsyncLoading<List<PlankaUser>>().copyWithPrevious(
+        AsyncError<List<PlankaUser>>(
+          StateError('Account changed'),
+          StackTrace.current,
+        ),
       );
     }
   }
 
   @override
   Future<List<PlankaUser>> build() async {
-    state = const AsyncLoading<List<PlankaUser>>();
     ref.watch(accountStateEpochProvider);
     if (_removeAccountEpochListener == null) {
       _removeAccountEpochListener = ref
