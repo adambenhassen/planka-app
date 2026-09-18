@@ -142,7 +142,7 @@ class _ControlledMediaCache implements BaseCacheManager {
 }
 
 class _GatedMemoryImage extends MemoryImage {
-  _GatedMemoryImage(super.bytes, this.gate);
+  const _GatedMemoryImage(super.bytes, this.gate);
 
   final _ImageKeyGate gate;
 
@@ -161,6 +161,8 @@ class _ImageKeyGate {
   final release = Completer<void>();
   var enabled = false;
 }
+
+class _PendingImageStreamCompleter extends ImageStreamCompleter {}
 
 class _RecordingFileService extends FileService {
   String? url;
@@ -643,7 +645,7 @@ void main() {
       final provider = _GatedMemoryImage(Uint8List(0), gate);
       imageCache.putIfAbsent(
         provider,
-        ImageStreamCompleter.new,
+        _PendingImageStreamCompleter.new,
       );
       expect(imageCache.containsKey(provider), isTrue);
 
