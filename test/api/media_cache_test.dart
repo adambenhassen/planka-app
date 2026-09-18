@@ -10,8 +10,8 @@ import 'package:file/file.dart' as fs;
 import 'package:file/local.dart' as local;
 import 'package:file/memory.dart' as file_memory;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter/widgets.dart';
 import 'package:path/path.dart' as p;
 import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/cache_lifecycle.dart';
@@ -640,20 +640,11 @@ void main() {
       addTearDown(() {
         if (!gate.release.isCompleted) gate.release.complete();
       });
-      final provider = _GatedMemoryImage(
-        base64Decode(
-          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-        ),
-        gate,
+      final provider = _GatedMemoryImage(Uint8List(0), gate);
+      imageCache.putIfAbsent(
+        provider,
+        ImageStreamCompleter.new,
       );
-      await tester.pumpWidget(
-        const Directionality(
-          textDirection: TextDirection.ltr,
-          child: SizedBox(),
-        ),
-      );
-      await precacheImage(provider, tester.element(find.byType(SizedBox)));
-      await tester.pump();
       expect(imageCache.containsKey(provider), isTrue);
 
       const accountId = 'https://media.example#flutter-cache';
