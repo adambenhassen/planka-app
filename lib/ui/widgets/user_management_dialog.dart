@@ -61,6 +61,7 @@ class _UserManagementDialogState extends ConsumerState<_UserManagementDialog> {
         width: 420,
         height: 480,
         child: users.when(
+          skipLoadingOnRefresh: false,
           error: (error, _) => Center(child: Text(redactDiagnostic(error))),
           loading: () => const Center(child: CircularProgressIndicator()),
           data: (users) => ListView(

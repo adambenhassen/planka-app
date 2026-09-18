@@ -105,6 +105,7 @@ class _AddMember extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final users = ref.watch(allUsersProvider);
     return users.when(
+      skipLoadingOnRefresh: false,
       loading: () => const Padding(
         padding: EdgeInsets.all(8),
         child: Center(child: CircularProgressIndicator()),

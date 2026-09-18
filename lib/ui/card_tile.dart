@@ -120,7 +120,7 @@ class CardTile extends ConsumerWidget {
                 fit: BoxFit.fitWidth,
                 imageBuilder: (_, imageProvider) {
                   plankaImageCacheManager.trackImageKey(
-                    account!.id,
+                    account.id,
                     imageProvider,
                   );
                   return Image(

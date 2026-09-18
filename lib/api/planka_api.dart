@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:io' as io;
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
@@ -410,8 +409,8 @@ class AccountImageCacheManager {
   final Map<String, Set<Object>> _trackedImageKeys = {};
   final Set<String> _purgedImageAccounts = {};
 
-  static Future<void> _evictFlutterImage(Object key) async {
-    await PaintingBinding.instance.imageCache.evict(key);
+  static void _evictFlutterImage(Object key) {
+    PaintingBinding.instance.imageCache.evict(key);
   }
 
   /// Records the exact image-provider key created by a cached image widget.

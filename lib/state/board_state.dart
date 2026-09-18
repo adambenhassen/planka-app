@@ -709,22 +709,15 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
 /// A card's activity feed, fetched on demand when its section is shown.
 /// ponytail: no actionCreate socket wiring — the feed refetches each time the
 /// card sheet opens (autoDispose); wire the socket event if staleness bites.
-final cardActionsProvider = AsyncNotifierProvider.autoDispose
-    .family<CardActionsNotifier, List<PlankaAction>, String>(
-      CardActionsNotifier.new,
-    );
-
-class CardActionsNotifier
-    extends AutoDisposeFamilyAsyncNotifier<List<PlankaAction>, String> {
-  @override
-  Future<List<PlankaAction>> build(String cardId) async {
-    state = const AsyncLoading<List<PlankaAction>>();
-    ref.watch(accountStateEpochProvider);
-    if (ref.watch(currentAccountProvider) == null) return [];
-    final env = await PlankaRepo(ref.watch(apiProvider)).cardActions(cardId);
-    return env.items.map(PlankaAction.fromJson).toList();
-  }
-}
+final cardActionsProvider = FutureProvider.autoDispose
+    .family<List<PlankaAction>, String>((ref, cardId) async {
+  ref.watch(accountStateEpochProvider);
+  final account = ref.watch(currentAccountProvider);
+  if (account == null) return [];
+  final env = await PlankaRepo(ref.watch(apiProvider)).cardActions(cardId);
+  if (ref.read(currentAccountProvider)?.id != account.id) return [];
+  return env.items.map(PlankaAction.fromJson).toList();
+});
 
 /// All server users, for the member and manager pickers and admin user list.
 /// The endpoint is admin/project-owner only; non-admins get a 403 the UI
@@ -878,40 +871,18 @@ final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState,
 /// Comments are not part of the board response, so load them when a card
 /// detail sheet opens. The notifier folds the result into the board state so
 /// socket events and comment mutations continue to share one collection.
-final cardCommentsProvider = AsyncNotifierProvider.autoDispose
-    .family<CardCommentsNotifier, List<PlankaComment>, (String, String)>(
-      CardCommentsNotifier.new,
-    );
-
-class CardCommentsNotifier
-    extends AutoDisposeFamilyAsyncNotifier<List<PlankaComment>, (String, String)> {
-  BoardNotifier? _boardNotifier;
-  String? _cardId;
-
-  @override
-  Future<List<PlankaComment>> build((String, String) args) async {
-    state = const AsyncLoading<List<PlankaComment>>();
-    _unregister();
-    ref.watch(accountStateEpochProvider);
-    if (ref.watch(currentAccountProvider) == null) return [];
-    final notifier = ref.read(boardProvider(args.$1).notifier);
-    _boardNotifier = notifier;
-    _cardId = args.$2;
-    notifier._registerCommentProvider(args.$2);
-    ref.onDispose(_unregister);
-    return notifier.fetchComments(args.$2);
-  }
-
-  void _unregister() {
-    final notifier = _boardNotifier;
-    final cardId = _cardId;
-    if (notifier != null && cardId != null) {
-      notifier._unregisterCommentProvider(cardId);
-    }
-    _boardNotifier = null;
-    _cardId = null;
-  }
-}
+final cardCommentsProvider = FutureProvider.autoDispose
+    .family<List<PlankaComment>, (String, String)>((ref, args) async {
+  ref.watch(accountStateEpochProvider);
+  final account = ref.watch(currentAccountProvider);
+  if (account == null) return [];
+  final notifier = ref.read(boardProvider(args.$1).notifier);
+  notifier._registerCommentProvider(args.$2);
+  ref.onDispose(() => notifier._unregisterCommentProvider(args.$2));
+  final comments = await notifier.fetchComments(args.$2);
+  if (ref.read(currentAccountProvider)?.id != account.id) return [];
+  return comments;
+});
 
 class BoardNotifier extends AsyncNotifier<BoardState> {
   BoardNotifier(this.boardId);
@@ -975,7 +946,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     if (_accountId != null && _accountId != account.id) {
       throw StateError('Account changed');
     }
-    final api = _accountApi ?? ref.read(apiProvider);
+    final PlankaApi api = _accountApi ?? ref.read(apiProvider);
     return _loadForAccount(account, api);
   }
 

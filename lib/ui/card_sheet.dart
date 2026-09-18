@@ -529,6 +529,7 @@ class _CardSheetState extends ConsumerState<CardSheet> {
         section(
           l10n.sectionComments,
           commentsLoad.when(
+            skipLoadingOnRefresh: false,
             loading: () => const Padding(
               padding: EdgeInsets.all(8),
               child: Center(child: CircularProgressIndicator()),
