@@ -779,6 +779,7 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
     _connectedSub = null;
     if (ref.mounted) {
       state = const AsyncData<List<PlankaUser>>([]);
+      ref.invalidateSelf();
     }
   }
 
@@ -796,6 +797,13 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
       });
     }
     final account = ref.watch(currentAccountProvider);
+    ref.listen(currentAccountProvider, (previous, next) {
+      if (previous?.id != next?.id ||
+          previous?.serverUrl != next?.serverUrl ||
+          previous?.token != next?.token) {
+        _invalidateAccountState();
+      }
+    });
     if (account == null ||
         !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
       return [];
@@ -985,6 +993,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       // refresh. A nullable data slot lets the notifier publish an explicit
       // value-free barrier before the replacement account can load.
       state = const AsyncData<BoardState?>(null);
+      ref.invalidateSelf();
     }
   }
 
@@ -1307,6 +1316,13 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       });
     }
     final account = ref.watch(currentAccountProvider);
+    ref.listen(currentAccountProvider, (previous, next) {
+      if (previous?.id != next?.id ||
+          previous?.serverUrl != next?.serverUrl ||
+          previous?.token != next?.token) {
+        _invalidateAccountState();
+      }
+    });
     _disposeAccountResources();
     if (account == null) {
       _accountId = null;

@@ -443,6 +443,7 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
           backgroundImages: [],
         ),
       );
+      ref.invalidateSelf();
     }
   }
 
@@ -461,6 +462,13 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
       });
     }
     final account = ref.watch(currentAccountProvider);
+    ref.listen(currentAccountProvider, (previous, next) {
+      if (previous?.id != next?.id ||
+          previous?.serverUrl != next?.serverUrl ||
+          previous?.token != next?.token) {
+        _invalidateAccountState();
+      }
+    });
     if (account == null ||
         !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
       return const ProjectsView(

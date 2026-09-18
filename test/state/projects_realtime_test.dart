@@ -123,6 +123,31 @@ class _FakeApi extends PlankaApi {
   }
 }
 
+class _MemoryEnvelopeCache extends EnvelopeCache {
+  final _values = <String, Envelope>{};
+
+  @override
+  Future<void> put(String key, Envelope env) async {
+    _values[key] = env;
+  }
+
+  @override
+  Future<Envelope> fetchOrCached(
+    String key,
+    Future<Envelope> Function() fetch,
+  ) async {
+    try {
+      final env = await fetch();
+      _values[key] = env;
+      return env;
+    } catch (_) {
+      final cached = _values[key];
+      if (cached != null) return cached;
+      rethrow;
+    }
+  }
+}
+
 class _TestAccountNotifier extends CurrentAccountNotifier {
   @override
   Account build() => Account(
@@ -313,9 +338,7 @@ void main() {
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
       currentAccountProvider.overrideWith(_TestAccountNotifier.new),
-      envelopeCacheProvider.overrideWithValue(
-        EnvelopeCache(directory: cacheDir),
-      ),
+      envelopeCacheProvider.overrideWithValue(_MemoryEnvelopeCache()),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -387,9 +410,7 @@ void main() {
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
       currentAccountProvider.overrideWith(_TestAccountNotifier.new),
-      envelopeCacheProvider.overrideWithValue(
-        EnvelopeCache(directory: cacheDir),
-      ),
+      envelopeCacheProvider.overrideWithValue(_MemoryEnvelopeCache()),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),

@@ -17,6 +17,7 @@ class CurrentUserNotifier extends AsyncNotifier<PlankaUser?> {
   void _invalidateAccountState() {
     if (ref.mounted) {
       state = const AsyncData<PlankaUser?>(null);
+      ref.invalidateSelf();
     }
   }
 
@@ -34,6 +35,13 @@ class CurrentUserNotifier extends AsyncNotifier<PlankaUser?> {
       });
     }
     final account = ref.watch(currentAccountProvider);
+    ref.listen(currentAccountProvider, (previous, next) {
+      if (previous?.id != next?.id ||
+          previous?.serverUrl != next?.serverUrl ||
+          previous?.token != next?.token) {
+        _invalidateAccountState();
+      }
+    });
     if (account == null ||
         !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
       return null;

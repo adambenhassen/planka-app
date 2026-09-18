@@ -44,6 +44,7 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
       // A dependency refresh otherwise carries the previous account's
       // notifications as AsyncData while the replacement account loads.
       state = const AsyncData<List<PlankaNotification>>([]);
+      ref.invalidateSelf();
     }
   }
 
@@ -62,6 +63,13 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
       });
     }
     final account = ref.watch(currentAccountProvider);
+    ref.listen(currentAccountProvider, (previous, next) {
+      if (previous?.id != next?.id ||
+          previous?.serverUrl != next?.serverUrl ||
+          previous?.token != next?.token) {
+        _invalidateAccountState();
+      }
+    });
     if (account == null ||
         !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
       return [];
