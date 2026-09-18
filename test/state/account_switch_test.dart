@@ -44,21 +44,6 @@ class _BoardApi extends PlankaApi {
   }
 }
 
-class _MutableAccount extends CurrentAccountNotifier {
-  _MutableAccount(this.account);
-
-  Account? account;
-
-  @override
-  Account? build() => account;
-
-  void switchTo(Account? next) {
-    account = next;
-    state = next;
-    ref.read(accountStateEpochProvider.notifier).invalidate();
-  }
-}
-
 class _MemStore implements SecureKeyValueStore {
   final Map<String, String> data = {};
   @override
@@ -101,11 +86,10 @@ void main() {
       () async {
     final accountA = account('http://a');
     final accountB = account('http://b');
-    final mutable = _MutableAccount(accountA);
     final bGate = Completer<void>();
     final cacheDir = await Directory.systemTemp.createTemp('board_switch');
     final container = ProviderContainer(overrides: [
-      currentAccountProvider.overrideWith(() => mutable),
+      accountStoreProvider.overrideWithValue(AccountStore(_MemStore())),
       apiProvider.overrideWith((ref) {
         final active = ref.watch(currentAccountProvider)!;
         return _BoardApi(
@@ -125,13 +109,14 @@ void main() {
     addTearDown(() => cacheDir.delete(recursive: true));
 
     final boardId = 'b1';
+    await container.read(currentAccountProvider.notifier).select(accountA);
     final boardSubscription =
         container.listen(boardProvider(boardId), (_, _) {});
     addTearDown(boardSubscription.close);
     await container.read(boardProvider(boardId).future);
     expect(container.read(boardProvider(boardId)).value?.board.name, 'http://a');
 
-    mutable.switchTo(accountB);
+    await container.read(currentAccountProvider.notifier).select(accountB);
     await pumpEventQueue();
     expect(container.read(boardProvider(boardId)).value, isNull);
 
@@ -142,7 +127,7 @@ void main() {
     await loading;
     expect(container.read(boardProvider(boardId)).value?.board.name, 'http://b');
 
-    mutable.switchTo(null);
+    await container.read(currentAccountProvider.notifier).select(null);
     await pumpEventQueue();
     expect(container.read(boardProvider(boardId)).value, isNull);
   });
