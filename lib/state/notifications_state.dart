@@ -14,6 +14,10 @@ final notificationsProvider =
     AsyncNotifierProvider<NotificationsNotifier, List<PlankaNotification>>(
         NotificationsNotifier.new);
 
+final notificationsSocketFactoryProvider = Provider<PlankaSocketFactory>(
+  (_) => PlankaSocket.new,
+);
+
 final unreadCountProvider = Provider<int>((ref) {
   final notifications = ref.watch(notificationsProvider);
   if (notifications.isLoading || notifications.hasError) return 0;
@@ -23,21 +27,51 @@ final unreadCountProvider = Provider<int>((ref) {
 class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
   PlankaSocket? _socket;
   StreamSubscription<SocketEvent>? _socketEvents;
+  void Function()? _removeAccountEpochListener;
 
   PlankaRepo get _repo => PlankaRepo(ref.read(apiProvider));
 
-  @override
-  Future<List<PlankaNotification>> build() async {
-    state = const AsyncLoading<List<PlankaNotification>>();
+  void _disposeSocket() {
     _socketEvents?.cancel();
     _socket?.dispose();
     _socketEvents = null;
     _socket = null;
+  }
+
+  void _invalidateAccountState() {
+    _disposeSocket();
+    ref.invalidateSelf();
+    if (ref.mounted) {
+      // A dependency refresh otherwise carries the previous account's
+      // notifications as AsyncData while the replacement account loads.
+      state = AsyncError<List<PlankaNotification>>(
+        StateError('Account changed'),
+        StackTrace.current,
+      );
+    }
+  }
+
+  @override
+  Future<List<PlankaNotification>> build() async {
+    state = const AsyncLoading<List<PlankaNotification>>();
+    _disposeSocket();
     ref.watch(accountStateEpochProvider);
+    if (_removeAccountEpochListener == null) {
+      _removeAccountEpochListener = ref
+          .read(accountStateEpochProvider.notifier)
+          .listen(_invalidateAccountState);
+      ref.onDispose(() {
+        _removeAccountEpochListener?.call();
+        _removeAccountEpochListener = null;
+      });
+    }
     final account = ref.watch(currentAccountProvider);
     if (account == null) return [];
     final api = ref.watch(apiProvider);
-    final socket = _socket = PlankaSocket(account.serverUrl, account.token);
+    final socket = _socket = ref.read(notificationsSocketFactoryProvider)(
+      account.serverUrl,
+      account.token,
+    );
     // Realtime notifications are a live-update convenience over the REST list
     // fetched below; a socket error degrades only that, so we log rather than
     // surface it. ponytail: no degraded-state indicator — add one if stale

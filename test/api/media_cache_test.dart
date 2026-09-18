@@ -554,6 +554,29 @@ void main() {
     expect(evicted, [same(key)]);
   });
 
+  test('leaving an account evicts decoded media without deleting its files',
+      () async {
+    final lifecycle = AccountCacheLifecycle();
+    final cache = _ControlledMediaCache();
+    final evicted = <Object>[];
+    final manager = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => cache,
+      evictImageKey: (key) async => evicted.add(key),
+    );
+    const accountId = 'https://media.example#switch-user';
+    final key = Object();
+
+    manager.forAccount(accountId);
+    manager.trackImageKey(accountId, key);
+    await manager.evictDecodedAccount(accountId);
+    manager.trackImageKey(accountId, Object());
+    await pumpEventQueue();
+
+    expect(evicted, hasLength(2));
+    expect(() => manager.forAccount(accountId), returnsNormally);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
   final productionRoot = Directory.systemTemp.createTempSync(
     'media_production',

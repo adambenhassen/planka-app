@@ -124,11 +124,23 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     // handle before removal began.
     Object? firstFailure;
     StackTrace? firstFailureStack;
+    final removalBarrier = lifecycle.beginRemoval(accountId);
+    // Detach the selected account before any purge can wait on slow cache
+    // work. The state and its authenticated transports must be unusable for
+    // the whole removal window, not only after durable deletion completes.
+    if (ref.read(currentAccountProvider)?.id == accountId) {
+      try {
+        await ref.read(currentAccountProvider.notifier).select(null);
+      } catch (e, s) {
+        firstFailure = e;
+        firstFailureStack = s;
+      }
+    }
     try {
-      await lifecycle.beginRemoval(accountId);
+      await removalBarrier;
     } catch (e, s) {
-      firstFailure = e;
-      firstFailureStack = s;
+      firstFailure ??= e;
+      firstFailureStack ??= s;
     }
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == accountId);
@@ -195,12 +207,6 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     }
     state = AsyncData(list);
     lifecycle.completeRemoval(accountId);
-    final current = ref.read(currentAccountProvider);
-    if (current?.id == accountId) {
-      await ref
-          .read(currentAccountProvider.notifier)
-          .select(null, invalidateState: false);
-    }
   });
 }
 
@@ -218,8 +224,14 @@ final accountRemovalProvider = Provider<AccountRemovalCoordinator>((ref) {
     apiFactory: ref.read(accountApiFactoryProvider),
     removeLocally: (accountId) =>
         ref.read(accountsProvider.notifier).remove(accountId),
-    invalidateProviders: (_) =>
-        ref.read(accountStateEpochProvider.notifier).invalidate(),
+    invalidateProviders: (accountId) {
+      // Selected-account removal already invalidates before purge. Keep the
+      // coordinator callback for direct/local-removal flows, while avoiding a
+      // second epoch transition after the selected account is detached.
+      if (ref.read(currentAccountProvider)?.id == accountId) {
+        ref.read(accountStateEpochProvider.notifier).invalidate();
+      }
+    },
   );
 });
 
@@ -233,15 +245,23 @@ class CurrentAccountNotifier extends Notifier<Account?> {
     if (id == null) return;
     final accounts = await ref.read(accountsProvider.future);
     final restored = accounts.where((a) => a.id == id).firstOrNull;
-    state = restored;
-    ref.read(accountStateEpochProvider.notifier).invalidate();
+    if (restored != null) await select(restored);
   }
 
   Future<void> select(Account? account, {bool invalidateState = true}) async {
-    final previousId = state?.id;
+    final previous = state;
+    final credentialsChanged = previous == null
+        ? account != null
+        : account == null ||
+            previous.id != account.id ||
+            previous.serverUrl != account.serverUrl ||
+            previous.token != account.token;
     state = account;
-    if (invalidateState && previousId != account?.id) {
+    if (invalidateState && credentialsChanged) {
       ref.read(accountStateEpochProvider.notifier).invalidate();
+    }
+    if (previous != null && credentialsChanged) {
+      await ref.read(imageCacheProvider).evictDecodedAccount(previous.id);
     }
     final store = ref.read(accountStoreProvider);
     await store.writeCurrentId(account?.id);

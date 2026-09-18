@@ -43,6 +43,11 @@ const kPlankaSocketEvents = [
 /// project-level events there rather than to any board room.
 const kUserSubscribeUrl = '/api/users/me?subscribe=true';
 
+typedef PlankaSocketFactory = PlankaSocket Function(
+  String serverUrl,
+  String token,
+);
+
 class SocketEvent {
   final String name;
   final Envelope data;
@@ -91,6 +96,7 @@ class PlankaSocket {
   Stream<SocketEvent> get events => _events.stream;
   Stream<bool> get connected => _connected.stream;
   bool get isConnected => _isConnected;
+  bool get isDisposed => _disposed;
 
   Future<void> connect() async {
     if (_disposed) return;
@@ -155,6 +161,7 @@ class PlankaSocket {
   /// reported asynchronously as an error on the [events] stream, so callers
   /// observe failure there rather than by awaiting this method.
   Future<void> subscribeBoard(String boardId) {
+    if (_disposed) return Future<void>.value();
     _currentBoardId = boardId;
     return _subscribe('board', '/api/boards/$boardId?subscribe=true');
   }
@@ -165,6 +172,7 @@ class PlankaSocket {
   /// per socket rather than opening a second socket for another event family.
   /// Failure is reported on [events] exactly as for [subscribeBoard].
   Future<void> subscribeUser() {
+    if (_disposed) return Future<void>.value();
     _userSubscribed = true;
     return _subscribe('user', kUserSubscribeUrl);
   }
@@ -211,7 +219,11 @@ class PlankaSocket {
     if (_disposed) return;
     _disposed = true;
     _isConnected = false;
-    _socket?.dispose();
+    _currentBoardId = null;
+    _userSubscribed = false;
+    final socket = _socket;
+    _socket = null;
+    socket?.dispose();
     _events.close();
     _connected.close();
   }

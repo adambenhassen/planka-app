@@ -12,10 +12,31 @@ final currentUserProvider =
     );
 
 class CurrentUserNotifier extends AsyncNotifier<PlankaUser?> {
+  void Function()? _removeAccountEpochListener;
+
+  void _invalidateAccountState() {
+    ref.invalidateSelf();
+    if (ref.mounted) {
+      state = AsyncError<PlankaUser?>(
+        StateError('Account changed'),
+        StackTrace.current,
+      );
+    }
+  }
+
   @override
   Future<PlankaUser?> build() async {
     state = const AsyncLoading<PlankaUser?>();
     ref.watch(accountStateEpochProvider);
+    if (_removeAccountEpochListener == null) {
+      _removeAccountEpochListener = ref
+          .read(accountStateEpochProvider.notifier)
+          .listen(_invalidateAccountState);
+      ref.onDispose(() {
+        _removeAccountEpochListener?.call();
+        _removeAccountEpochListener = null;
+      });
+    }
     final account = ref.watch(currentAccountProvider);
     if (account == null) return null;
     final env = await PlankaRepo(ref.watch(apiProvider)).me();

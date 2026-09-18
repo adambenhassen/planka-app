@@ -281,6 +281,58 @@ void main() {
     expect(images.purgedAccountIds, [accountA.id]);
   });
 
+  test('a 401 logs out the selected account and evicts decoded media',
+      () async {
+    final server = await HttpServer.bind('127.0.0.1', 0);
+    server.listen((request) {
+      request.response.statusCode = 401;
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('{"message":"server secret"}');
+      request.response.close();
+    });
+    addTearDown(() => server.close());
+
+    final account = Account(
+      serverUrl: 'http://127.0.0.1:${server.port}',
+      token: 'expired-token',
+      userId: 'u1',
+      displayName: 'Expired',
+    );
+    final storage = FakeStorage();
+    final store = AccountStore(storage);
+    await store.save([account]);
+    final lifecycle = AccountCacheLifecycle();
+    final evicted = <Object>[];
+    final images = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => _MemoryMediaCache(),
+      evictImageKey: (key) async => evicted.add(key),
+    );
+    final container = ProviderContainer(overrides: [
+      accountStoreProvider.overrideWithValue(store),
+      imageCacheProvider.overrideWithValue(images),
+    ]);
+    addTearDown(container.dispose);
+    addTearDown(images.dispose);
+
+    await container.read(currentAccountProvider.notifier).select(account);
+    final imageKey = Object();
+    images.forAccount(account.id);
+    images.trackImageKey(account.id, imageKey);
+    final epoch = container.read(accountStateEpochProvider);
+
+    await expectLater(
+      container.read(apiProvider).get('/protected'),
+      throwsA(isA<ApiException>()),
+    );
+    await pumpEventQueue();
+
+    expect(container.read(currentAccountProvider), isNull);
+    expect(container.read(authExpiredProvider)?.id, account.id);
+    expect(container.read(accountStateEpochProvider), epoch + 1);
+    expect(evicted, [same(imageKey)]);
+  });
+
   test('Account json round-trip', () {
     final a = Account(
       serverUrl: 'https://p.example.com',

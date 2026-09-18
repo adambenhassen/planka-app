@@ -761,11 +761,39 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
   var _refreshRequested = false;
   var _eventVersion = 0;
   var _session = 0;
+  void Function()? _removeAccountEpochListener;
+
+  void _invalidateAccountState() {
+    _session++;
+    _ready = false;
+    _refreshRequested = false;
+    _refreshSession = null;
+    _eventsSub?.cancel();
+    _connectedSub?.cancel();
+    _eventsSub = null;
+    _connectedSub = null;
+    ref.invalidateSelf();
+    if (ref.mounted) {
+      state = AsyncError<List<PlankaUser>>(
+        StateError('Account changed'),
+        StackTrace.current,
+      );
+    }
+  }
 
   @override
   Future<List<PlankaUser>> build() async {
     state = const AsyncLoading<List<PlankaUser>>();
     ref.watch(accountStateEpochProvider);
+    if (_removeAccountEpochListener == null) {
+      _removeAccountEpochListener = ref
+          .read(accountStateEpochProvider.notifier)
+          .listen(_invalidateAccountState);
+      ref.onDispose(() {
+        _removeAccountEpochListener?.call();
+        _removeAccountEpochListener = null;
+      });
+    }
     ref.watch(currentAccountProvider);
     ref.watch(apiProvider);
     final userEvents = ref.watch(userEventsProvider);
@@ -866,6 +894,10 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
   }
 }
 
+final boardSocketFactoryProvider = Provider<PlankaSocketFactory>(
+  (_) => PlankaSocket.new,
+);
+
 final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState,
     String>(BoardNotifier.new);
 
@@ -928,7 +960,16 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     _buildGeneration++;
     _disposeAccountResources();
     ref.invalidateSelf();
-    if (ref.mounted) state = const AsyncLoading<BoardState>();
+    if (ref.mounted) {
+      // Riverpod carries the previous AsyncData value into a dependency
+      // refresh. An account transition must not expose that value while the
+      // replacement account is loading, so publish a value-free barrier
+      // before the rebuild can complete.
+      state = AsyncError<BoardState>(
+        StateError('Account changed'),
+        StackTrace.current,
+      );
+    }
   }
 
   bool _isCurrentBuild(int generation, Account account) =>
@@ -1264,7 +1305,10 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     if (!_isCurrentBuild(buildGeneration, account)) {
       throw StateError('Account changed');
     }
-    final socket = PlankaSocket(account.serverUrl, account.token);
+    final socket = ref.read(boardSocketFactoryProvider)(
+      account.serverUrl,
+      account.token,
+    );
     _socket = socket;
     ref.onDispose(socket.dispose);
     // A stream/subscribe error only degrades realtime — the REST-loaded board

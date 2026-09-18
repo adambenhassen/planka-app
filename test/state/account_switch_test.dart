@@ -6,10 +6,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/planka_api.dart';
+import 'package:planka_app/api/planka_socket.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/state/envelope_cache.dart';
+import 'package:planka_app/state/notifications_state.dart';
 import 'package:planka_app/state/projects_state.dart';
 import 'package:planka_app/state/user_socket.dart';
 
@@ -35,6 +37,18 @@ class _BoardApi extends PlankaApi {
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     final pending = gate;
     if (pending != null) await pending.future;
+    if (path == '/notifications') {
+      return Envelope.parse({
+        'items': [
+          {
+            'id': 'n@$serverUrl',
+            'userId': 'u1',
+            'type': 'commentCard',
+            'isRead': false,
+          }
+        ]
+      });
+    }
     final fixture = jsonDecode(
       File('test/fixtures/board_show.json').readAsStringSync(),
     ) as Map<String, dynamic>;
@@ -42,6 +56,30 @@ class _BoardApi extends PlankaApi {
     item['name'] = serverUrl;
     return Envelope.parse(fixture);
   }
+}
+
+class _RecordingSocket extends PlankaSocket {
+  _RecordingSocket(super.serverUrl, super.token);
+
+  var disposed = false;
+
+  @override
+  Stream<SocketEvent> get events => const Stream.empty();
+
+  @override
+  Stream<bool> get connected => const Stream.empty();
+
+  @override
+  bool get isConnected => !disposed;
+
+  @override
+  Future<void> connect() async {}
+
+  @override
+  Future<void> subscribeBoard(String boardId) async {}
+
+  @override
+  void dispose() => disposed = true;
 }
 
 class _MemStore implements SecureKeyValueStore {
@@ -87,7 +125,15 @@ void main() {
     final accountA = account('http://a');
     final accountB = account('http://b');
     final bGate = Completer<void>();
+    final sockets = <_RecordingSocket>[];
+    final notificationSockets = <_RecordingSocket>[];
+    final userSockets = <_RecordingSocket>[];
     final cacheDir = await Directory.systemTemp.createTemp('board_switch');
+    final evictedImages = <Object>[];
+    final images = AccountImageCacheManager(
+      directory: cacheDir,
+      evictImageKey: (key) async => evictedImages.add(key),
+    );
     final container = ProviderContainer(overrides: [
       accountStoreProvider.overrideWithValue(AccountStore(_MemStore())),
       apiProvider.overrideWith((ref) {
@@ -101,34 +147,94 @@ void main() {
       envelopeCacheProvider.overrideWithValue(
         EnvelopeCache(directory: cacheDir),
       ),
-      userSocketProvider.overrideWithValue(null),
+      imageCacheProvider.overrideWithValue(images),
       userEventsProvider.overrideWithValue(const Stream.empty()),
       userConnectedProvider.overrideWithValue(const Stream.empty()),
+      userSocketFactoryProvider.overrideWithValue((serverUrl, token) {
+        final socket = _RecordingSocket(serverUrl, token);
+        userSockets.add(socket);
+        return socket;
+      }),
+      boardSocketFactoryProvider.overrideWithValue((serverUrl, token) {
+        final socket = _RecordingSocket(serverUrl, token);
+        sockets.add(socket);
+        return socket;
+      }),
+      notificationsSocketFactoryProvider
+          .overrideWithValue((serverUrl, token) {
+        final socket = _RecordingSocket(serverUrl, token);
+        notificationSockets.add(socket);
+        return socket;
+      }),
     ]);
     addTearDown(container.dispose);
+    addTearDown(images.dispose);
     addTearDown(() => cacheDir.delete(recursive: true));
 
     final boardId = 'b1';
     await container.read(currentAccountProvider.notifier).select(accountA);
+    final userSocketA = container.read(userSocketProvider);
+    expect(userSocketA?.serverUrl, 'http://a');
     final boardSubscription =
         container.listen(boardProvider(boardId), (_, _) {});
     addTearDown(boardSubscription.close);
     await container.read(boardProvider(boardId).future);
     expect(container.read(boardProvider(boardId)).value?.board.name, 'http://a');
+    final notificationSubscription =
+        container.listen(notificationsProvider, (_, _) {});
+    addTearDown(notificationSubscription.close);
+    await container.read(notificationsProvider.future);
+    expect(container.read(notificationsProvider).value?.single.id,
+        'n@http://a');
+    final imageA = Object();
+    images.forAccount(accountA.id);
+    images.trackImageKey(accountA.id, imageA);
 
     await container.read(currentAccountProvider.notifier).select(accountB);
     await pumpEventQueue();
     expect(container.read(boardProvider(boardId)).isLoading, isTrue);
+    expect(container.read(boardProvider(boardId)).value, isNull);
+    expect(container.read(notificationsProvider).value, isNull);
 
     final loading = container.read(boardProvider(boardId).future);
+    final notificationLoading = container.read(notificationsProvider.future);
     await pumpEventQueue();
     expect(container.read(boardProvider(boardId)).isLoading, isTrue);
+    expect(container.read(boardProvider(boardId)).value, isNull);
+    expect(container.read(notificationsProvider).value, isNull);
     bGate.complete();
-    await loading;
+    await Future.wait([loading, notificationLoading]);
     expect(container.read(boardProvider(boardId)).value?.board.name, 'http://b');
+    expect(container.read(notificationsProvider).value?.single.id,
+        'n@http://b');
+    expect(sockets, hasLength(2));
+    expect(sockets[0].disposed, isTrue);
+    expect(sockets[1].serverUrl, 'http://b');
+    expect(notificationSockets, hasLength(2));
+    expect(notificationSockets[0].disposed, isTrue);
+    expect(notificationSockets[1].serverUrl, 'http://b');
+    expect(evictedImages, [same(imageA)]);
+    final userSocketB = container.read(userSocketProvider);
+    expect(userSocketB?.serverUrl, 'http://b');
+    expect(userSockets, hasLength(2));
+    expect(userSockets[0].disposed, isTrue);
 
     await container.read(currentAccountProvider.notifier).select(null);
     await pumpEventQueue();
     expect(container.read(boardProvider(boardId)).hasError, isTrue);
+    expect(container.read(boardProvider(boardId)).value, isNull);
+    expect(sockets[1].disposed, isTrue);
+    expect(container.read(notificationsProvider).value, isNull);
+    expect(notificationSockets[1].disposed, isTrue);
+    expect(userSockets[1].disposed, isTrue);
+    final imageB = Object();
+    images.forAccount(accountB.id);
+    images.trackImageKey(accountB.id, imageB);
+    // A logout is a transition too: do not leave decoded B media available to
+    // a later reauthentication with the same account id.
+    await container.read(currentAccountProvider.notifier).select(accountB);
+    images.trackImageKey(accountB.id, imageB);
+    await container.read(currentAccountProvider.notifier).select(null);
+    expect(evictedImages, contains(same(imageB)));
   });
 }

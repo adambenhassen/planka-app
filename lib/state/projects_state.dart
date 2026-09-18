@@ -422,12 +422,42 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
   var _resyncRequested = false;
   var _eventVersion = 0;
   var _session = 0;
+  void Function()? _removeAccountEpochListener;
+
+  void _invalidateAccountState() {
+    _session++;
+    _ready = false;
+    _resyncRequested = false;
+    _resyncSession = null;
+    _userEventsSub?.cancel();
+    _userConnectedSub?.cancel();
+    _userEventsSub = null;
+    _userConnectedSub = null;
+    ref.invalidateSelf();
+    if (ref.mounted) {
+      // AsyncNotifier refreshes retain the old value by default. Projects are
+      // account-owned, so make the old view unavailable before rebuilding.
+      state = AsyncError<ProjectsView>(
+        StateError('Account changed'),
+        StackTrace.current,
+      );
+    }
+  }
 
   @override
   Future<ProjectsView> build() async {
     state = const AsyncLoading<ProjectsView>();
     // Re-fetch when the active account (and thus the API client) changes.
     ref.watch(accountStateEpochProvider);
+    if (_removeAccountEpochListener == null) {
+      _removeAccountEpochListener = ref
+          .read(accountStateEpochProvider.notifier)
+          .listen(_invalidateAccountState);
+      ref.onDispose(() {
+        _removeAccountEpochListener?.call();
+        _removeAccountEpochListener = null;
+      });
+    }
     ref.watch(currentAccountProvider);
     ref.watch(apiProvider);
     final userEvents = ref.watch(userEventsProvider);

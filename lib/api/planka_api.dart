@@ -441,6 +441,25 @@ class AccountImageCacheManager {
     await Future.wait(keys.map((key) async => _evictImageKey(key)));
   }
 
+  /// Makes decoded images unavailable when an authenticated session leaves
+  /// the foreground. Persistent files stay account-scoped for offline use,
+  /// but Flutter's process-global decoded cache must not survive a logout or
+  /// account switch. Late image builders for the inactive account are evicted
+  /// as well until that account is selected again.
+  Future<void> evictDecodedAccount(String accountId) async {
+    if (accountId.isEmpty) {
+      throw ArgumentError.value(accountId, 'accountId');
+    }
+    _purgedImageAccounts.add(accountId);
+    try {
+      await _evictTrackedImageKeys(accountId);
+    } catch (error) {
+      debugPrint(
+        'account image eviction failed: ${redactDiagnostic(error)}',
+      );
+    }
+  }
+
   BaseCacheManager forAccount(String accountId, {String? token}) {
     if (accountId.isEmpty) {
       throw ArgumentError.value(accountId, 'accountId');
