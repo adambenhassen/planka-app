@@ -40,10 +40,22 @@ final accountStateEpochProvider =
     );
 
 class AccountStateEpochNotifier extends Notifier<int> {
+  final Set<void Function()> _listeners = {};
+
   @override
   int build() => 0;
 
-  void invalidate() => state++;
+  void invalidate() {
+    state++;
+    for (final listener in List<void Function()>.of(_listeners)) {
+      listener();
+    }
+  }
+
+  void Function() listen(void Function() listener) {
+    _listeners.add(listener);
+    return () => _listeners.remove(listener);
+  }
 }
 
 final imageCacheProvider = Provider<AccountImageCacheManager>(

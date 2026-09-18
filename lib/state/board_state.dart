@@ -905,6 +905,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   StreamSubscription<SocketEvent>? _userRoomEvents;
   StreamSubscription<bool>? _userRoomConnected;
   void Function()? _userRoomSelfListener;
+  void Function()? _removeAccountEpochListener;
   final Map<String, int> _activeCommentProviders = {};
 
   void _disposeAccountResources() {
@@ -1219,6 +1220,17 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   Future<BoardState> build() async {
     state = const AsyncLoading<BoardState>();
     ref.watch(accountStateEpochProvider);
+    if (_removeAccountEpochListener == null) {
+      _removeAccountEpochListener = ref
+          .read(accountStateEpochProvider.notifier)
+          .listen(() {
+            if (ref.mounted) state = const AsyncLoading<BoardState>();
+          });
+      ref.onDispose(() {
+        _removeAccountEpochListener?.call();
+        _removeAccountEpochListener = null;
+      });
+    }
     ref.listen(currentAccountProvider, (previous, next) {
       if (previous?.id != next?.id) {
         state = const AsyncLoading<BoardState>();
