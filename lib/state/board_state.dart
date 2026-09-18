@@ -790,6 +790,13 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
         _removeAccountEpochListener = null;
       });
     }
+    ref.listen(currentAccountProvider, (previous, next) {
+      if (previous?.id != next?.id ||
+          previous?.serverUrl != next?.serverUrl ||
+          previous?.token != next?.token) {
+        _invalidateAccountState();
+      }
+    });
     ref.watch(currentAccountProvider);
     ref.watch(apiProvider);
     final userEvents = ref.watch(userEventsProvider);
@@ -1275,7 +1282,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       });
     }
     ref.listen(currentAccountProvider, (previous, next) {
-      if (previous?.id != next?.id) {
+      if (previous?.id != next?.id ||
+          previous?.serverUrl != next?.serverUrl ||
+          previous?.token != next?.token) {
         _invalidateAccountState();
       }
     });

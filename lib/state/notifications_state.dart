@@ -61,6 +61,13 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
         _removeAccountEpochListener = null;
       });
     }
+    ref.listen(currentAccountProvider, (previous, next) {
+      if (previous?.id != next?.id ||
+          previous?.serverUrl != next?.serverUrl ||
+          previous?.token != next?.token) {
+        _invalidateAccountState();
+      }
+    });
     final account = ref.watch(currentAccountProvider);
     if (account == null) return [];
     final api = ref.watch(apiProvider);
@@ -81,7 +88,12 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     });
     await socket.connect();
     final env = await PlankaRepo(api).notifications();
-    if (ref.read(currentAccountProvider)?.id != account.id) return [];
+    final current = ref.read(currentAccountProvider);
+    if (current?.id != account.id ||
+        current?.serverUrl != account.serverUrl ||
+        current?.token != account.token) {
+      return [];
+    }
     return env.items.map(PlankaNotification.fromJson).toList();
   }
 

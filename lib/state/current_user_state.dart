@@ -33,6 +33,13 @@ class CurrentUserNotifier extends AsyncNotifier<PlankaUser?> {
         _removeAccountEpochListener = null;
       });
     }
+    ref.listen(currentAccountProvider, (previous, next) {
+      if (previous?.id != next?.id ||
+          previous?.serverUrl != next?.serverUrl ||
+          previous?.token != next?.token) {
+        _invalidateAccountState();
+      }
+    });
     final account = ref.watch(currentAccountProvider);
     if (account == null) return null;
     final env = await PlankaRepo(ref.watch(apiProvider)).me();

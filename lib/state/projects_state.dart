@@ -460,6 +460,13 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
         _removeAccountEpochListener = null;
       });
     }
+    ref.listen(currentAccountProvider, (previous, next) {
+      if (previous?.id != next?.id ||
+          previous?.serverUrl != next?.serverUrl ||
+          previous?.token != next?.token) {
+        _invalidateAccountState();
+      }
+    });
     ref.watch(currentAccountProvider);
     ref.watch(apiProvider);
     final userEvents = ref.watch(userEventsProvider);
