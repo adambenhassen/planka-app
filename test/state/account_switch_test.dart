@@ -230,7 +230,6 @@ void main() {
     expect(notificationSockets[1].disposed, isTrue);
     expect(userSockets[1].disposed, isTrue);
     final imageB = Object();
-    images.forAccount(accountB.id);
     images.trackImageKey(accountB.id, imageB);
     // A logout is a transition too: do not leave decoded B media available to
     // a later reauthentication with the same account id.
