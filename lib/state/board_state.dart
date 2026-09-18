@@ -710,6 +710,7 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
 /// card sheet opens (autoDispose); wire the socket event if staleness bites.
 final cardActionsProvider = FutureProvider.autoDispose
     .family<List<PlankaAction>, String>((ref, cardId) async {
+  ref.watch(accountStateEpochProvider);
   final env = await PlankaRepo(ref.watch(apiProvider)).cardActions(cardId);
   return env.items.map(PlankaAction.fromJson).toList();
 });
@@ -758,6 +759,7 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
 
   @override
   Future<List<PlankaUser>> build() async {
+    ref.watch(accountStateEpochProvider);
     ref.watch(apiProvider);
     final userEvents = ref.watch(userEventsProvider);
     final userConnected = ref.watch(userConnectedProvider);
@@ -865,6 +867,7 @@ final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState,
 /// socket events and comment mutations continue to share one collection.
 final cardCommentsProvider = FutureProvider.autoDispose
     .family<List<PlankaComment>, (String, String)>((ref, args) async {
+  ref.watch(accountStateEpochProvider);
   final notifier = ref.read(boardProvider(args.$1).notifier);
   notifier._registerCommentProvider(args.$2);
   ref.onDispose(() => notifier._unregisterCommentProvider(args.$2));
@@ -1127,6 +1130,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   @override
   Future<BoardState> build() async {
+    ref.watch(accountStateEpochProvider);
     final account = ref.read(currentAccountProvider)!;
     // From here the room may deliver at any moment; buffer until the snapshot
     // is folded (see [listenToUserRoom]).

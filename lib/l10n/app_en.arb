@@ -921,6 +921,32 @@
   "@accountAdd": {
     "description": "Account menu entry that logs in to another server or user"
   },
+  "accountRemove": "Remove account",
+  "@accountRemove": {
+    "description": "Account menu entry that removes the selected saved account"
+  },
+  "accountRemoveTitle": "Remove account?",
+  "@accountRemoveTitle": {
+    "description": "Title of the saved-account removal confirmation"
+  },
+  "accountRemoveMessage": "Remove \"{name}\"? Its local data will be deleted from this device.",
+  "@accountRemoveMessage": {
+    "description": "Body of the saved-account removal confirmation",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "accountRemovalRemoteWarning": "The account was removed locally, but its remote session may remain usable until server expiry or administrator revocation.",
+  "@accountRemovalRemoteWarning": {
+    "description": "Fixed warning shown when local account removal succeeds but remote revocation fails"
+  },
+  "accountRemovalFailure": "Account removal did not complete. Please try again.",
+  "@accountRemovalFailure": {
+    "description": "Fixed error shown when local account removal fails"
+  },
 
   "archiveTrashTitle": "Archive & trash",
   "@archiveTrashTitle": {

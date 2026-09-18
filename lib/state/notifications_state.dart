@@ -22,6 +22,7 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
 
   @override
   Future<List<PlankaNotification>> build() async {
+    ref.watch(accountStateEpochProvider);
     final account = ref.watch(currentAccountProvider);
     if (account == null) return [];
     final socket = PlankaSocket(account.serverUrl, account.token);

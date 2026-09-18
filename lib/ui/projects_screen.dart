@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/models.dart';
+import '../auth/account_removal.dart';
 import '../auth/accounts.dart';
 import '../auth/auth_providers.dart';
 import '../l10n/gen/app_localizations.dart';
@@ -437,6 +438,44 @@ class _AccountSwitcher extends ConsumerWidget {
           await openPrivacyPolicy(context, launcher: privacyPolicyLauncher);
           return;
         }
+        if (id == '_remove') {
+          // Capture the selected account before opening the confirmation. The
+          // coordinator copies it again before any removal await, so a later
+          // account switch cannot retarget the remote or local operation.
+          final target = current;
+          if (target == null) return;
+          final targetName = target.displayName.isEmpty
+              ? target.serverUrl
+              : target.displayName;
+          final confirmed = await confirmDialog(
+            context,
+            title: l10n.accountRemoveTitle,
+            message: l10n.accountRemoveMessage(targetName),
+            confirmLabel: l10n.accountRemove,
+            destructive: true,
+          );
+          if (!confirmed) return;
+          final messenger = ScaffoldMessenger.of(context);
+          final errorColor = Theme.of(context).colorScheme.error;
+          final result = await ref.read(accountRemovalProvider).remove(target);
+          if (!messenger.mounted) return;
+          switch (result.status) {
+            case AccountRemovalStatus.removed:
+              break;
+            case AccountRemovalStatus.remoteRevocationFailed:
+              messenger.showSnackBar(
+                SnackBar(content: Text(l10n.accountRemovalRemoteWarning)),
+              );
+            case AccountRemovalStatus.localCleanupFailed:
+              messenger.showSnackBar(
+                SnackBar(
+                  content: Text(l10n.accountRemovalFailure),
+                  backgroundColor: errorColor,
+                ),
+              );
+          }
+          return;
+        }
         final account = accounts.where((a) => a.id == id).firstOrNull;
         if (account != null) {
           await ref.read(currentAccountProvider.notifier).select(account);
@@ -466,6 +505,15 @@ class _AccountSwitcher extends ConsumerWidget {
             title: Text(l10n.profileTitle),
           ),
         ),
+        if (current != null)
+          PopupMenuItem(
+            value: '_remove',
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.delete_outline),
+              title: Text(l10n.accountRemove),
+            ),
+          ),
         if (isAdmin)
           PopupMenuItem(
             value: '_manageUsers',

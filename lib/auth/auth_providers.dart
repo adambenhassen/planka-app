@@ -9,6 +9,7 @@ import '../api/repositories.dart';
 import '../cache_lifecycle.dart';
 import '../cache_purge.dart';
 import '../state/envelope_cache.dart';
+import 'account_removal.dart';
 import 'accounts.dart';
 
 final accountStoreProvider = Provider<AccountStore>((ref) {
@@ -29,6 +30,21 @@ String _desktopHome() =>
 final accountsProvider = AsyncNotifierProvider<AccountsNotifier, List<Account>>(
   AccountsNotifier.new,
 );
+
+/// Changes whenever a completed account removal invalidates account-backed
+/// state. State providers watch this epoch so their in-memory values cannot
+/// outlive the cache purge that removed their account.
+final accountStateEpochProvider =
+    NotifierProvider<AccountStateEpochNotifier, int>(
+      AccountStateEpochNotifier.new,
+    );
+
+class AccountStateEpochNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void invalidate() => state++;
+}
 
 final imageCacheProvider = Provider<AccountImageCacheManager>(
   (_) => plankaImageCacheManager,
@@ -178,6 +194,20 @@ final currentAccountProvider =
     NotifierProvider<CurrentAccountNotifier, Account?>(
       CurrentAccountNotifier.new,
     );
+
+final accountApiFactoryProvider = Provider<AccountRemovalApiFactory>(
+  (ref) => (account) => PlankaApi(account.serverUrl, account.token),
+);
+
+final accountRemovalProvider = Provider<AccountRemovalCoordinator>((ref) {
+  return AccountRemovalCoordinator(
+    apiFactory: ref.read(accountApiFactoryProvider),
+    removeLocally: (accountId) =>
+        ref.read(accountsProvider.notifier).remove(accountId),
+    invalidateProviders: (_) =>
+        ref.read(accountStateEpochProvider.notifier).invalidate(),
+  );
+});
 
 class CurrentAccountNotifier extends Notifier<Account?> {
   @override

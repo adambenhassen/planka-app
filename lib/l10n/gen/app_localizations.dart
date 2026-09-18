@@ -1288,6 +1288,37 @@ abstract class AppLocalizations {
   /// **'Add account'**
   String get accountAdd;
 
+  /// Account menu entry that removes the selected saved account
+  ///
+  /// In en, this message translates to:
+  /// **'Remove account'**
+  String get accountRemove;
+
+  /// Title of the saved-account removal confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Remove account?'**
+  String get accountRemoveTitle;
+
+  /// Body of the saved-account removal confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Remove "{name}"? Its local data will be deleted from this device.'**
+  String accountRemoveMessage(String name);
+
+  /// Fixed warning shown when local account removal succeeds but remote
+  /// revocation fails
+  ///
+  /// In en, this message translates to:
+  /// **'The account was removed locally, but its remote session may remain usable until server expiry or administrator revocation.'**
+  String get accountRemovalRemoteWarning;
+
+  /// Fixed error shown when local account removal fails
+  ///
+  /// In en, this message translates to:
+  /// **'Account removal did not complete. Please try again.'**
+  String get accountRemovalFailure;
+
   /// Title of the archive/trash browser, and the board menu entry that opens it
   ///
   /// In en, this message translates to:
