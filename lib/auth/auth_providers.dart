@@ -109,10 +109,24 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
   });
 
   Future<void> remove(String accountId) => _serializeMutation(() async {
-    // Persist the removal intent before closing the shared barrier. This makes
-    // a crash between barrier establishment and purge fail closed on restart.
     final lifecycle = ref.read(cacheLifecycleProvider);
     final store = ref.read(accountStoreProvider);
+    // Detach the selected account before any durable or cache operation can
+    // wait. Its state and authenticated transports must be unusable for the
+    // whole removal window, including a slow intent write.
+    Object? firstFailure;
+    StackTrace? firstFailureStack;
+    if (ref.read(currentAccountProvider)?.id == accountId) {
+      try {
+        await ref.read(currentAccountProvider.notifier).select(null);
+      } catch (e, s) {
+        firstFailure = e;
+        firstFailureStack = s;
+      }
+    }
+    // Persist the removal intent before closing the shared cache barrier. This
+    // makes a crash between barrier establishment and purge fail closed on
+    // restart.
     try {
       // The durable intent must precede the in-memory barrier. A process crash
       // after the barrier and before this write must not reopen the account.
@@ -122,20 +136,7 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     }
     // The barrier covers every cache family and every caller that retained a
     // handle before removal began.
-    Object? firstFailure;
-    StackTrace? firstFailureStack;
     final removalBarrier = lifecycle.beginRemoval(accountId);
-    // Detach the selected account before any purge can wait on slow cache
-    // work. The state and its authenticated transports must be unusable for
-    // the whole removal window, not only after durable deletion completes.
-    if (ref.read(currentAccountProvider)?.id == accountId) {
-      try {
-        await ref.read(currentAccountProvider.notifier).select(null);
-      } catch (e, s) {
-        firstFailure = e;
-        firstFailureStack = s;
-      }
-    }
     try {
       await removalBarrier;
     } catch (e, s) {
