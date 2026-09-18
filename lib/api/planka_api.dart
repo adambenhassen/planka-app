@@ -409,7 +409,11 @@ class AccountImageCacheManager {
   final Map<String, Set<Object>> _trackedImageKeys = {};
   final Set<String> _purgedImageAccounts = {};
 
-  static void _evictFlutterImage(Object key) {
+  static Future<void> _evictFlutterImage(Object key) async {
+    if (key case final ImageProvider<Object> provider) {
+      await provider.evict();
+      return;
+    }
     PaintingBinding.instance.imageCache.evict(key);
   }
 
@@ -485,6 +489,7 @@ class AccountImageCacheManager {
       debugPrint(
         'account image eviction failed: ${redactDiagnostic(error)}',
       );
+      rethrow;
     }
   }
 
