@@ -73,7 +73,7 @@ Future<(ProviderContainer, BoardState, _FakeApi)> _boot(String boardFixture,
     boardProvider.overrideWith2(_SocketlessNotifier.new),
   ]);
   final boardId = _json(boardFixture)['item']['id'] as String;
-  final state = await container.read(boardProvider(boardId).future);
+  final state = (await container.read(boardProvider(boardId).future))!;
   return (container, state, api);
 }
 

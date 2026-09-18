@@ -898,7 +898,7 @@ final boardSocketFactoryProvider = Provider<PlankaSocketFactory>(
   (_) => PlankaSocket.new,
 );
 
-final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState,
+final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState?,
     String>(BoardNotifier.new);
 
 /// Comments are not part of the board response, so load them when a card
@@ -918,7 +918,7 @@ final cardCommentsProvider = FutureProvider.autoDispose
   return comments;
 });
 
-class BoardNotifier extends AsyncNotifier<BoardState> {
+class BoardNotifier extends AsyncNotifier<BoardState?> {
   BoardNotifier(this.boardId);
 
   /// The board id this notifier manages.
@@ -962,13 +962,9 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     ref.invalidateSelf();
     if (ref.mounted) {
       // Riverpod carries the previous AsyncData value into a dependency
-      // refresh. An account transition must not expose that value while the
-      // replacement account is loading, so publish a value-free barrier
-      // before the rebuild can complete.
-      state = AsyncError<BoardState>(
-        StateError('Account changed'),
-        StackTrace.current,
-      );
+      // refresh. A nullable data slot lets the notifier publish an explicit
+      // value-free barrier before the replacement account can load.
+      state = const AsyncData<BoardState?>(null);
     }
   }
 
@@ -1270,9 +1266,9 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   void rejoinBoardRoom() => unawaited(_socket?.subscribeBoard(boardId));
 
   @override
-  Future<BoardState> build() async {
+  Future<BoardState?> build() async {
     final buildGeneration = ++_buildGeneration;
-    state = const AsyncLoading<BoardState>();
+    state = const AsyncLoading<BoardState?>();
     ref.watch(accountStateEpochProvider);
     if (_removeAccountEpochListener == null) {
       _removeAccountEpochListener = ref
