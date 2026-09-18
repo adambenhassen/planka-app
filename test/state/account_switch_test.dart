@@ -55,6 +55,7 @@ class _MutableAccount extends CurrentAccountNotifier {
   void switchTo(Account? next) {
     account = next;
     state = next;
+    ref.read(accountStateEpochProvider.notifier).invalidate();
   }
 }
 

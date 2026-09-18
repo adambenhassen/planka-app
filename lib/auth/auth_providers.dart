@@ -185,7 +185,9 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     lifecycle.completeRemoval(accountId);
     final current = ref.read(currentAccountProvider);
     if (current?.id == accountId) {
-      await ref.read(currentAccountProvider.notifier).select(null);
+      await ref
+          .read(currentAccountProvider.notifier)
+          .select(null, invalidateState: false);
     }
   });
 }
@@ -218,11 +220,17 @@ class CurrentAccountNotifier extends Notifier<Account?> {
     final id = await store.readCurrentId();
     if (id == null) return;
     final accounts = await ref.read(accountsProvider.future);
-    state = accounts.where((a) => a.id == id).firstOrNull;
+    final restored = accounts.where((a) => a.id == id).firstOrNull;
+    state = restored;
+    ref.read(accountStateEpochProvider.notifier).invalidate();
   }
 
-  Future<void> select(Account? account) async {
+  Future<void> select(Account? account, {bool invalidateState = true}) async {
+    final previousId = state?.id;
     state = account;
+    if (invalidateState && previousId != account?.id) {
+      ref.read(accountStateEpochProvider.notifier).invalidate();
+    }
     final store = ref.read(accountStoreProvider);
     await store.writeCurrentId(account?.id);
   }
