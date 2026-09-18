@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/auth/account_removal.dart';
@@ -120,6 +121,32 @@ void main() {
       expect('$result', isNot(contains(target.token)));
     },
   );
+
+  test('remote revocation diagnostics use fixed metadata only', () async {
+    final messages = <String>[];
+    final previousDebugPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) messages.add(message);
+    };
+    addTearDown(() => debugPrint = previousDebugPrint);
+
+    final target = _account('https://a.example', 'token-a');
+    final coordinator = AccountRemovalCoordinator(
+      apiFactory: (_) => _FakeApi(
+        target.serverUrl,
+        target.token,
+        error: StateError('server-controlled detail'),
+      ),
+      removeLocally: (_) async {},
+      invalidateProviders: (_) {},
+    );
+
+    await coordinator.remove(target);
+
+    expect(messages, contains('account_removal_remote_revocation_failed'));
+    expect(messages.join('\n'), isNot(contains('server-controlled detail')));
+    expect(messages.join('\n'), isNot(contains(target.token)));
+  });
 
   test('remote timeout does not delay local cleanup', () async {
     final target = _account('https://a.example', 'token-a');

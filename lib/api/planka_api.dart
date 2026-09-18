@@ -421,24 +421,52 @@ class AccountImageCacheManager {
       throw ArgumentError.value(accountId, 'accountId');
     }
     if (_purgedImageAccounts.contains(accountId)) {
-      unawaited(_evictLateImageKey(key));
+      unawaited(_evictLateImageKey(accountId, key));
       return;
     }
     _trackedImageKeys.putIfAbsent(accountId, () => <Object>{}).add(key);
   }
 
-  Future<void> _evictLateImageKey(Object key) async {
+  Future<void> _evictLateImageKey(String accountId, Object key) async {
     try {
       await _evictImageKey(key);
     } catch (error) {
+      _trackedImageKeys.putIfAbsent(accountId, () => <Object>{}).add(key);
       debugPrint('account image eviction failed: ${redactDiagnostic(error)}');
     }
   }
 
   Future<void> _evictTrackedImageKeys(String accountId) async {
-    final keys = _trackedImageKeys.remove(accountId);
-    if (keys == null || keys.isEmpty) return;
-    await Future.wait(keys.map((key) async => _evictImageKey(key)));
+    final keys = {...?_trackedImageKeys[accountId]};
+    if (keys.isEmpty) return;
+    final failed = <Object>{};
+    Object? firstFailure;
+    StackTrace? firstFailureStack;
+    await Future.wait(
+      keys.map((key) async {
+        try {
+          await _evictImageKey(key);
+        } catch (error, stackTrace) {
+          failed.add(key);
+          firstFailure ??= error;
+          firstFailureStack ??= stackTrace;
+        }
+      }),
+    );
+    // A late image builder can register another key while this pass is in
+    // flight. Preserve that key, and only remove the snapshot entries that
+    // were actually evicted by this pass.
+    final remaining = {...?_trackedImageKeys[accountId]}
+      ..removeAll(keys)
+      ..addAll(failed);
+    if (remaining.isEmpty) {
+      _trackedImageKeys.remove(accountId);
+    } else {
+      _trackedImageKeys[accountId] = remaining;
+    }
+    if (firstFailure != null) {
+      Error.throwWithStackTrace(firstFailure!, firstFailureStack!);
+    }
   }
 
   /// Makes decoded images unavailable when an authenticated session leaves

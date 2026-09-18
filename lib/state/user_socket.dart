@@ -24,8 +24,12 @@ final userSocketFactoryProvider = Provider<PlankaSocketFactory>(
 );
 
 final userSocketProvider = Provider<PlankaSocket?>((ref) {
+  ref.watch(accountStateEpochProvider);
   final account = ref.watch(currentAccountProvider);
-  if (account == null) return null;
+  if (account == null ||
+      !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+    return null;
+  }
   final socket = ref.read(userSocketFactoryProvider)(
     account.serverUrl,
     account.token,

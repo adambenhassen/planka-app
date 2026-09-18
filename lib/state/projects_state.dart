@@ -467,7 +467,15 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
         _invalidateAccountState();
       }
     });
-    ref.watch(currentAccountProvider);
+    final account = ref.watch(currentAccountProvider);
+    if (account == null ||
+        !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+      return const ProjectsView(
+        projects: [],
+        boards: [],
+        backgroundImages: [],
+      );
+    }
     ref.watch(apiProvider);
     final userEvents = ref.watch(userEventsProvider);
     final userConnected = ref.watch(userConnectedProvider);
@@ -503,7 +511,15 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
         version = _eventVersion;
         view = await _fetch(fresh: true);
       }
-      if (session != _session) return view;
+      if (session != _session ||
+          ref.read(currentAccountProvider)?.id != account.id ||
+          !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+        return const ProjectsView(
+          projects: [],
+          boards: [],
+          backgroundImages: [],
+        );
+      }
       _resyncRequested = false;
       return view;
     } finally {
@@ -590,7 +606,12 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
         final version = _eventVersion;
         try {
           final view = await _fetch(fresh: true);
-          if (session != _session) return;
+          final account = ref.read(currentAccountProvider);
+          if (session != _session ||
+              account == null ||
+              !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+            return;
+          }
           if (version != _eventVersion) {
             _resyncRequested = true;
             continue;
@@ -635,8 +656,13 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
     // check a write captured against A would land A's result — or A's
     // refresh error — on the screen B is now reading. Decided from
     // mounted-and-still-current state, not from what throws.
-    bool stillCurrent() =>
-        ref.mounted && ref.read(currentAccountProvider)?.id == accountId;
+    bool stillCurrent() {
+      final current = ref.read(currentAccountProvider);
+      return ref.mounted &&
+          current?.id == accountId &&
+          (accountId == null ||
+              ref.read(cacheLifecycleProvider).isUsable(accountId));
+    }
     await call(repo);
     try {
       // The confirming refresh must hit the server, never the cache: the

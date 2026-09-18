@@ -231,6 +231,19 @@ class _LogoutApi extends PlankaApi {
   Future<void> logout() async {}
 }
 
+class _GatedLogoutApi extends PlankaApi {
+  _GatedLogoutApi(super.serverUrl, super.token);
+
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<void> logout() async {
+    if (!started.isCompleted) started.complete();
+    await release.future;
+  }
+}
+
 void main() {
   test('account removal clears the selected account after local cleanup',
       () async {
@@ -331,6 +344,104 @@ void main() {
     expect(container.read(authExpiredProvider)?.id, account.id);
     expect(container.read(accountStateEpochProvider), epoch + 1);
     expect(evicted, [same(imageKey)]);
+  });
+
+  test('a late 401 from account A cannot log out account B', () async {
+    final server = await HttpServer.bind('127.0.0.1', 0);
+    server.listen((request) {
+      request.response.statusCode = 401;
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('{"message":"expired A"}');
+      request.response.close();
+    });
+    addTearDown(() => server.close());
+
+    final accountA = Account(
+      serverUrl: 'http://127.0.0.1:${server.port}',
+      token: 'late-a-token',
+      userId: 'a',
+      displayName: 'A',
+    );
+    final accountB = Account(
+      serverUrl: 'https://account-b.example',
+      token: 'live-b-token',
+      userId: 'b',
+      displayName: 'B',
+    );
+    final store = AccountStore(FakeStorage());
+    await store.save([accountA, accountB]);
+    final container = ProviderContainer(
+      overrides: [accountStoreProvider.overrideWithValue(store)],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(accountsProvider.future);
+    await container.read(currentAccountProvider.notifier).select(accountA);
+    final apiA = container.read(apiProvider);
+    await container.read(currentAccountProvider.notifier).select(accountB);
+
+    await expectLater(apiA.get('/protected'), throwsA(isA<ApiException>()));
+    await pumpEventQueue();
+
+    expect(container.read(currentAccountProvider), same(accountB));
+    expect(container.read(authExpiredProvider), isNull);
+  });
+
+  test('replacement account stays selected while target revocation waits',
+      () async {
+    final accountA = Account(
+      serverUrl: 'https://remove-a.example',
+      token: 'remove-a-token',
+      userId: 'a',
+      displayName: 'A',
+    );
+    final accountB = Account(
+      serverUrl: 'https://remove-b.example',
+      token: 'remove-b-token',
+      userId: 'b',
+      displayName: 'B',
+    );
+    final store = AccountStore(FakeStorage());
+    await store.save([accountA, accountB]);
+    final lifecycle = _PauseAfterRemovalLifecycle();
+    final images = _RecordingImageCache(lifecycle: lifecycle);
+    final gateApi = _GatedLogoutApi(accountA.serverUrl, accountA.token);
+    final container = ProviderContainer(
+      overrides: [
+        accountStoreProvider.overrideWithValue(store),
+        cacheLifecycleProvider.overrideWithValue(lifecycle),
+        envelopeCacheProvider.overrideWithValue(_RecordingEnvelopeCache()),
+        imageCacheProvider.overrideWithValue(images),
+        accountApiFactoryProvider.overrideWithValue((_) => gateApi),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(images.dispose);
+
+    await container.read(accountsProvider.future);
+    await container.read(currentAccountProvider.notifier).select(accountA);
+    final removal = container.read(accountRemovalProvider).remove(accountA);
+    await Future.wait([
+      gateApi.started.future,
+      lifecycle.reachedBarrier.future,
+    ]);
+
+    expect(container.read(currentAccountProvider), same(accountA));
+    expect(
+      () => container.read(apiProvider),
+      throwsA(isA<AccountCacheClosedException>()),
+    );
+    await container.read(currentAccountProvider.notifier).select(accountB);
+    expect(container.read(currentAccountProvider), same(accountB));
+
+    lifecycle.releaseBarrier.complete();
+    gateApi.release.complete();
+    expect(
+      (await removal).status,
+      AccountRemovalStatus.removed,
+    );
+    expect(container.read(currentAccountProvider), same(accountB));
+    expect((await store.load()).map((account) => account.id), [accountB.id]);
   });
 
   test('Account json round-trip', () {

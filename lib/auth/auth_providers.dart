@@ -111,19 +111,8 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
   Future<void> remove(String accountId) => _serializeMutation(() async {
     final lifecycle = ref.read(cacheLifecycleProvider);
     final store = ref.read(accountStoreProvider);
-    // Detach the selected account before any durable or cache operation can
-    // wait. Its state and authenticated transports must be unusable for the
-    // whole removal window, including a slow intent write.
     Object? firstFailure;
     StackTrace? firstFailureStack;
-    if (ref.read(currentAccountProvider)?.id == accountId) {
-      try {
-        await ref.read(currentAccountProvider.notifier).select(null);
-      } catch (e, s) {
-        firstFailure = e;
-        firstFailureStack = s;
-      }
-    }
     // Persist the removal intent before closing the shared cache barrier. This
     // makes a crash between barrier establishment and purge fail closed on
     // restart.
@@ -137,6 +126,11 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     // The barrier covers every cache family and every caller that retained a
     // handle before removal began.
     final removalBarrier = lifecycle.beginRemoval(accountId);
+    // Keep the target selected until local cleanup commits so the user can
+    // switch to another saved account while remote revocation is in flight.
+    // The epoch and lifecycle barrier make the target's state and transports
+    // unavailable during that window without routing the user through login.
+    ref.read(accountStateEpochProvider.notifier).invalidate();
     try {
       await removalBarrier;
     } catch (e, s) {
@@ -208,6 +202,9 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     }
     state = AsyncData(list);
     lifecycle.completeRemoval(accountId);
+    if (ref.read(currentAccountProvider)?.id == accountId) {
+      await ref.read(currentAccountProvider.notifier).select(null);
+    }
   });
 }
 
@@ -307,14 +304,24 @@ final apiFactoryProvider = Provider<PlankaApi Function(String serverUrl)>(
 );
 
 final apiProvider = Provider<PlankaApi>((ref) {
+  ref.watch(accountStateEpochProvider);
   final account = ref.watch(currentAccountProvider);
   if (account == null) throw StateError('No account selected');
+  if (!ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+    throw AccountCacheClosedException();
+  }
   return PlankaApi(
     account.serverUrl,
     account.token,
     onUnauthorized: () {
+      final current = ref.read(currentAccountProvider);
+      if (current?.id != account.id ||
+          current?.serverUrl != account.serverUrl ||
+          current?.token != account.token) {
+        return;
+      }
       ref.read(authExpiredProvider.notifier).expire(account);
-      ref.read(currentAccountProvider.notifier).select(null);
+      unawaited(ref.read(currentAccountProvider.notifier).select(null));
     },
   );
 });

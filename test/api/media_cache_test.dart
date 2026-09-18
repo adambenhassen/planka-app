@@ -577,6 +577,94 @@ void main() {
     expect(() => manager.forAccount(accountId), returnsNormally);
   });
 
+  test('a failed decoded eviction remains retryable', () async {
+    var attempts = 0;
+    final lifecycle = AccountCacheLifecycle();
+    final cache = _ControlledMediaCache();
+    final manager = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => cache,
+      evictImageKey: (_) async {
+        attempts++;
+        if (attempts == 1) throw StateError('decoded secret');
+      },
+    );
+    const accountId = 'https://media.example#retry';
+    manager.forAccount(accountId);
+    manager.trackImageKey(accountId, Object());
+
+    await manager.evictDecodedAccount(accountId);
+    expect(attempts, 1);
+
+    await manager.evictDecodedAccount(accountId);
+    expect(attempts, 2);
+  });
+
+  test('a failed late decoded eviction remains retryable', () async {
+    var attempts = 0;
+    var failuresRemaining = 1;
+    final lifecycle = AccountCacheLifecycle();
+    final cache = _ControlledMediaCache();
+    final manager = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => cache,
+      evictImageKey: (_) async {
+        attempts++;
+        if (failuresRemaining > 0) {
+          failuresRemaining--;
+          throw StateError('decoded secret');
+        }
+      },
+    );
+    const accountId = 'https://media.example#late-retry';
+    manager.forAccount(accountId);
+    await manager.evictDecodedAccount(accountId);
+    manager.trackImageKey(accountId, Object());
+    await pumpEventQueue();
+    expect(attempts, 1);
+
+    await manager.evictDecodedAccount(accountId);
+    expect(attempts, 2);
+  });
+
+  test('a late key is retained when it fails during an eviction pass',
+      () async {
+    final firstKey = Object();
+    final lateKey = Object();
+    final firstStarted = Completer<void>();
+    final releaseFirst = Completer<void>();
+    var attempts = 0;
+    final lifecycle = AccountCacheLifecycle();
+    final cache = _ControlledMediaCache();
+    final manager = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => cache,
+      evictImageKey: (key) async {
+        attempts++;
+        if (identical(key, firstKey)) {
+          firstStarted.complete();
+          await releaseFirst.future;
+        } else if (identical(key, lateKey)) {
+          throw StateError('decoded secret');
+        }
+      },
+    );
+    const accountId = 'https://media.example#late-during-pass';
+    manager.forAccount(accountId);
+    manager.trackImageKey(accountId, firstKey);
+
+    final eviction = manager.evictDecodedAccount(accountId);
+    await firstStarted.future;
+    manager.trackImageKey(accountId, lateKey);
+    await pumpEventQueue();
+    releaseFirst.complete();
+    await eviction;
+    expect(attempts, 2);
+
+    await manager.evictDecodedAccount(accountId);
+    expect(attempts, 3);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
   final productionRoot = Directory.systemTemp.createTempSync(
     'media_production',

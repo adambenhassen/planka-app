@@ -41,8 +41,15 @@ class CurrentUserNotifier extends AsyncNotifier<PlankaUser?> {
       }
     });
     final account = ref.watch(currentAccountProvider);
-    if (account == null) return null;
+    if (account == null ||
+        !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+      return null;
+    }
     final env = await PlankaRepo(ref.watch(apiProvider)).me();
+    if (ref.read(currentAccountProvider)?.id != account.id ||
+        !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+      return null;
+    }
     return PlankaUser.fromJson(env.item);
   }
 }

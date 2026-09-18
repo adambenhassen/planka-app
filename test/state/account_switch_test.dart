@@ -238,4 +238,33 @@ void main() {
     await container.read(currentAccountProvider.notifier).select(null);
     expect(evictedImages, contains(same(imageB)));
   });
+
+  test('signed-out projects and users rebuild to empty without an API',
+      () async {
+    final accountA = account('http://a');
+    final container = ProviderContainer(
+      overrides: [
+        accountStoreProvider.overrideWithValue(AccountStore(_MemStore())),
+        apiProvider.overrideWith((ref) {
+          final active = ref.watch(currentAccountProvider);
+          if (active == null) throw StateError('API used while signed out');
+          return _FakeApi(active.serverUrl, active.token);
+        }),
+        userSocketProvider.overrideWithValue(null),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(currentAccountProvider.notifier).select(accountA);
+    await container.read(projectsProvider.future);
+    await container.read(allUsersProvider.future);
+
+    await container.read(currentAccountProvider.notifier).select(null);
+    await pumpEventQueue();
+
+    expect(container.read(projectsProvider).hasError, isFalse);
+    expect(container.read(projectsProvider).value?.projects, isEmpty);
+    expect(container.read(allUsersProvider).hasError, isFalse);
+    expect(container.read(allUsersProvider).value, isEmpty);
+  });
 }

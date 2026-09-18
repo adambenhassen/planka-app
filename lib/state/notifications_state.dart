@@ -69,7 +69,10 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
       }
     });
     final account = ref.watch(currentAccountProvider);
-    if (account == null) return [];
+    if (account == null ||
+        !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+      return [];
+    }
     final api = ref.watch(apiProvider);
     final socket = _socket = ref.read(notificationsSocketFactoryProvider)(
       account.serverUrl,
@@ -91,7 +94,8 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     final current = ref.read(currentAccountProvider);
     if (current?.id != account.id ||
         current?.serverUrl != account.serverUrl ||
-        current?.token != account.token) {
+        current?.token != account.token ||
+        !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
       return [];
     }
     return env.items.map(PlankaNotification.fromJson).toList();

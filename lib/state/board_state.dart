@@ -713,8 +713,13 @@ final cardActionsProvider = FutureProvider.autoDispose
     .family<List<PlankaAction>, String>((ref, cardId) async {
   ref.watch(accountStateEpochProvider);
   final account = ref.watch(currentAccountProvider);
+  if (account == null ||
+      !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+    return [];
+  }
   final env = await PlankaRepo(ref.watch(apiProvider)).cardActions(cardId);
-  if (account != null && ref.read(currentAccountProvider)?.id != account.id) {
+  if (ref.read(currentAccountProvider)?.id != account.id ||
+      !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
     return [];
   }
   return env.items.map(PlankaAction.fromJson).toList();
@@ -797,7 +802,11 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
         _invalidateAccountState();
       }
     });
-    ref.watch(currentAccountProvider);
+    final account = ref.watch(currentAccountProvider);
+    if (account == null ||
+        !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+      return [];
+    }
     ref.watch(apiProvider);
     final userEvents = ref.watch(userEventsProvider);
     final userConnected = ref.watch(userConnectedProvider);
@@ -844,7 +853,11 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
         version = _eventVersion;
         users = await _load();
       }
-      if (session != _session) return users;
+      if (session != _session ||
+          ref.read(currentAccountProvider)?.id != account.id ||
+          !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+        return [];
+      }
       _refreshRequested = false;
       return users;
     } finally {
@@ -877,7 +890,12 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
         final version = _eventVersion;
         try {
           final users = await _load();
-          if (session != _session) return;
+          final account = ref.read(currentAccountProvider);
+          if (session != _session ||
+              account == null ||
+              !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+            return;
+          }
           if (version != _eventVersion) {
             _refreshRequested = true;
             continue;
@@ -911,11 +929,16 @@ final cardCommentsProvider = FutureProvider.autoDispose
     .family<List<PlankaComment>, (String, String)>((ref, args) async {
   ref.watch(accountStateEpochProvider);
   final account = ref.watch(currentAccountProvider);
+  if (account == null ||
+      !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+    return [];
+  }
   final notifier = ref.read(boardProvider(args.$1).notifier);
   notifier._registerCommentProvider(args.$2);
   ref.onDispose(() => notifier._unregisterCommentProvider(args.$2));
   final comments = await notifier.fetchComments(args.$2);
-  if (account != null && ref.read(currentAccountProvider)?.id != account.id) {
+  if (ref.read(currentAccountProvider)?.id != account.id ||
+      !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
     return [];
   }
   return comments;
@@ -931,7 +954,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   PlankaApi? _accountApi;
   PlankaRepo get _repo {
     final accountId = _accountId;
-    if (accountId != null && ref.read(currentAccountProvider)?.id != accountId) {
+    if (accountId != null &&
+        (ref.read(currentAccountProvider)?.id != accountId ||
+            !ref.read(cacheLifecycleProvider).isUsable(accountId))) {
       throw StateError('Account changed');
     }
     return PlankaRepo(_accountApi ?? ref.read(apiProvider));
@@ -973,7 +998,8 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
 
   bool _isCurrentBuild(int generation, Account account) =>
       generation == _buildGeneration &&
-      ref.read(currentAccountProvider)?.id == account.id;
+      ref.read(currentAccountProvider)?.id == account.id &&
+      ref.read(cacheLifecycleProvider).isUsable(account.id);
 
   void _registerCommentProvider(String cardId) {
     _activeCommentProviders.update(
@@ -998,7 +1024,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   Future<BoardState> load() async {
     final account = ref.read(currentAccountProvider);
     if (account == null) throw StateError('No account selected');
-    if (_accountId != null && _accountId != account.id) {
+    if (_accountId != null &&
+        (_accountId != account.id ||
+            !ref.read(cacheLifecycleProvider).isUsable(account.id))) {
       throw StateError('Account changed');
     }
     final PlankaApi api = _accountApi ?? ref.read(apiProvider);
@@ -1052,7 +1080,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   }) async {
     final account = ref.read(currentAccountProvider);
     if ((accountId != null && account?.id != accountId) ||
-        (account == null && api == null)) {
+        (account == null && api == null) ||
+        (accountId != null &&
+            !ref.read(cacheLifecycleProvider).isUsable(accountId))) {
       return null;
     }
     final repo = api == null ? _repo : PlankaRepo(api);
@@ -1085,7 +1115,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   }) async {
     final account = ref.read(currentAccountProvider);
     if ((accountId != null && account?.id != accountId) ||
-        (account == null && api == null)) {
+        (account == null && api == null) ||
+        (accountId != null &&
+            !ref.read(cacheLifecycleProvider).isUsable(accountId))) {
       return null;
     }
     final repo = api == null ? _repo : PlankaRepo(api);
@@ -1295,6 +1327,11 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       _accountApi = null;
       throw StateError('No account selected');
     }
+    if (!ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+      _accountId = account.id;
+      _accountApi = null;
+      return null;
+    }
     final api = ref.watch(apiProvider);
     _accountId = account.id;
     _accountApi = api;
@@ -1393,7 +1430,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   Future<void> _refetch({bool discardOnEvent = false}) async {
     final currentAccount = ref.read(currentAccountProvider);
     final boundAccountId = _accountId;
-    if (boundAccountId != null && currentAccount?.id != boundAccountId) {
+    if (boundAccountId != null &&
+        (currentAccount?.id != boundAccountId ||
+            !ref.read(cacheLifecycleProvider).isUsable(boundAccountId))) {
       return;
     }
     final accountId = boundAccountId ?? currentAccount?.id;
@@ -1402,7 +1441,11 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     try {
       final env = await PlankaRepo(api).board(boardId);
       final account = ref.read(currentAccountProvider);
-      if (boundAccountId != null && account?.id != boundAccountId) return;
+      if (boundAccountId != null &&
+          (account?.id != boundAccountId ||
+              !ref.read(cacheLifecycleProvider).isUsable(boundAccountId))) {
+        return;
+      }
       if (accountId != null) {
         await ref
             .read(envelopeCacheProvider)
@@ -1417,7 +1460,8 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         api: api,
       );
       if (boundAccountId != null &&
-          ref.read(currentAccountProvider)?.id != boundAccountId) {
+          (ref.read(currentAccountProvider)?.id != boundAccountId ||
+              !ref.read(cacheLifecycleProvider).isUsable(boundAccountId))) {
         return;
       }
       // When the fresh project fetch fails, the fold above returns the raw
@@ -2271,7 +2315,8 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
 
     if (accountId != null &&
         (accountId != _accountId ||
-            ref.read(currentAccountProvider)?.id != accountId)) {
+            ref.read(currentAccountProvider)?.id != accountId ||
+            !ref.read(cacheLifecycleProvider).isUsable(accountId))) {
       return fetched;
     }
     final current = state.value;
