@@ -40,7 +40,6 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
 
   void _invalidateAccountState() {
     _disposeSocket();
-    ref.invalidateSelf();
     if (ref.mounted) {
       // A dependency refresh otherwise carries the previous account's
       // notifications as AsyncData while the replacement account loads.

@@ -15,7 +15,6 @@ class CurrentUserNotifier extends AsyncNotifier<PlankaUser?> {
   void Function()? _removeAccountEpochListener;
 
   void _invalidateAccountState() {
-    ref.invalidateSelf();
     if (ref.mounted) {
       state = const AsyncData<PlankaUser?>(null);
     }

@@ -777,7 +777,6 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
     _connectedSub?.cancel();
     _eventsSub = null;
     _connectedSub = null;
-    ref.invalidateSelf();
     if (ref.mounted) {
       state = const AsyncData<List<PlankaUser>>([]);
     }
@@ -987,7 +986,6 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   void _invalidateAccountState() {
     _buildGeneration++;
     _disposeAccountResources();
-    ref.invalidateSelf();
     if (ref.mounted) {
       // Riverpod carries the previous AsyncData value into a dependency
       // refresh. A nullable data slot lets the notifier publish an explicit

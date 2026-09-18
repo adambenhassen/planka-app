@@ -433,7 +433,6 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
     _userConnectedSub?.cancel();
     _userEventsSub = null;
     _userConnectedSub = null;
-    ref.invalidateSelf();
     if (ref.mounted) {
       // AsyncNotifier refreshes retain the old value by default. Projects are
       // account-owned, so make the old view unavailable before rebuilding.
