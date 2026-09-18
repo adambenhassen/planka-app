@@ -733,7 +733,10 @@ void main() {
     await eviction;
     expect(attempts, 2);
 
-    await manager.evictDecodedAccount(accountId);
+    await expectLater(
+      manager.evictDecodedAccount(accountId),
+      throwsStateError,
+    );
     expect(attempts, 3);
   });
 
