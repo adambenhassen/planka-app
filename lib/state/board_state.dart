@@ -906,6 +906,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   StreamSubscription<bool>? _userRoomConnected;
   void Function()? _userRoomSelfListener;
   void Function()? _removeAccountEpochListener;
+  var _buildGeneration = 0;
   final Map<String, int> _activeCommentProviders = {};
 
   void _disposeAccountResources() {
@@ -922,6 +923,16 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     _baseResyncPending = false;
     _fillingBaseCustomFields = false;
   }
+
+  void _invalidateAccountState() {
+    _buildGeneration++;
+    _disposeAccountResources();
+    if (ref.mounted) state = const AsyncLoading<BoardState>();
+  }
+
+  bool _isCurrentBuild(int generation, Account account) =>
+      generation == _buildGeneration &&
+      ref.read(currentAccountProvider)?.id == account.id;
 
   void _registerCommentProvider(String cardId) {
     _activeCommentProviders.update(
@@ -1218,14 +1229,13 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   @override
   Future<BoardState> build() async {
+    final buildGeneration = ++_buildGeneration;
     state = const AsyncLoading<BoardState>();
     ref.watch(accountStateEpochProvider);
     if (_removeAccountEpochListener == null) {
       _removeAccountEpochListener = ref
           .read(accountStateEpochProvider.notifier)
-          .listen(() {
-            if (ref.mounted) state = const AsyncLoading<BoardState>();
-          });
+          .listen(_invalidateAccountState);
       ref.onDispose(() {
         _removeAccountEpochListener?.call();
         _removeAccountEpochListener = null;
@@ -1233,7 +1243,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     }
     ref.listen(currentAccountProvider, (previous, next) {
       if (previous?.id != next?.id) {
-        state = const AsyncLoading<BoardState>();
+        _invalidateAccountState();
       }
     });
     final account = ref.watch(currentAccountProvider);
@@ -1250,7 +1260,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     // is folded (see [listenToUserRoom]).
     final foldUserRoom = wireUserRoom();
     final loaded = await _loadForAccount(account, api);
-    if (ref.read(currentAccountProvider)?.id != account.id) {
+    if (!_isCurrentBuild(buildGeneration, account)) {
       throw StateError('Account changed');
     }
     final socket = PlankaSocket(account.serverUrl, account.token);
@@ -1271,7 +1281,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     });
     await socket.connect();
     await socket.subscribeBoard(boardId);
-    if (ref.read(currentAccountProvider)?.id != account.id) {
+    if (!_isCurrentBuild(buildGeneration, account)) {
       socket.dispose();
       if (identical(_socket, socket)) _socket = null;
       throw StateError('Account changed');
