@@ -137,7 +137,7 @@ class _BoardAccountNotifier extends CurrentAccountNotifier {
 Future<(ProviderContainer, BoardNotifier, String)> boot({
   bool fail = false,
   BoardState Function(BoardState)? seed,
-  _FakeApi? api,
+  PlankaApi? api,
 }) async {
   final client = api ?? _FakeApi(fail: fail);
   final container = ProviderContainer(overrides: [
