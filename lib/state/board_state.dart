@@ -928,6 +928,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     _buildGeneration++;
     _disposeAccountResources();
     if (ref.mounted) state = const AsyncLoading<BoardState>();
+    ref.invalidateSelf();
   }
 
   bool _isCurrentBuild(int generation, Account account) =>
