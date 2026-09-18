@@ -425,8 +425,12 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
 
   @override
   Future<ProjectsView> build() async {
+    state = const AsyncLoading<ProjectsView>();
     // Re-fetch when the active account (and thus the API client) changes.
     ref.watch(accountStateEpochProvider);
+    if (ref.watch(currentAccountProvider) == null) {
+      return const ProjectsView(projects: [], boards: [], backgroundImages: []);
+    }
     ref.watch(apiProvider);
     final userEvents = ref.watch(userEventsProvider);
     final userConnected = ref.watch(userConnectedProvider);

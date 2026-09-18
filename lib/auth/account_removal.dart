@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
+
 import '../api/planka_api.dart';
+import '../security_redaction.dart';
 import 'accounts.dart';
 
 typedef AccountRemovalApiFactory = PlankaApi Function(Account account);
@@ -109,9 +112,13 @@ class AccountRemovalCoordinator {
       final api = apiFactory(target);
       await api.logout();
       return false;
-    } catch (_) {
+    } catch (error) {
       // Revocation is explicitly best-effort. The local cleanup is already
       // running independently, and the UI receives only a fixed warning.
+      debugPrint(
+        'account removal remote revocation failed: '
+        '${redactDiagnostic(error)}',
+      );
       return true;
     }
   }

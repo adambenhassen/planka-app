@@ -72,14 +72,20 @@ class CardAttachmentsSection extends StatelessWidget {
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
-                      imageBuilder: (_, imageProvider) => Image(
-                        key: ValueKey<String>(
-                            'store-capture-loaded-attachment:${a.id}'),
-                        image: imageProvider,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                      ),
+                      imageBuilder: (_, imageProvider) {
+                        plankaImageCacheManager.trackImageKey(
+                          accountId!,
+                          imageProvider,
+                        );
+                        return Image(
+                          key: ValueKey<String>(
+                              'store-capture-loaded-attachment:${a.id}'),
+                          image: imageProvider,
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                        );
+                      },
                       errorWidget: (_, error, _) {
                         debugPrint('Store capture attachment image failed');
                         return Icon(

@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/api/envelope.dart';
+import 'package:planka_app/auth/account_removal.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/cache_lifecycle.dart';
@@ -223,7 +224,63 @@ class _RecordingImageCache extends AccountImageCacheManager {
   }
 }
 
+class _LogoutApi extends PlankaApi {
+  _LogoutApi(super.serverUrl, super.token);
+
+  @override
+  Future<void> logout() async {}
+}
+
 void main() {
+  test('account removal clears the selected account after local cleanup',
+      () async {
+    final accountA = Account(
+      serverUrl: 'https://selected-removal.example',
+      token: 'selected-removal-a-token',
+      userId: 'a',
+      displayName: 'A',
+    );
+    final accountB = Account(
+      serverUrl: 'https://selected-removal.example',
+      token: 'selected-removal-b-token',
+      userId: 'b',
+      displayName: 'B',
+    );
+    final storage = FakeStorage();
+    final store = AccountStore(storage);
+    await store.save([accountA, accountB]);
+    final lifecycle = AccountCacheLifecycle();
+    final images = _RecordingImageCache(lifecycle: lifecycle);
+    final container = ProviderContainer(
+      overrides: [
+        accountStoreProvider.overrideWithValue(store),
+        envelopeCacheProvider.overrideWithValue(_RecordingEnvelopeCache()),
+        imageCacheProvider.overrideWithValue(images),
+        cacheLifecycleProvider.overrideWithValue(lifecycle),
+        accountApiFactoryProvider.overrideWithValue(
+          (account) => _LogoutApi(account.serverUrl, account.token),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(images.dispose);
+
+    await container.read(accountsProvider.future);
+    await container.read(currentAccountProvider.notifier).select(accountA);
+    final epochBefore = container.read(accountStateEpochProvider);
+
+    final result = await container.read(accountRemovalProvider).remove(accountA);
+
+    expect(result.status, AccountRemovalStatus.removed);
+    expect(container.read(currentAccountProvider), isNull);
+    expect(container.read(accountStateEpochProvider), epochBefore + 1);
+    expect(
+      container.read(accountsProvider).value?.map((account) => account.id),
+      [accountB.id],
+    );
+    expect(images.purgedAccountIds, [accountA.id]);
+  });
+
   test('Account json round-trip', () {
     final a = Account(
       serverUrl: 'https://p.example.com',

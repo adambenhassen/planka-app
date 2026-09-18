@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -18,24 +20,37 @@ final unreadCountProvider = Provider<int>((ref) =>
         .length);
 
 class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
+  PlankaSocket? _socket;
+  StreamSubscription<SocketEvent>? _socketEvents;
+
   PlankaRepo get _repo => PlankaRepo(ref.read(apiProvider));
 
   @override
   Future<List<PlankaNotification>> build() async {
+    state = const AsyncLoading<List<PlankaNotification>>();
+    _socketEvents?.cancel();
+    _socket?.dispose();
+    _socketEvents = null;
+    _socket = null;
     ref.watch(accountStateEpochProvider);
     final account = ref.watch(currentAccountProvider);
     if (account == null) return [];
-    final socket = PlankaSocket(account.serverUrl, account.token);
-    ref.onDispose(socket.dispose);
+    final api = ref.watch(apiProvider);
+    final socket = _socket = PlankaSocket(account.serverUrl, account.token);
     // Realtime notifications are a live-update convenience over the REST list
     // fetched below; a socket error degrades only that, so we log rather than
     // surface it. ponytail: no degraded-state indicator — add one if stale
     // notification counts become a visible problem.
-    socket.events.listen(applyEvent,
+    _socketEvents = socket.events.listen(applyEvent,
         onError: (Object e) =>
             debugPrint('notifications socket error: ${redactDiagnostic(e)}'));
+    ref.onDispose(() {
+      _socketEvents?.cancel();
+      _socket?.dispose();
+    });
     await socket.connect();
-    final env = await _repo.notifications();
+    final env = await PlankaRepo(api).notifications();
+    if (ref.read(currentAccountProvider)?.id != account.id) return [];
     return env.items.map(PlankaNotification.fromJson).toList();
   }
 

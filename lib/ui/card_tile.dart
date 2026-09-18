@@ -118,13 +118,19 @@ class CardTile extends ConsumerWidget {
                 cacheKey: plankaImageCacheKey(account.id, coverUrl),
                 width: double.infinity,
                 fit: BoxFit.fitWidth,
-                imageBuilder: (_, imageProvider) => Image(
-                  key: ValueKey<String>(
-                      'store-capture-loaded-card-cover:${card.id}'),
-                  image: imageProvider,
-                  width: double.infinity,
-                  fit: BoxFit.fitWidth,
-                ),
+                imageBuilder: (_, imageProvider) {
+                  plankaImageCacheManager.trackImageKey(
+                    account!.id,
+                    imageProvider,
+                  );
+                  return Image(
+                    key: ValueKey<String>(
+                        'store-capture-loaded-card-cover:${card.id}'),
+                    image: imageProvider,
+                    width: double.infinity,
+                    fit: BoxFit.fitWidth,
+                  );
+                },
                 errorWidget: (_, error, _) {
                   debugPrint('Store capture cover image failed');
                   return const SizedBox.shrink(

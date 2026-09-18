@@ -8,6 +8,8 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:file/file.dart' as file;
 import 'package:file/local.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -358,6 +360,7 @@ typedef AccountImageCacheFactory = BaseCacheManager Function(String accountId);
 typedef AccountCacheRepositoryFactory =
     CacheInfoRepository Function(String namespace);
 typedef AccountCacheDirectoryProvider = Future<Directory> Function();
+typedef AccountImageCacheEvictor = FutureOr<void> Function(Object key);
 
 /// Stable cache key for one authenticated media URL and one account.
 ///
@@ -383,7 +386,9 @@ class AccountImageCacheManager {
     AccountCacheDirectoryProvider? temporaryDirectory,
     FileService? fileService,
     file.FileSystem? fileSystem,
-  }) : _lifecycle = lifecycle ?? AccountCacheLifecycle() {
+    AccountImageCacheEvictor? evictImageKey,
+  })  : _lifecycle = lifecycle ?? AccountCacheLifecycle(),
+        _evictImageKey = evictImageKey ?? _evictFlutterImage {
     _createManager =
         createManager ??
         ((accountId) => _createDefaultManager(
@@ -399,8 +404,43 @@ class AccountImageCacheManager {
 
   late final AccountImageCacheFactory _createManager;
   final AccountCacheLifecycle _lifecycle;
+  final AccountImageCacheEvictor _evictImageKey;
   final Map<String, BaseCacheManager> _managers = {};
   final Map<String, _AccountCacheHandle> _handles = {};
+  final Map<String, Set<Object>> _trackedImageKeys = {};
+  final Set<String> _purgedImageAccounts = {};
+
+  static Future<void> _evictFlutterImage(Object key) async {
+    await PaintingBinding.instance.imageCache.evict(key);
+  }
+
+  /// Records the exact image-provider key created by a cached image widget.
+  /// The provider object, rather than only its URL, is needed because Flutter's
+  /// global image cache keys include the account cache manager and cache key.
+  void trackImageKey(String accountId, Object key) {
+    if (accountId.isEmpty) {
+      throw ArgumentError.value(accountId, 'accountId');
+    }
+    if (_purgedImageAccounts.contains(accountId)) {
+      unawaited(_evictLateImageKey(key));
+      return;
+    }
+    _trackedImageKeys.putIfAbsent(accountId, () => <Object>{}).add(key);
+  }
+
+  Future<void> _evictLateImageKey(Object key) async {
+    try {
+      await _evictImageKey(key);
+    } catch (error) {
+      debugPrint('account image eviction failed: ${redactDiagnostic(error)}');
+    }
+  }
+
+  Future<void> _evictTrackedImageKeys(String accountId) async {
+    final keys = _trackedImageKeys.remove(accountId);
+    if (keys == null || keys.isEmpty) return;
+    await Future.wait(keys.map((key) async => _evictImageKey(key)));
+  }
 
   BaseCacheManager forAccount(String accountId, {String? token}) {
     if (accountId.isEmpty) {
@@ -408,6 +448,7 @@ class AccountImageCacheManager {
     }
     registerSecret(token);
     _lifecycle.register(accountId);
+    _purgedImageAccounts.remove(accountId);
     final generation = _lifecycle.generationFor(accountId);
     final existing = _handles[accountId];
     if (existing != null && existing.generation == generation) return existing;
@@ -431,6 +472,15 @@ class AccountImageCacheManager {
     if (accountId.isEmpty) {
       throw ArgumentError.value(accountId, 'accountId');
     }
+    _purgedImageAccounts.add(accountId);
+    Object? firstFailure;
+    StackTrace? firstFailureStack;
+    try {
+      await _evictTrackedImageKeys(accountId);
+    } catch (e, s) {
+      firstFailure = e;
+      firstFailureStack = s;
+    }
     try {
       await _lifecycle.beginRemoval(accountId);
     } catch (e, s) {
@@ -444,8 +494,6 @@ class AccountImageCacheManager {
       throw CachePurgeException('media', e, s);
     }
 
-    Object? firstFailure;
-    StackTrace? firstFailureStack;
     await _waitForPending(manager, (e, s) {
       firstFailure ??= e;
       firstFailureStack ??= s;

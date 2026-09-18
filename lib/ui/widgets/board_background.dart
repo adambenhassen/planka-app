@@ -89,13 +89,16 @@ class BoardBackgroundView extends StatelessWidget {
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
-      imageBuilder: (_, imageProvider) => Image(
-        key: const ValueKey<String>('store-capture-loaded-background-image'),
-        image: imageProvider,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-      ),
+      imageBuilder: (_, imageProvider) {
+        plankaImageCacheManager.trackImageKey(accountId!, imageProvider);
+        return Image(
+          key: const ValueKey<String>('store-capture-loaded-background-image'),
+          image: imageProvider,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        );
+      },
       placeholder: (_, _) => fallback,
       errorWidget: (_, error, _) {
         debugPrint('Store capture background image failed');

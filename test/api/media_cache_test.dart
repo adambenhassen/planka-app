@@ -535,6 +535,25 @@ class _FailingCacheInfoRepository extends CacheInfoRepository {
 }
 
 void main() {
+  test('purging an account evicts its tracked decoded image keys', () async {
+    final lifecycle = AccountCacheLifecycle();
+    final cache = _ControlledMediaCache();
+    final evicted = <Object>[];
+    final manager = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => cache,
+      evictImageKey: (key) async => evicted.add(key),
+    );
+    const accountId = 'https://media.example#u1';
+    final key = Object();
+
+    manager.forAccount(accountId);
+    manager.trackImageKey(accountId, key);
+    await manager.purgeAccount(accountId);
+
+    expect(evicted, [same(key)]);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
   final productionRoot = Directory.systemTemp.createTempSync(
     'media_production',

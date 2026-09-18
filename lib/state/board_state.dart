@@ -8,6 +8,7 @@ import '../api/models.dart';
 import '../api/planka_api.dart';
 import '../api/planka_socket.dart';
 import '../api/repositories.dart';
+import '../auth/accounts.dart';
 import '../auth/auth_providers.dart';
 import '../security_redaction.dart';
 import 'envelope_cache.dart';
@@ -708,12 +709,22 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
 /// A card's activity feed, fetched on demand when its section is shown.
 /// ponytail: no actionCreate socket wiring — the feed refetches each time the
 /// card sheet opens (autoDispose); wire the socket event if staleness bites.
-final cardActionsProvider = FutureProvider.autoDispose
-    .family<List<PlankaAction>, String>((ref, cardId) async {
-  ref.watch(accountStateEpochProvider);
-  final env = await PlankaRepo(ref.watch(apiProvider)).cardActions(cardId);
-  return env.items.map(PlankaAction.fromJson).toList();
-});
+final cardActionsProvider = AsyncNotifierProvider.autoDispose
+    .family<CardActionsNotifier, List<PlankaAction>, String>(
+      CardActionsNotifier.new,
+    );
+
+class CardActionsNotifier
+    extends AutoDisposeFamilyAsyncNotifier<List<PlankaAction>, String> {
+  @override
+  Future<List<PlankaAction>> build(String cardId) async {
+    state = const AsyncLoading<List<PlankaAction>>();
+    ref.watch(accountStateEpochProvider);
+    if (ref.watch(currentAccountProvider) == null) return [];
+    final env = await PlankaRepo(ref.watch(apiProvider)).cardActions(cardId);
+    return env.items.map(PlankaAction.fromJson).toList();
+  }
+}
 
 /// All server users, for the member and manager pickers and admin user list.
 /// The endpoint is admin/project-owner only; non-admins get a 403 the UI
@@ -759,7 +770,9 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
 
   @override
   Future<List<PlankaUser>> build() async {
+    state = const AsyncLoading<List<PlankaUser>>();
     ref.watch(accountStateEpochProvider);
+    if (ref.watch(currentAccountProvider) == null) return [];
     ref.watch(apiProvider);
     final userEvents = ref.watch(userEventsProvider);
     final userConnected = ref.watch(userConnectedProvider);
@@ -865,14 +878,40 @@ final boardProvider = AsyncNotifierProvider.family<BoardNotifier, BoardState,
 /// Comments are not part of the board response, so load them when a card
 /// detail sheet opens. The notifier folds the result into the board state so
 /// socket events and comment mutations continue to share one collection.
-final cardCommentsProvider = FutureProvider.autoDispose
-    .family<List<PlankaComment>, (String, String)>((ref, args) async {
-  ref.watch(accountStateEpochProvider);
-  final notifier = ref.read(boardProvider(args.$1).notifier);
-  notifier._registerCommentProvider(args.$2);
-  ref.onDispose(() => notifier._unregisterCommentProvider(args.$2));
-  return notifier.fetchComments(args.$2);
-});
+final cardCommentsProvider = AsyncNotifierProvider.autoDispose
+    .family<CardCommentsNotifier, List<PlankaComment>, (String, String)>(
+      CardCommentsNotifier.new,
+    );
+
+class CardCommentsNotifier
+    extends AutoDisposeFamilyAsyncNotifier<List<PlankaComment>, (String, String)> {
+  BoardNotifier? _boardNotifier;
+  String? _cardId;
+
+  @override
+  Future<List<PlankaComment>> build((String, String) args) async {
+    state = const AsyncLoading<List<PlankaComment>>();
+    _unregister();
+    ref.watch(accountStateEpochProvider);
+    if (ref.watch(currentAccountProvider) == null) return [];
+    final notifier = ref.read(boardProvider(args.$1).notifier);
+    _boardNotifier = notifier;
+    _cardId = args.$2;
+    notifier._registerCommentProvider(args.$2);
+    ref.onDispose(_unregister);
+    return notifier.fetchComments(args.$2);
+  }
+
+  void _unregister() {
+    final notifier = _boardNotifier;
+    final cardId = _cardId;
+    if (notifier != null && cardId != null) {
+      notifier._unregisterCommentProvider(cardId);
+    }
+    _boardNotifier = null;
+    _cardId = null;
+  }
+}
 
 class BoardNotifier extends AsyncNotifier<BoardState> {
   BoardNotifier(this.boardId);
@@ -880,9 +919,35 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   /// The board id this notifier manages.
   final String boardId;
 
-  PlankaRepo get _repo => PlankaRepo(ref.read(apiProvider));
+  String? _accountId;
+  PlankaApi? _accountApi;
+  PlankaRepo get _repo {
+    final accountId = _accountId;
+    if (accountId != null && ref.read(currentAccountProvider)?.id != accountId) {
+      throw StateError('Account changed');
+    }
+    return PlankaRepo(_accountApi ?? ref.read(apiProvider));
+  }
   PlankaSocket? _socket;
+  StreamSubscription<SocketEvent>? _userRoomEvents;
+  StreamSubscription<bool>? _userRoomConnected;
+  void Function()? _userRoomSelfListener;
   final Map<String, int> _activeCommentProviders = {};
+
+  void _disposeAccountResources() {
+    _userRoomEvents?.cancel();
+    _userRoomConnected?.cancel();
+    _userRoomSelfListener?.call();
+    _userRoomEvents = null;
+    _userRoomConnected = null;
+    _userRoomSelfListener = null;
+    _socket?.dispose();
+    _socket = null;
+    _activeCommentProviders.clear();
+    _stateChangesSeen = 0;
+    _baseResyncPending = false;
+    _fillingBaseCustomFields = false;
+  }
 
   void _registerCommentProvider(String cardId) {
     _activeCommentProviders.update(
@@ -905,10 +970,23 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   /// (offline read cache); the socket reconnect refetch heals it once we're
   /// back online. Exported so tests can exercise the load without a socket.
   Future<BoardState> load() async {
-    final account = ref.read(currentAccountProvider)!;
+    final account = ref.read(currentAccountProvider);
+    if (account == null) throw StateError('No account selected');
+    if (_accountId != null && _accountId != account.id) {
+      throw StateError('Account changed');
+    }
+    final api = _accountApi ?? ref.read(apiProvider);
+    return _loadForAccount(account, api);
+  }
+
+  Future<BoardState> _loadForAccount(Account account, PlankaApi api) async {
     final env = await ref.read(envelopeCacheProvider).fetchOrCached(
-        '${account.id}-board-$boardId', () => _repo.board(boardId));
-    return _withBaseCustomFields(BoardState.fromEnvelope(env));
+        '${account.id}-board-$boardId', () => PlankaRepo(api).board(boardId));
+    return _withBaseCustomFields(
+      BoardState.fromEnvelope(env),
+      accountId: account.id,
+      api: api,
+    );
   }
 
   /// A custom field group instantiated from a project base group takes its
@@ -919,22 +997,41 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   /// reconciliation sources a stale cache must not feed (see
   /// [_freshProjectEnvelope]). Initial load keeps the fallback — offline,
   /// a cached name beats none.
-  Future<BoardState> _withBaseCustomFields(BoardState s,
-      {bool fresh = false}) async {
+  Future<BoardState> _withBaseCustomFields(
+    BoardState s, {
+    bool fresh = false,
+    String? accountId,
+    PlankaApi? api,
+  }) async {
     if (!s.needsBaseCustomFields) return s;
     final env = fresh
-        ? await _freshProjectEnvelope(s.board.projectId)
-        : await _projectEnvelope(s.board.projectId);
+        ? await _freshProjectEnvelope(
+            s.board.projectId,
+            accountId: accountId,
+            api: api,
+          )
+        : await _projectEnvelope(
+            s.board.projectId,
+            accountId: accountId,
+            api: api,
+          );
     return env == null ? s : s.withBaseCustomFields(env);
   }
 
   /// The project response, or null when it cannot be read.
-  Future<Envelope?> _projectEnvelope(String projectId) async {
+  Future<Envelope?> _projectEnvelope(
+    String projectId, {
+    String? accountId,
+    PlankaApi? api,
+  }) async {
     final account = ref.read(currentAccountProvider);
-    if (account == null) return null;
+    if (account == null || (accountId != null && account.id != accountId)) {
+      return null;
+    }
+    final repo = api == null ? _repo : PlankaRepo(api);
     try {
       final env = await ref.read(envelopeCacheProvider).fetchOrCached(
-          '${account.id}-project-$projectId', () => _repo.project(projectId));
+          '${account.id}-project-$projectId', () => repo.project(projectId));
       return env;
     } on ApiException catch (e) {
       // Reachable offline on the first open after an upgrade: the board
@@ -953,11 +1050,18 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   /// socket was down, and treating it as authoritative would resurrect what
   /// was deleted. A failure here leaves state as it stands — the next
   /// reconnect edge or event retries.
-  Future<Envelope?> _freshProjectEnvelope(String projectId) async {
+  Future<Envelope?> _freshProjectEnvelope(
+    String projectId, {
+    String? accountId,
+    PlankaApi? api,
+  }) async {
     final account = ref.read(currentAccountProvider);
-    if (account == null) return null;
+    if (account == null || (accountId != null && account.id != accountId)) {
+      return null;
+    }
+    final repo = api == null ? _repo : PlankaRepo(api);
     try {
-      final env = await _repo.project(projectId);
+      final env = await repo.project(projectId);
       unawaited(
           ref.read(envelopeCacheProvider).put('${account.id}-project-$projectId', env));
       return env;
@@ -1025,6 +1129,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       debugPrint('user room socket error: ${redactDiagnostic(e)}');
       recoverRealtime(userRoom: true);
     });
+    _userRoomEvents = sub;
     // The room outlives this board when another screen is watching it, so hand
     // the subscription back rather than relying on the socket being disposed.
     ref.onDispose(sub.cancel);
@@ -1065,6 +1170,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
         unawaited(_fillBaseCustomFields());
       }
     });
+    _userRoomSelfListener = selfSub;
     ref.onDispose(selfSub);
     final connSub = userConnected.listen((c) {
       if (!c) return;
@@ -1074,6 +1180,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
         _baseResyncPending = true;
       }
     });
+    _userRoomConnected = connSub;
     ref.onDispose(connSub.cancel);
     return fold;
   }
@@ -1130,12 +1237,25 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
 
   @override
   Future<BoardState> build() async {
+    state = const AsyncLoading<BoardState>();
     ref.watch(accountStateEpochProvider);
-    final account = ref.read(currentAccountProvider)!;
+    final account = ref.watch(currentAccountProvider);
+    _disposeAccountResources();
+    if (account == null) {
+      _accountId = null;
+      _accountApi = null;
+      throw StateError('No account selected');
+    }
+    final api = ref.watch(apiProvider);
+    _accountId = account.id;
+    _accountApi = api;
     // From here the room may deliver at any moment; buffer until the snapshot
     // is folded (see [listenToUserRoom]).
     final foldUserRoom = wireUserRoom();
-    final loaded = await load();
+    final loaded = await _loadForAccount(account, api);
+    if (ref.read(currentAccountProvider)?.id != account.id) {
+      throw StateError('Account changed');
+    }
     final socket = PlankaSocket(account.serverUrl, account.token);
     _socket = socket;
     ref.onDispose(socket.dispose);
@@ -1214,18 +1334,26 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   /// server pushes no event for a mutation it refused, so nothing would heal
   /// it.
   Future<void> _refetch({bool discardOnEvent = false}) async {
+    final accountId = _accountId;
+    final api = _accountApi;
+    if (accountId == null || api == null) return;
     final seenBeforeFetch = _stateChangesSeen;
     try {
-      final env = await _repo.board(boardId);
+      final env = await PlankaRepo(api).board(boardId);
       final account = ref.read(currentAccountProvider);
-      if (account != null) {
-        await ref
-            .read(envelopeCacheProvider)
-            .put('${account.id}-board-$boardId', env);
-      }
+      if (account?.id != accountId) return;
+      await ref
+          .read(envelopeCacheProvider)
+          .put('$accountId-board-$boardId', env);
       final prev = state.value;
       var next = BoardState.fromEnvelope(env);
-      next = await _withBaseCustomFields(next, fresh: true);
+      next = await _withBaseCustomFields(
+        next,
+        fresh: true,
+        accountId: accountId,
+        api: api,
+      );
+      if (ref.read(currentAccountProvider)?.id != accountId) return;
       // When the fresh project fetch fails, the fold above returns the raw
       // board snapshot — which carries no base data at all. Installing that
       // would drop every instantiated group's name and fields off the open
@@ -2061,6 +2189,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
   /// socket comment arriving while the request is in flight is preserved. The
   /// id-based upsert also folds the REST row and a socket row into one item.
   Future<List<PlankaComment>> fetchComments(String cardId) async {
+    final accountId = _accountId;
     final env = await _repo.comments(cardId);
     final fetched = <PlankaComment>[];
     final rows = env.items.isNotEmpty
@@ -2074,6 +2203,11 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       }
     }
 
+    if (accountId != null &&
+        (accountId != _accountId ||
+            ref.read(currentAccountProvider)?.id != accountId)) {
+      return fetched;
+    }
     final current = state.value;
     if (current == null) return fetched;
     var users = current.users;
