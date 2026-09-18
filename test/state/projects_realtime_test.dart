@@ -133,13 +133,6 @@ class _TestAccountNotifier extends CurrentAccountNotifier {
   );
 }
 
-List<Override> _accountStateOverrides(Directory cacheDir) => [
-      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
-      envelopeCacheProvider.overrideWithValue(
-        EnvelopeCache(directory: cacheDir),
-      ),
-    ];
-
 Future<(ProviderContainer, _FakeApi, StreamController<SocketEvent>,
         StreamController<bool>)>
     _boot() async {
@@ -319,7 +312,10 @@ void main() {
     final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
-      ..._accountStateOverrides(cacheDir),
+      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+      envelopeCacheProvider.overrideWithValue(
+        EnvelopeCache(directory: cacheDir),
+      ),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -352,7 +348,10 @@ void main() {
     final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
-      ..._accountStateOverrides(cacheDir),
+      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+      envelopeCacheProvider.overrideWithValue(
+        EnvelopeCache(directory: cacheDir),
+      ),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -387,7 +386,10 @@ void main() {
     final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
-      ..._accountStateOverrides(cacheDir),
+      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+      envelopeCacheProvider.overrideWithValue(
+        EnvelopeCache(directory: cacheDir),
+      ),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -423,7 +425,10 @@ void main() {
     final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
-      ..._accountStateOverrides(cacheDir),
+      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+      envelopeCacheProvider.overrideWithValue(
+        EnvelopeCache(directory: cacheDir),
+      ),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -458,7 +463,10 @@ void main() {
     final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
-      ..._accountStateOverrides(cacheDir),
+      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+      envelopeCacheProvider.overrideWithValue(
+        EnvelopeCache(directory: cacheDir),
+      ),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
