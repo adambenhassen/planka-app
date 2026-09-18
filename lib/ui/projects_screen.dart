@@ -340,6 +340,7 @@ class _ProjectList extends ConsumerWidget {
                   ),
                   token: account?.token,
                   serverUrl: account?.serverUrl,
+                  accountId: account?.id,
                 ),
             ],
           ),
@@ -355,11 +356,13 @@ class _BoardTile extends StatelessWidget {
     required this.background,
     required this.token,
     required this.serverUrl,
+    required this.accountId,
   });
   final PlankaBoard board;
   final BoardBackground background;
   final String? token;
   final String? serverUrl;
+  final String? accountId;
 
   @override
   Widget build(BuildContext context) {
@@ -372,6 +375,7 @@ class _BoardTile extends StatelessWidget {
             background: background,
             token: token,
             serverUrl: serverUrl,
+            accountId: accountId,
           ),
           // Scrim keeps the white title legible over any tile color or photo.
           ColoredBox(color: Colors.black.withValues(alpha: 0.28)),

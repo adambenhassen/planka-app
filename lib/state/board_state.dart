@@ -9,6 +9,7 @@ import '../api/planka_api.dart';
 import '../api/planka_socket.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
+import '../security_redaction.dart';
 import 'envelope_cache.dart';
 import 'positions.dart';
 import 'user_socket.dart';
@@ -781,7 +782,7 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
       },
       onError: (Object error) {
         if (session != _session) return;
-        debugPrint('users user room error: $error');
+        debugPrint('users user room error: ${redactDiagnostic(error)}');
         _eventVersion++;
         _queueRefresh(session);
       },
@@ -843,7 +844,8 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
           }
           state = AsyncData(users);
         } on Object catch (error, stackTrace) {
-          debugPrint('users realtime resync failed: $error\n$stackTrace');
+          debugPrint('users realtime resync failed: '
+              '${redactDiagnostic(error)}\n${redactDiagnostic(stackTrace)}');
         }
       }
     } finally {
@@ -938,7 +940,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
       // customFieldGroupsOf then leaves them out rather than rendering an
       // untitled empty block. Log it — otherwise "my base group shows nothing"
       // arrives with nothing to debug from.
-      debugPrint('board $boardId: base custom fields unavailable: $e');
+      debugPrint('board base custom fields unavailable: ${redactDiagnostic(e)}');
       return null;
     }
   }
@@ -957,7 +959,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
           ref.read(envelopeCacheProvider).put('${account.id}-project-$projectId', env));
       return env;
     } on ApiException catch (e) {
-      debugPrint('board $boardId: base custom fields resync failed: $e');
+      debugPrint('board base custom fields resync failed: ${redactDiagnostic(e)}');
       return null;
     }
   }
@@ -1017,7 +1019,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     sub = events
         .where((e) => kBoardUserRoomEvents.contains(e.name))
         .listen((e) => live ? apply(e) : pending.add(e), onError: (Object e) {
-      debugPrint('user room socket error: $e');
+      debugPrint('user room socket error: ${redactDiagnostic(e)}');
       recoverRealtime(userRoom: true);
     });
     // The room outlives this board when another screen is watching it, so hand
@@ -1139,7 +1141,7 @@ class BoardNotifier extends AsyncNotifier<BoardState> {
     // than alarm the user — but since an error also means missed events on a
     // possibly healthy transport, recover with a coalesced refetch.
     socket.events.listen(applySocketEvent, onError: (Object e) {
-      debugPrint('board socket error: $e');
+      debugPrint('board socket error: ${redactDiagnostic(e)}');
       recoverRealtime();
     });
     socket.connected.listen((c) {

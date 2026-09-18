@@ -6,6 +6,7 @@ import '../api/models.dart';
 import '../api/planka_api.dart';
 import '../auth/auth_providers.dart';
 import '../l10n/gen/app_localizations.dart';
+import '../security_redaction.dart';
 import '../state/board_state.dart';
 import '../state/projects_state.dart';
 import 'error_handling.dart';
@@ -105,7 +106,8 @@ bool templateRecordInView(
 void _handleCfError(BuildContext context, AppLocalizations l10n, Object e,
     {bool expectManagerRefusal = false}) {
   if (!context.mounted) {
-    debugPrint('_handleCfError: failed after context unmounted: $e');
+    debugPrint('_handleCfError: failed after context unmounted: '
+        '${redactDiagnostic(e)}');
     return;
   }
   final code = e is ApiException ? e.statusCode : null;
@@ -140,8 +142,8 @@ void _guardCfMutation(
     } else {
       // The sheet is gone so the snackbar can't be shown, but the failure
       // still happened. Log rather than swallow it silently.
-      debugPrint(
-          '_guardCfMutation: mutation failed after context unmounted: $e');
+      debugPrint('_guardCfMutation: mutation failed after context unmounted: '
+          '${redactDiagnostic(e)}');
     }
   });
 }

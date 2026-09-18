@@ -42,27 +42,29 @@ void main() {
     required void Function(String path, String name) onUpload,
     void Function(String id) onDelete = _noop,
     String? serverUrl,
-  }) =>
-      MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: Scaffold(
-          body: CardAttachmentsSection(
-            attachments: attachments,
-            token: 'tok',
-            serverUrl: serverUrl,
-            coverAttachmentId: null,
-            onUpload: onUpload,
-            onDelete: onDelete,
-            onSetCover: (_) {},
-            onOpen: (_) {},
-          ),
-        ),
-      );
+    String accountId = 'https://my.planka.test#test-user',
+  }) => MaterialApp(
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: Scaffold(
+      body: CardAttachmentsSection(
+        attachments: attachments,
+        token: 'tok',
+        serverUrl: serverUrl,
+        accountId: accountId,
+        coverAttachmentId: null,
+        onUpload: onUpload,
+        onDelete: onDelete,
+        onSetCover: (_) {},
+        onOpen: (_) {},
+      ),
+    ),
+  );
 
   testWidgets('picking a file uploads it with path and name', (tester) async {
-    FileSelectorPlatform.instance =
-        _FakeSelector(XFile('/tmp/report.pdf', name: 'report.pdf'));
+    FileSelectorPlatform.instance = _FakeSelector(
+      XFile('/tmp/report.pdf', name: 'report.pdf'),
+    );
     (String, String)? uploaded;
     await tester.pumpWidget(host(onUpload: (p, n) => uploaded = (p, n)));
 
@@ -87,11 +89,13 @@ void main() {
 
   testWidgets('existing attachments render and delete by id', (tester) async {
     String? deleted;
-    await tester.pumpWidget(host(
-      attachments: [attachment('a1', 'spec.txt')],
-      onUpload: (_, _) {},
-      onDelete: (id) => deleted = id,
-    ));
+    await tester.pumpWidget(
+      host(
+        attachments: [attachment('a1', 'spec.txt')],
+        onUpload: (_, _) {},
+        onDelete: (id) => deleted = id,
+      ),
+    );
 
     expect(find.text('spec.txt'), findsOneWidget);
     await tester.tap(find.byIcon(Icons.more_vert));
@@ -101,32 +105,45 @@ void main() {
     expect(deleted, 'a1');
   });
 
-  testWidgets('same-origin attachment thumbnail uses cookie auth',
-      (tester) async {
-    await tester.pumpWidget(host(
-      attachments: [
-        attachment('a1', 'photo.png',
-            thumb: 'https://my.planka.test:8443/thumb.png'),
-      ],
-      serverUrl: 'https://my.planka.test:8443/planka',
-      onUpload: (_, _) {},
-    ));
+  testWidgets('same-origin attachment thumbnail uses cookie auth', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        attachments: [
+          attachment(
+            'a1',
+            'photo.png',
+            thumb: 'https://my.planka.test:8443/thumb.png',
+          ),
+        ],
+        serverUrl: 'https://my.planka.test:8443/planka',
+        onUpload: (_, _) {},
+      ),
+    );
 
     final image = tester.widget<CachedNetworkImage>(
-        find.byType(CachedNetworkImage));
+      find.byType(CachedNetworkImage),
+    );
     expect(image.httpHeaders, {'Cookie': 'accessToken=tok'});
   });
 
-  testWidgets('foreign-origin attachment thumbnail renders no image',
-      (tester) async {
-    await tester.pumpWidget(host(
-      attachments: [
-        attachment('a1', 'photo.png',
-            thumb: 'https://my.planka.test.evil.example/thumb.png'),
-      ],
-      serverUrl: 'https://my.planka.test:8443/planka',
-      onUpload: (_, _) {},
-    ));
+  testWidgets('foreign-origin attachment thumbnail renders no image', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        attachments: [
+          attachment(
+            'a1',
+            'photo.png',
+            thumb: 'https://my.planka.test.evil.example/thumb.png',
+          ),
+        ],
+        serverUrl: 'https://my.planka.test:8443/planka',
+        onUpload: (_, _) {},
+      ),
+    );
 
     expect(find.byType(CachedNetworkImage), findsNothing);
     expect(find.byIcon(Icons.insert_drive_file_outlined), findsOneWidget);

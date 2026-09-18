@@ -9,28 +9,27 @@ void main() {
   Widget host({
     required String imageUrl,
     String serverUrl = 'https://my.planka.test:8443/planka',
-  }) =>
-      MaterialApp(
-        home: SizedBox(
-          width: 100,
-          height: 100,
-          child: BoardBackgroundView(
-            background: BoardBackground(
-              boardGradient('seed'),
-              imageUrl,
-            ),
-            token: 'jwt',
-            serverUrl: serverUrl,
-          ),
-        ),
-      );
+    String accountId = 'https://my.planka.test#test-user',
+  }) => MaterialApp(
+    home: SizedBox(
+      width: 100,
+      height: 100,
+      child: BoardBackgroundView(
+        background: BoardBackground(boardGradient('seed'), imageUrl),
+        token: 'jwt',
+        serverUrl: serverUrl,
+        accountId: accountId,
+      ),
+    ),
+  );
 
   test('gradient-type project resolves a gradient and no image', () {
     const p = PlankaProject(
-        id: '1',
-        name: 'P',
-        backgroundType: 'gradient',
-        backgroundGradient: 'jungle-mesh');
+      id: '1',
+      name: 'P',
+      backgroundType: 'gradient',
+      backgroundGradient: 'jungle-mesh',
+    );
     final bg = resolveBoardBackground(p, const [], 'seed');
     expect(bg.imageUrl, isNull);
     expect(bg.gradient, isA<Gradient>());
@@ -46,19 +45,33 @@ void main() {
       },
     );
     const p = PlankaProject(
-        id: '1', name: 'P', backgroundType: 'image', backgroundImageId: 'img1');
-    expect(resolveBoardBackground(p, [img], 'seed', large: true).imageUrl,
-        'http://x/720.jpg');
+      id: '1',
+      name: 'P',
+      backgroundType: 'image',
+      backgroundImageId: 'img1',
+    );
     expect(
-        resolveBoardBackground(p, [img], 'seed').imageUrl, 'http://x/360.jpg');
+      resolveBoardBackground(p, [img], 'seed', large: true).imageUrl,
+      'http://x/720.jpg',
+    );
+    expect(
+      resolveBoardBackground(p, [img], 'seed').imageUrl,
+      'http://x/360.jpg',
+    );
   });
 
   test('image-type falls back to url when thumbnails absent', () {
     const img = PlankaBackgroundImage(id: 'img1', url: 'http://x/full.jpg');
     const p = PlankaProject(
-        id: '1', name: 'P', backgroundType: 'image', backgroundImageId: 'img1');
-    expect(resolveBoardBackground(p, [img], 'seed', large: true).imageUrl,
-        'http://x/full.jpg');
+      id: '1',
+      name: 'P',
+      backgroundType: 'image',
+      backgroundImageId: 'img1',
+    );
+    expect(
+      resolveBoardBackground(p, [img], 'seed', large: true).imageUrl,
+      'http://x/full.jpg',
+    );
   });
 
   test('no background and null project fall back to a gradient, no image', () {
@@ -66,23 +79,28 @@ void main() {
     expect(resolveBoardBackground(p, const [], 'seed').imageUrl, isNull);
     expect(resolveBoardBackground(null, const [], 'seed').imageUrl, isNull);
     expect(
-        resolveBoardBackground(null, const [], 'seed').gradient, isA<Gradient>());
+      resolveBoardBackground(null, const [], 'seed').gradient,
+      isA<Gradient>(),
+    );
   });
 
   testWidgets('same-origin board background uses cookie auth', (tester) async {
-    await tester
-        .pumpWidget(host(imageUrl: 'https://my.planka.test:8443/bg.jpg'));
+    await tester.pumpWidget(
+      host(imageUrl: 'https://my.planka.test:8443/bg.jpg'),
+    );
 
     final image = tester.widget<CachedNetworkImage>(
-        find.byType(CachedNetworkImage));
+      find.byType(CachedNetworkImage),
+    );
     expect(image.httpHeaders, {'Cookie': 'accessToken=jwt'});
   });
 
-  testWidgets('foreign-origin board background renders the gradient',
-      (tester) async {
-    await tester.pumpWidget(host(
-      imageUrl: 'https://evil.example/?u=https://my.planka.test:8443',
-    ));
+  testWidgets('foreign-origin board background renders the gradient', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(imageUrl: 'https://evil.example/?u=https://my.planka.test:8443'),
+    );
 
     expect(find.byType(CachedNetworkImage), findsNothing);
   });

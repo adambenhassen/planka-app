@@ -5,6 +5,7 @@ import '../../api/models.dart';
 import '../../api/repositories.dart';
 import '../../auth/auth_providers.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../security_redaction.dart';
 import '../../state/board_state.dart';
 import '../../state/current_user_state.dart';
 import '../error_handling.dart';
@@ -60,7 +61,7 @@ class _UserManagementDialogState extends ConsumerState<_UserManagementDialog> {
         width: 420,
         height: 480,
         child: users.when(
-          error: (error, _) => Center(child: Text('$error')),
+          error: (error, _) => Center(child: Text(redactDiagnostic(error))),
           loading: () => const Center(child: CircularProgressIndicator()),
           data: (users) => ListView(
             shrinkWrap: true,

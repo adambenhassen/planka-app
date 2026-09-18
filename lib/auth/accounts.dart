@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import '../security_redaction.dart';
 
 /// Minimal secure-storage surface so tests can inject an in-memory fake.
 abstract class SecureKeyValueStore {
@@ -13,7 +16,9 @@ abstract class SecureKeyValueStore {
 
 class FlutterSecureKeyValueStore implements SecureKeyValueStore {
   final FlutterSecureStorage _storage;
-  const FlutterSecureKeyValueStore([this._storage = const FlutterSecureStorage()]);
+  const FlutterSecureKeyValueStore([
+    this._storage = const FlutterSecureStorage(),
+  ]);
 
   @override
   Future<String?> read(String key) => _storage.read(key: key);
@@ -78,36 +83,50 @@ class Account {
     required this.token,
     required this.userId,
     required this.displayName,
-  });
+  }) {
+    registerSecret(token);
+  }
 
   String get id => '$serverUrl#$userId';
 
   Map<String, dynamic> toJson() => {
-        'serverUrl': serverUrl,
-        'token': token,
-        'userId': userId,
-        'displayName': displayName,
-      };
+    'serverUrl': serverUrl,
+    'token': token,
+    'userId': userId,
+    'displayName': displayName,
+  };
 
   factory Account.fromJson(Map<String, dynamic> json) => Account(
-        serverUrl: json['serverUrl'] as String,
-        token: json['token'] as String,
-        userId: json['userId'] as String,
-        displayName: json['displayName'] as String,
-      );
+    serverUrl: json['serverUrl'] as String,
+    token: json['token'] as String,
+    userId: json['userId'] as String,
+    displayName: json['displayName'] as String,
+  );
 
   Account copyWith({String? token}) => Account(
-        serverUrl: serverUrl,
-        token: token ?? this.token,
-        userId: userId,
-        displayName: displayName,
-      );
+    serverUrl: serverUrl,
+    token: token ?? this.token,
+    userId: userId,
+    displayName: displayName,
+  );
 }
 
 class AccountStore {
   static const _key = 'accounts';
+  static const _removalFailuresKey = 'accountRemovalFailures';
+  static final _removalMarkerLocks = Expando<_RemovalMarkerLock>();
   final SecureKeyValueStore _storage;
-  AccountStore(this._storage);
+  final _RemovalMarkerLock _removalMarkerLock;
+
+  AccountStore(this._storage) : _removalMarkerLock = _lockFor(_storage);
+
+  static _RemovalMarkerLock _lockFor(SecureKeyValueStore storage) {
+    final existing = _removalMarkerLocks[storage];
+    if (existing != null) return existing;
+    final created = _RemovalMarkerLock();
+    _removalMarkerLocks[storage] = created;
+    return created;
+  }
 
   Future<List<Account>> load() async {
     final raw = await _storage.read(_key);
@@ -122,18 +141,90 @@ class AccountStore {
       // let the user re-authenticate. Log it — a decrypt failure here is a
       // silent forced-relogin, indistinguishable from "no saved accounts"
       // without this line.
-      debugPrint('AccountStore.load failed, treating as no accounts: $e');
+      debugPrint(
+        'AccountStore.load failed, treating as no accounts: ${redactDiagnostic(e)}',
+      );
       return [];
     }
   }
 
   Future<void> save(List<Account> accounts) => _storage.write(
-      _key, jsonEncode(accounts.map((a) => a.toJson()).toList()));
+    _key,
+    jsonEncode(accounts.map((a) => a.toJson()).toList()),
+  );
+
+  /// Returns account ids with a pending or failed removal intent. A malformed
+  /// marker fails closed so startup cannot reopen an account whose removal
+  /// state is unknown.
+  Future<Set<String>> loadRemovalFailures() =>
+      _removalMarkerLock.run(_readRemovalFailures);
+
+  Future<Set<String>> _readRemovalFailures() async {
+    final raw = await _storage.read(_removalFailuresKey);
+    if (raw == null) return <String>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List ||
+          decoded.any((entry) => entry is! String || entry.isEmpty)) {
+        throw const FormatException();
+      }
+      return decoded.cast<String>().toSet();
+    } catch (e) {
+      debugPrint(
+        'AccountStore.loadRemovalFailures failed: ${redactDiagnostic(e)}',
+      );
+      throw StateError('Account removal state unavailable');
+    }
+  }
+
+  /// Durably records a removal intent. It remains set if the purge fails so a
+  /// reconstructed lifecycle keeps the account closed until a retry succeeds.
+  Future<void> markRemovalFailed(String accountId) async {
+    if (accountId.isEmpty) throw ArgumentError.value(accountId, 'accountId');
+    await _removalMarkerLock.run(() async {
+      final ids = await _readRemovalFailures()
+        ..add(accountId);
+      final sorted = ids.toList()..sort();
+      await _storage.write(_removalFailuresKey, jsonEncode(sorted));
+    });
+  }
+
+  Future<void> clearRemovalFailed(String accountId) async {
+    if (accountId.isEmpty) throw ArgumentError.value(accountId, 'accountId');
+    await _removalMarkerLock.run(() async {
+      final ids = await _readRemovalFailures()
+        ..remove(accountId);
+      if (ids.isEmpty) {
+        await _storage.delete(_removalFailuresKey);
+        return;
+      }
+      final sorted = ids.toList()..sort();
+      await _storage.write(_removalFailuresKey, jsonEncode(sorted));
+    });
+  }
 
   static const _currentKey = 'currentAccountId';
 
   Future<String?> readCurrentId() => _storage.read(_currentKey);
 
-  Future<void> writeCurrentId(String? id) =>
-      id == null ? _storage.delete(_currentKey) : _storage.write(_currentKey, id);
+  Future<void> writeCurrentId(String? id) => id == null
+      ? _storage.delete(_currentKey)
+      : _storage.write(_currentKey, id);
+}
+
+class _RemovalMarkerLock {
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> run<T>(Future<T> Function() operation) {
+    final previous = _tail;
+    final done = Completer<void>();
+    _tail = done.future;
+    return previous.then((_) async {
+      try {
+        return await operation();
+      } finally {
+        done.complete();
+      }
+    });
+  }
 }

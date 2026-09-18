@@ -1,26 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/l10n/gen/app_localizations.dart';
+import 'package:planka_app/security_redaction.dart';
 import 'package:planka_app/ui/error_handling.dart';
 
 Future<BuildContext> _pumpHost(WidgetTester tester) async {
   late BuildContext ctx;
-  await tester.pumpWidget(MaterialApp(
-    localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: AppLocalizations.supportedLocales,
-    home: Scaffold(
-      body: Builder(builder: (context) {
-        ctx = context;
-        return const SizedBox();
-      }),
+  await tester.pumpWidget(
+    MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(
+        body: Builder(
+          builder: (context) {
+            ctx = context;
+            return const SizedBox();
+          },
+        ),
+      ),
     ),
-  ));
+  );
   return ctx;
 }
 
 void main() {
-  testWidgets('guardMutation surfaces a rejected future via a SnackBar',
-      (tester) async {
+  testWidgets('guardMutation surfaces a rejected future via a SnackBar', (
+    tester,
+  ) async {
     final ctx = await _pumpHost(tester);
 
     guardMutation(ctx, Future<void>.error(Exception('boom')));
@@ -31,8 +37,9 @@ void main() {
     expect(find.textContaining('boom'), findsOneWidget);
   });
 
-  testWidgets('guardMutation stays silent when the future succeeds',
-      (tester) async {
+  testWidgets('guardMutation stays silent when the future succeeds', (
+    tester,
+  ) async {
     final ctx = await _pumpHost(tester);
 
     guardMutation(ctx, Future<void>.value());
@@ -40,5 +47,18 @@ void main() {
     await tester.pump();
 
     expect(find.byType(SnackBar), findsNothing);
+  });
+
+  testWidgets('rendered diagnostics redact a registered token', (tester) async {
+    const token = 'rendered-secret-token-canary';
+    registerSecret(token);
+    final ctx = await _pumpHost(tester);
+
+    guardMutation(ctx, Future<void>.error(StateError(token)));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.textContaining(token), findsNothing);
+    expect(find.byType(SnackBar), findsOneWidget);
   });
 }
