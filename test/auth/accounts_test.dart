@@ -248,33 +248,6 @@ class _GatedLogoutApi extends PlankaApi {
   }
 }
 
-class _AccountStateApi extends PlankaApi {
-  _AccountStateApi(super.serverUrl, super.token);
-
-  @override
-  Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
-    if (path == '/projects') {
-      return Envelope.parse({
-        'items': [
-          {'id': 'project-$serverUrl', 'name': 'Project @ $serverUrl'},
-        ],
-      });
-    }
-    if (path == '/users') {
-      return Envelope.parse({
-        'items': [
-          {
-            'id': 'user-$serverUrl',
-            'name': 'User @ $serverUrl',
-            'role': 'admin',
-          },
-        ],
-      });
-    }
-    throw StateError('unexpected GET $path');
-  }
-}
-
 class _RecordingSocket extends PlankaSocket {
   _RecordingSocket(super.serverUrl, super.token);
 
@@ -496,14 +469,48 @@ void main() {
 
   test('replacement account stays selected while target revocation waits',
       () async {
+    final server = await HttpServer.bind('127.0.0.1', 0);
+    server.listen((request) async {
+      final isAccountB = request.headers.value(
+            HttpHeaders.authorizationHeader,
+          ) ==
+          'Bearer remove-b-token';
+      request.response.headers.contentType = ContentType.json;
+      if (request.uri.path == '/api/projects') {
+        request.response.write(jsonEncode({
+          'items': [
+            {
+              'id': isAccountB ? 'project-b' : 'project-a',
+              'name': isAccountB ? 'Project B' : 'Project A',
+            },
+          ],
+        }));
+      } else if (request.uri.path == '/api/users') {
+        request.response.write(jsonEncode({
+          'items': [
+            {
+              'id': isAccountB ? 'user-b' : 'user-a',
+              'name': isAccountB ? 'User B' : 'User A',
+              'role': 'admin',
+            },
+          ],
+        }));
+      } else {
+        request.response.statusCode = 404;
+        request.response.write('{"message":"not found"}');
+      }
+      await request.response.close();
+    });
+    addTearDown(() => server.close());
+    final serverUrl = 'http://127.0.0.1:${server.port}';
     final accountA = Account(
-      serverUrl: 'https://remove-a.example',
+      serverUrl: serverUrl,
       token: 'remove-a-token',
       userId: 'a',
       displayName: 'A',
     );
     final accountB = Account(
-      serverUrl: 'https://remove-b.example',
+      serverUrl: serverUrl,
       token: 'remove-b-token',
       userId: 'b',
       displayName: 'B',
@@ -532,10 +539,6 @@ void main() {
         envelopeCacheProvider.overrideWithValue(envelopes),
         imageCacheProvider.overrideWithValue(images),
         accountApiFactoryProvider.overrideWithValue((_) => gateApi),
-        apiProvider.overrideWith((ref) {
-          final account = ref.watch(currentAccountProvider)!;
-          return _AccountStateApi(account.serverUrl, account.token);
-        }),
         userSocketFactoryProvider.overrideWithValue((serverUrl, token) {
           final socket = _RecordingSocket(serverUrl, token);
           sockets.add(socket);
@@ -595,11 +598,11 @@ void main() {
     expect(apiB.token, accountB.token);
     expect(
       container.read(projectsProvider).value?.projects.single.name,
-      'Project @ ${accountB.serverUrl}',
+      'Project B',
     );
     expect(
       container.read(allUsersProvider).value?.single.name,
-      'User @ ${accountB.serverUrl}',
+      'User B',
     );
     expect(await envelopes.get('${accountB.id}-projects'), isNotNull);
     expect(images.forAccount(accountB.id), same(imageCacheB));
