@@ -205,10 +205,11 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     }
     state = AsyncData(list);
     lifecycle.completeRemoval(accountId);
-    if (ref.read(currentAccountProvider)?.id == accountId) {
+    final current = ref.read(currentAccountProvider);
+    if (current != null && current.id == accountId) {
       await ref
           .read(currentAccountProvider.notifier)
-          .select(null, invalidateState: false);
+          .selectIfCurrent(current, null, invalidateState: false);
     }
   });
 }
@@ -254,8 +255,40 @@ class CurrentAccountNotifier extends Notifier<Account?> {
   }
 
   Future<void> select(Account? account, {bool invalidateState = true}) {
+    return _enqueueSelection(
+      () => _selectNow(account, invalidateState: invalidateState),
+    );
+  }
+
+  /// Selects [account] only if [expected] is still the live account when this
+  /// operation reaches the serialized transition queue. This prevents a
+  /// removal or stale transport callback from signing out a replacement that
+  /// was queued while the outgoing account was being evicted.
+  Future<void> selectIfCurrent(
+    Account expected,
+    Account? account, {
+    bool invalidateState = true,
+  }) {
+    return _enqueueSelection(() async {
+      if (!_sameAccount(state, expected)) return;
+      await _selectNow(account, invalidateState: invalidateState);
+    });
+  }
+
+  /// Expires [expected] only if it remains current when the queued transition
+  /// runs. The expiration marker is committed with the null selection so a
+  /// delayed 401 cannot leave stale login state after a switch.
+  Future<void> expireIfCurrent(Account expected) {
+    return _enqueueSelection(() async {
+      if (!_sameAccount(state, expected)) return;
+      await _selectNow(null, invalidateState: true);
+      ref.read(authExpiredProvider.notifier).expire(expected);
+    });
+  }
+
+  Future<void> _enqueueSelection(Future<void> Function() task) {
     final operation = _selectionTail.then(
-      (_) => _selectNow(account, invalidateState: invalidateState),
+      (_) => task(),
     );
     _selectionTail = operation.then<void>(
       (_) {},
@@ -263,6 +296,12 @@ class CurrentAccountNotifier extends Notifier<Account?> {
     );
     return operation;
   }
+
+  bool _sameAccount(Account? current, Account expected) =>
+      current != null &&
+      current.id == expected.id &&
+      current.serverUrl == expected.serverUrl &&
+      current.token == expected.token;
 
   Future<void> _selectNow(
     Account? account, {
@@ -335,14 +374,9 @@ final apiProvider = Provider<PlankaApi>((ref) {
     account.serverUrl,
     account.token,
     onUnauthorized: () {
-      final current = ref.read(currentAccountProvider);
-      if (current?.id != account.id ||
-          current?.serverUrl != account.serverUrl ||
-          current?.token != account.token) {
-        return;
-      }
-      ref.read(authExpiredProvider.notifier).expire(account);
-      unawaited(ref.read(currentAccountProvider.notifier).select(null));
+      unawaited(
+        ref.read(currentAccountProvider.notifier).expireIfCurrent(account),
+      );
     },
   );
 });
