@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:file/file.dart' as file;
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:planka_app/api/envelope.dart';
@@ -92,6 +95,76 @@ class _MemStore implements SecureKeyValueStore {
   Future<void> delete(String key) async => data.remove(key);
 }
 
+class _DeterministicCacheManager implements BaseCacheManager {
+  @override
+  Future<file.File> getSingleFile(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+  }) => throw UnimplementedError();
+
+  @override
+  Stream<FileInfo> getFile(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+  }) => const Stream.empty();
+
+  @override
+  Stream<FileResponse> getFileStream(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+    bool withProgress = false,
+  }) => const Stream.empty();
+
+  @override
+  Future<FileInfo> downloadFile(
+    String url, {
+    String? key,
+    Map<String, String>? authHeaders,
+    bool force = false,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<FileInfo?> getFileFromCache(
+    String key, {
+    bool ignoreMemCache = false,
+  }) async => null;
+
+  @override
+  Future<FileInfo?> getFileFromMemory(String key) async => null;
+
+  @override
+  Future<file.File> putFile(
+    String url,
+    Uint8List fileBytes, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) => throw UnimplementedError();
+
+  @override
+  Future<file.File> putFileStream(
+    String url,
+    Stream<List<int>> source, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> removeFile(String key) async {}
+
+  @override
+  Future<void> emptyCache() async {}
+
+  @override
+  Future<void> dispose() async {}
+}
+
 void main() {
   Account account(String server) => Account(
       serverUrl: server, token: 'tok', userId: 'u1', displayName: 'User');
@@ -127,9 +200,8 @@ void main() {
     final evictionStarted = Completer<void>();
     final releaseEviction = Completer<void>();
     final store = _MemStore();
-    final cacheDir = await Directory.systemTemp.createTemp('selection_media');
     final images = AccountImageCacheManager(
-      directory: cacheDir,
+      createManager: (_) => _DeterministicCacheManager(),
       evictImageKey: (_) async {
         if (!evictionStarted.isCompleted) evictionStarted.complete();
         await releaseEviction.future;
@@ -143,7 +215,6 @@ void main() {
     addTearDown(() async {
       if (!releaseEviction.isCompleted) releaseEviction.complete();
       await images.dispose();
-      await cacheDir.delete(recursive: true);
     });
 
     await container.read(currentAccountProvider.notifier).select(accountA);
@@ -168,9 +239,8 @@ void main() {
     final accountA = account('http://a');
     final accountB = account('http://b');
     final store = _MemStore();
-    final cacheDir = await Directory.systemTemp.createTemp('selection_media');
     final images = AccountImageCacheManager(
-      directory: cacheDir,
+      createManager: (_) => _DeterministicCacheManager(),
       evictImageKey: (_) async => throw StateError('decoded eviction failed'),
     );
     final container = ProviderContainer(overrides: [
@@ -180,7 +250,6 @@ void main() {
     addTearDown(container.dispose);
     addTearDown(() async {
       await images.dispose();
-      await cacheDir.delete(recursive: true);
     });
 
     await container.read(currentAccountProvider.notifier).select(accountA);
@@ -207,6 +276,7 @@ void main() {
     final evictedImages = <Object>[];
     final images = AccountImageCacheManager(
       directory: cacheDir,
+      createManager: (_) => _DeterministicCacheManager(),
       evictImageKey: (key) async => evictedImages.add(key),
     );
     final container = ProviderContainer(overrides: [
