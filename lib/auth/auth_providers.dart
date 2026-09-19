@@ -276,13 +276,17 @@ class CurrentAccountNotifier extends Notifier<Account?> {
   }
 
   /// Expires [expected] only if it remains current when the queued transition
-  /// runs. The expiration marker is committed with the null selection so a
-  /// delayed 401 cannot leave stale login state after a switch.
+  /// runs. The expiration marker is committed immediately before the null
+  /// selection so a delayed store write cannot build login without it.
   Future<void> expireIfCurrent(Account expected) {
     return _enqueueSelection(() async {
       if (!_sameAccount(state, expected)) return;
-      await _selectNow(null, invalidateState: true);
-      ref.read(authExpiredProvider.notifier).expire(expected);
+      await _selectNow(
+        null,
+        invalidateState: true,
+        beforePublish: () =>
+            ref.read(authExpiredProvider.notifier).expire(expected),
+      );
     });
   }
 
@@ -306,6 +310,7 @@ class CurrentAccountNotifier extends Notifier<Account?> {
   Future<void> _selectNow(
     Account? account, {
     required bool invalidateState,
+    void Function()? beforePublish,
   }) async {
     final previous = state;
     final credentialsChanged = previous == null
@@ -320,6 +325,7 @@ class CurrentAccountNotifier extends Notifier<Account?> {
     if (previous != null && credentialsChanged) {
       await ref.read(imageCacheProvider).evictDecodedAccount(previous.id);
     }
+    beforePublish?.call();
     state = account;
     final store = ref.read(accountStoreProvider);
     await store.writeCurrentId(account?.id);

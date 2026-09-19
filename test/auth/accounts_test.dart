@@ -66,6 +66,20 @@ class _DelayedStorage extends FakeStorage {
       Future<void>.delayed(Duration.zero, () => data[key] = value);
 }
 
+class _GatedCurrentIdStorage extends FakeStorage {
+  final deleteStarted = Completer<void>();
+  final releaseDelete = Completer<void>();
+
+  @override
+  Future<void> delete(String key) async {
+    if (key == 'currentAccountId') {
+      if (!deleteStarted.isCompleted) deleteStarted.complete();
+      await releaseDelete.future;
+    }
+    await super.delete(key);
+  }
+}
+
 class _ConcurrentAccountStorage extends FakeStorage {
   var coordinateAccountWrites = false;
   var accountWriteCount = 0;
@@ -382,6 +396,45 @@ void main() {
     expect(container.read(authExpiredProvider)?.id, account.id);
     expect(container.read(accountStateEpochProvider), epoch + 1);
     expect(evicted, [same(imageKey)]);
+  });
+
+  test('session expiry is visible before delayed current-id deletion', () async {
+    final account = Account(
+      serverUrl: 'https://delayed-expiry.example',
+      token: 'delayed-expiry-token',
+      userId: 'delayed-expiry-user',
+      displayName: 'Delayed expiry',
+    );
+    final storage = _GatedCurrentIdStorage();
+    final store = AccountStore(storage);
+    await store.save([account]);
+    final images = AccountImageCacheManager(
+      createManager: (_) => _MemoryMediaCache(),
+    );
+    final container = ProviderContainer(overrides: [
+      accountStoreProvider.overrideWithValue(store),
+      imageCacheProvider.overrideWithValue(images),
+    ]);
+    addTearDown(container.dispose);
+    addTearDown(() async {
+      if (!storage.releaseDelete.isCompleted) {
+        storage.releaseDelete.complete();
+      }
+      await images.dispose();
+    });
+
+    await container.read(currentAccountProvider.notifier).select(account);
+    final expiry = container
+        .read(currentAccountProvider.notifier)
+        .expireIfCurrent(account);
+    await storage.deleteStarted.future;
+
+    expect(container.read(currentAccountProvider), isNull);
+    expect(container.read(authExpiredProvider), same(account));
+
+    storage.releaseDelete.complete();
+    await expiry;
+    expect(await storage.read('currentAccountId'), isNull);
   });
 
   test('a late 401 from account A cannot log out account B', () async {
