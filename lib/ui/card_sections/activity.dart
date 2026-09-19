@@ -68,6 +68,7 @@ class CardActivitySection extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     return actions.when(
+      skipLoadingOnRefresh: false,
       loading: () => const Padding(
         padding: EdgeInsets.all(8),
         child: Center(child: CircularProgressIndicator()),

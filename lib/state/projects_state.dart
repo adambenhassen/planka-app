@@ -422,10 +422,61 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
   var _resyncRequested = false;
   var _eventVersion = 0;
   var _session = 0;
+  void Function()? _removeAccountEpochListener;
+
+  void _invalidateAccountState() {
+    _session++;
+    _ready = false;
+    _resyncRequested = false;
+    _resyncSession = null;
+    _userEventsSub?.cancel();
+    _userConnectedSub?.cancel();
+    _userEventsSub = null;
+    _userConnectedSub = null;
+    if (ref.mounted) {
+      // AsyncNotifier refreshes retain the old value by default. Projects are
+      // account-owned, so make the old view unavailable before rebuilding.
+      state = const AsyncData<ProjectsView>(
+        ProjectsView(
+          projects: [],
+          boards: [],
+          backgroundImages: [],
+        ),
+      );
+      ref.invalidateSelf();
+    }
+  }
 
   @override
   Future<ProjectsView> build() async {
+    state = const AsyncLoading<ProjectsView>();
     // Re-fetch when the active account (and thus the API client) changes.
+    ref.watch(accountStateEpochProvider);
+    if (_removeAccountEpochListener == null) {
+      _removeAccountEpochListener = ref
+          .read(accountStateEpochProvider.notifier)
+          .listen(_invalidateAccountState);
+      ref.onDispose(() {
+        _removeAccountEpochListener?.call();
+        _removeAccountEpochListener = null;
+      });
+    }
+    final account = ref.watch(currentAccountProvider);
+    ref.listen(currentAccountProvider, (previous, next) {
+      if (previous?.id != next?.id ||
+          previous?.serverUrl != next?.serverUrl ||
+          previous?.token != next?.token) {
+        _invalidateAccountState();
+      }
+    });
+    if (account == null ||
+        !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+      return const ProjectsView(
+        projects: [],
+        boards: [],
+        backgroundImages: [],
+      );
+    }
     ref.watch(apiProvider);
     final userEvents = ref.watch(userEventsProvider);
     final userConnected = ref.watch(userConnectedProvider);
@@ -461,7 +512,15 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
         version = _eventVersion;
         view = await _fetch(fresh: true);
       }
-      if (session != _session) return view;
+      if (session != _session ||
+          ref.read(currentAccountProvider)?.id != account.id ||
+          !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+        return const ProjectsView(
+          projects: [],
+          boards: [],
+          backgroundImages: [],
+        );
+      }
       _resyncRequested = false;
       return view;
     } finally {
@@ -548,7 +607,12 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
         final version = _eventVersion;
         try {
           final view = await _fetch(fresh: true);
-          if (session != _session) return;
+          final account = ref.read(currentAccountProvider);
+          if (session != _session ||
+              account == null ||
+              !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+            return;
+          }
           if (version != _eventVersion) {
             _resyncRequested = true;
             continue;
@@ -593,8 +657,13 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
     // check a write captured against A would land A's result — or A's
     // refresh error — on the screen B is now reading. Decided from
     // mounted-and-still-current state, not from what throws.
-    bool stillCurrent() =>
-        ref.mounted && ref.read(currentAccountProvider)?.id == accountId;
+    bool stillCurrent() {
+      final current = ref.read(currentAccountProvider);
+      return ref.mounted &&
+          current?.id == accountId &&
+          (accountId == null ||
+              ref.read(cacheLifecycleProvider).isUsable(accountId));
+    }
     await call(repo);
     try {
       // The confirming refresh must hit the server, never the cache: the

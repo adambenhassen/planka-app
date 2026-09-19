@@ -645,6 +645,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountAdd => 'Add account';
 
   @override
+  String get accountRemove => 'Remove account';
+
+  @override
+  String get accountRemoveTitle => 'Remove account?';
+
+  @override
+  String accountRemoveMessage(String name) {
+    return 'Remove "$name"? Its local data will be deleted from this device.';
+  }
+
+  @override
+  String get accountRemovalRemoteWarning =>
+      'The account was removed locally, but its remote session may remain usable until server expiry or administrator revocation.';
+
+  @override
+  String get accountRemovalFailure =>
+      'Account removal did not complete. Please try again.';
+
+  @override
   String get archiveTrashTitle => 'Archive & trash';
 
   @override

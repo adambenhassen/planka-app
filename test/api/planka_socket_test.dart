@@ -83,4 +83,16 @@ void main() {
     expect(kPlankaSocketEvents, contains('boardUpdate'));
     expect(kPlankaSocketEvents, contains('userUpdate'));
   });
+
+  test('disposed sockets reject later authenticated room use', () async {
+    final socket = PlankaSocket('http://unused.example', 'token');
+
+    socket.dispose();
+    await socket.subscribeBoard('b1');
+    await socket.subscribeUser();
+
+    expect(socket.isDisposed, isTrue);
+    expect(socket.isConnected, isFalse);
+    expect(socket.debugSocket, isNull);
+  });
 }

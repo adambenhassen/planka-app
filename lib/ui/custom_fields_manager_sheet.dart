@@ -205,12 +205,16 @@ class _CustomFieldsManagerSheetState
     final boardAsync = widget.boardId == null
         ? null
         : ref.watch(boardProvider(widget.boardId!));
+    final boardState = boardAsync == null ||
+            boardAsync.isLoading ||
+            boardAsync.hasError
+        ? null
+        : boardAsync.value;
     final currentUserId = ref.watch(currentAccountProvider)?.userId ?? '';
 
     // The project id the templates are scoped to: given directly from the
     // projects screen, otherwise the open board's.
-    final projectId =
-        widget.projectId ?? boardAsync?.value?.board.projectId ?? '';
+    final projectId = widget.projectId ?? boardState?.board.projectId ?? '';
     final projectName = projectsAsync.value?.projects
             .where((p) => p.id == projectId)
             .firstOrNull
@@ -256,7 +260,7 @@ class _CustomFieldsManagerSheetState
                         Text(
                           onTemplates
                               ? projectName
-                              : (boardAsync?.value?.board.name ?? ''),
+                              : (boardState?.board.name ?? ''),
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
@@ -290,14 +294,18 @@ class _CustomFieldsManagerSheetState
                   boardAsync!,
                   () => ref.invalidate(boardProvider(widget.boardId!)),
                   (state) {
+                    final boardState = state;
+                    if (boardState == null) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
                     final notifier =
                         ref.read(boardProvider(widget.boardId!).notifier);
-                    final isViewer = state.boardMemberships.any(
+                    final isViewer = boardState.boardMemberships.any(
                         (m) => m.userId == currentUserId && m.role == 'viewer');
                     return _ManagerBody(
                       boardId: widget.boardId!,
                       cardId: widget.cardId,
-                      state: state,
+                      state: boardState,
                       notifier: notifier,
                       projectsView: projectsAsync.value,
                       projectsLoading:

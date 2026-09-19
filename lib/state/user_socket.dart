@@ -19,10 +19,21 @@ import '../auth/auth_providers.dart';
 /// the previous socket: signing out, signing back in and switching accounts
 /// each leave exactly one subscription behind. A socket that drops rejoins the
 /// room itself on reconnect.
+final userSocketFactoryProvider = Provider<PlankaSocketFactory>(
+  (_) => PlankaSocket.new,
+);
+
 final userSocketProvider = Provider<PlankaSocket?>((ref) {
+  ref.watch(accountStateEpochProvider);
   final account = ref.watch(currentAccountProvider);
-  if (account == null) return null;
-  final socket = PlankaSocket(account.serverUrl, account.token);
+  if (account == null ||
+      !ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+    return null;
+  }
+  final socket = ref.read(userSocketFactoryProvider)(
+    account.serverUrl,
+    account.token,
+  );
   ref.onDispose(socket.dispose);
   // subscribeUser is a no-op until the transport is up, and the socket re-issues
   // it from onConnect — so this covers both the first connect and every

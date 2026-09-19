@@ -78,7 +78,10 @@ class _MoveCardDialogState extends ConsumerState<_MoveCardDialog> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final projects = ref.watch(projectsProvider).value;
+    final projectsAsync = ref.watch(projectsProvider);
+    final projects = projectsAsync.isLoading || projectsAsync.hasError
+        ? null
+        : projectsAsync.value;
 
     return AlertDialog(
       title: Text(l10n.moveCardTitle),

@@ -10,6 +10,7 @@ import 'package:file/file.dart' as fs;
 import 'package:file/local.dart' as local;
 import 'package:file/memory.dart' as file_memory;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:planka_app/api/planka_api.dart';
@@ -139,6 +140,29 @@ class _ControlledMediaCache implements BaseCacheManager {
     disposeCalls++;
   }
 }
+
+class _GatedMemoryImage extends MemoryImage {
+  const _GatedMemoryImage(super.bytes, this.gate);
+
+  final _ImageKeyGate gate;
+
+  @override
+  Future<MemoryImage> obtainKey(ImageConfiguration configuration) async {
+    if (gate.enabled) {
+      if (!gate.started.isCompleted) gate.started.complete();
+      await gate.release.future;
+    }
+    return this;
+  }
+}
+
+class _ImageKeyGate {
+  final started = Completer<void>();
+  final release = Completer<void>();
+  var enabled = false;
+}
+
+class _PendingImageStreamCompleter extends ImageStreamCompleter {}
 
 class _RecordingFileService extends FileService {
   String? url;
@@ -535,6 +559,187 @@ class _FailingCacheInfoRepository extends CacheInfoRepository {
 }
 
 void main() {
+  test('purging an account evicts its tracked decoded image keys', () async {
+    final lifecycle = AccountCacheLifecycle();
+    final cache = _ControlledMediaCache();
+    final evicted = <Object>[];
+    final manager = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => cache,
+      evictImageKey: (key) async => evicted.add(key),
+    );
+    const accountId = 'https://media.example#u1';
+    final key = Object();
+
+    manager.forAccount(accountId);
+    manager.trackImageKey(accountId, key);
+    await manager.purgeAccount(accountId);
+
+    expect(evicted, [same(key)]);
+  });
+
+  test('leaving an account evicts decoded media without deleting its files',
+      () async {
+    final lifecycle = AccountCacheLifecycle();
+    final cache = _ControlledMediaCache();
+    final evicted = <Object>[];
+    final manager = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => cache,
+      evictImageKey: (key) async => evicted.add(key),
+    );
+    const accountId = 'https://media.example#switch-user';
+    final key = Object();
+
+    manager.forAccount(accountId);
+    manager.trackImageKey(accountId, key);
+    await manager.evictDecodedAccount(accountId);
+    manager.trackImageKey(accountId, Object());
+    await pumpEventQueue();
+
+    expect(evicted, hasLength(2));
+    expect(() => manager.forAccount(accountId), returnsNormally);
+  });
+
+  test('a failed decoded eviction fails closed and remains retryable',
+      () async {
+    var attempts = 0;
+    final lifecycle = AccountCacheLifecycle();
+    final cache = _ControlledMediaCache();
+    final manager = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => cache,
+      evictImageKey: (_) async {
+        attempts++;
+        if (attempts == 1) throw StateError('decoded secret');
+      },
+    );
+    const accountId = 'https://media.example#retry';
+    manager.forAccount(accountId);
+    manager.trackImageKey(accountId, Object());
+
+    await expectLater(
+      manager.evictDecodedAccount(accountId),
+      throwsStateError,
+    );
+    expect(attempts, 1);
+
+    await manager.evictDecodedAccount(accountId);
+    expect(attempts, 2);
+  });
+
+  testWidgets(
+    'default decoded eviction awaits and clears Flutter image cache',
+    (tester) async {
+      final imageCache = PaintingBinding.instance.imageCache;
+      imageCache.clear();
+      imageCache.clearLiveImages();
+      addTearDown(() {
+        imageCache.clear();
+        imageCache.clearLiveImages();
+      });
+      final gate = _ImageKeyGate();
+      addTearDown(() {
+        if (!gate.release.isCompleted) gate.release.complete();
+      });
+      final provider = _GatedMemoryImage(Uint8List(0), gate);
+      imageCache.putIfAbsent(
+        provider,
+        _PendingImageStreamCompleter.new,
+      );
+      expect(imageCache.containsKey(provider), isTrue);
+
+      const accountId = 'https://media.example#flutter-cache';
+      final manager = AccountImageCacheManager();
+      addTearDown(manager.dispose);
+      manager.trackImageKey(accountId, provider);
+      gate.enabled = true;
+      var completed = false;
+      final eviction = manager.evictDecodedAccount(accountId).then((_) {
+        completed = true;
+      });
+      await tester.pump();
+
+      expect(gate.started.isCompleted, isTrue);
+      expect(completed, isFalse);
+      expect(imageCache.containsKey(provider), isTrue);
+
+      gate.release.complete();
+      await eviction;
+
+      expect(completed, isTrue);
+      expect(imageCache.containsKey(provider), isFalse);
+    },
+  );
+
+  test('a failed late decoded eviction remains retryable', () async {
+    var attempts = 0;
+    var failuresRemaining = 1;
+    final lifecycle = AccountCacheLifecycle();
+    final cache = _ControlledMediaCache();
+    final manager = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => cache,
+      evictImageKey: (_) async {
+        attempts++;
+        if (failuresRemaining > 0) {
+          failuresRemaining--;
+          throw StateError('decoded secret');
+        }
+      },
+    );
+    const accountId = 'https://media.example#late-retry';
+    manager.forAccount(accountId);
+    await manager.evictDecodedAccount(accountId);
+    manager.trackImageKey(accountId, Object());
+    await pumpEventQueue();
+    expect(attempts, 1);
+
+    await manager.evictDecodedAccount(accountId);
+    expect(attempts, 2);
+  });
+
+  test('a late key is retained when it fails during an eviction pass',
+      () async {
+    final firstKey = Object();
+    final lateKey = Object();
+    final firstStarted = Completer<void>();
+    final releaseFirst = Completer<void>();
+    var attempts = 0;
+    final lifecycle = AccountCacheLifecycle();
+    final cache = _ControlledMediaCache();
+    final manager = AccountImageCacheManager(
+      lifecycle: lifecycle,
+      createManager: (_) => cache,
+      evictImageKey: (key) async {
+        attempts++;
+        if (identical(key, firstKey)) {
+          firstStarted.complete();
+          await releaseFirst.future;
+        } else if (identical(key, lateKey)) {
+          throw StateError('decoded secret');
+        }
+      },
+    );
+    const accountId = 'https://media.example#late-during-pass';
+    manager.forAccount(accountId);
+    manager.trackImageKey(accountId, firstKey);
+
+    final eviction = manager.evictDecodedAccount(accountId);
+    await firstStarted.future;
+    manager.trackImageKey(accountId, lateKey);
+    await pumpEventQueue();
+    releaseFirst.complete();
+    await eviction;
+    expect(attempts, 2);
+
+    await expectLater(
+      manager.evictDecodedAccount(accountId),
+      throwsStateError,
+    );
+    expect(attempts, 3);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
   final productionRoot = Directory.systemTemp.createTempSync(
     'media_production',

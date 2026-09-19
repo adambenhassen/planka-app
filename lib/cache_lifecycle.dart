@@ -146,6 +146,17 @@ class AccountCacheLifecycle {
     state.removalFailure = AccountCacheQuiesceException();
   }
 
+  /// Whether account-bound work may still use this lifecycle's owner.
+  ///
+  /// An unknown account has not acquired a cache handle yet, so it remains
+  /// usable until its first registration. Removal and completed removal are
+  /// both closed to prevent an old authenticated client from continuing work.
+  bool isUsable(String accountId) {
+    _validate(accountId);
+    final state = _states[accountId];
+    return state == null || (!state.removing && !state.removed);
+  }
+
   /// Admits one operation for [accountId], or fails after removal begins.
   AccountCacheLease acquire(String accountId, {int? generation}) {
     _validate(accountId);

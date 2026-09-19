@@ -285,7 +285,8 @@ class _CardSheetState extends ConsumerState<CardSheet> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final state = ref.watch(boardProvider(boardId)).value;
+    final board = ref.watch(boardProvider(boardId));
+    final state = board.isLoading || board.hasError ? null : board.value;
     final card = state?.cards[cardId];
     if (state == null || card == null) {
       return SizedBox(height: 200, child: Center(child: Text(l10n.cardGone)));
@@ -529,6 +530,7 @@ class _CardSheetState extends ConsumerState<CardSheet> {
         section(
           l10n.sectionComments,
           commentsLoad.when(
+            skipLoadingOnRefresh: false,
             loading: () => const Padding(
               padding: EdgeInsets.all(8),
               child: Center(child: CircularProgressIndicator()),

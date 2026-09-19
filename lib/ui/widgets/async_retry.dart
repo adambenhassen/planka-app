@@ -13,6 +13,9 @@ Widget asyncRetry<T>(
   Widget Function(T value) data,
 ) {
   return value.when(
+    // Account changes must not render the previous account while its replacement
+    // request is in flight. Riverpod otherwise keeps AsyncData during refresh.
+    skipLoadingOnRefresh: false,
     loading: () => const Center(child: CircularProgressIndicator()),
     error: (e, _) => Center(
       child: Column(

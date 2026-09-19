@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,8 +7,10 @@ import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/models.dart';
 import 'package:planka_app/api/planka_socket.dart';
 import 'package:planka_app/api/planka_api.dart';
+import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
+import 'package:planka_app/state/envelope_cache.dart';
 import 'package:planka_app/state/projects_state.dart';
 import 'package:planka_app/state/user_socket.dart';
 
@@ -120,6 +123,41 @@ class _FakeApi extends PlankaApi {
   }
 }
 
+class _MemoryEnvelopeCache extends EnvelopeCache {
+  final _values = <String, Envelope>{};
+
+  @override
+  Future<void> put(String key, Envelope env) async {
+    _values[key] = env;
+  }
+
+  @override
+  Future<Envelope> fetchOrCached(
+    String key,
+    Future<Envelope> Function() fetch,
+  ) async {
+    try {
+      final env = await fetch();
+      _values[key] = env;
+      return env;
+    } catch (_) {
+      final cached = _values[key];
+      if (cached != null) return cached;
+      rethrow;
+    }
+  }
+}
+
+class _TestAccountNotifier extends CurrentAccountNotifier {
+  @override
+  Account build() => Account(
+        serverUrl: 'http://x',
+        token: 'tok',
+        userId: 'realtime-user',
+        displayName: 'Realtime user',
+  );
+}
+
 Future<(ProviderContainer, _FakeApi, StreamController<SocketEvent>,
         StreamController<bool>)>
     _boot() async {
@@ -128,6 +166,8 @@ Future<(ProviderContainer, _FakeApi, StreamController<SocketEvent>,
   final connected = StreamController<bool>.broadcast();
   final container = ProviderContainer(overrides: [
     apiProvider.overrideWithValue(api),
+    currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+    envelopeCacheProvider.overrideWithValue(_MemoryEnvelopeCache()),
     userSocketProvider.overrideWithValue(null),
     userEventsProvider.overrideWithValue(events.stream),
     userConnectedProvider.overrideWithValue(connected.stream),
@@ -147,6 +187,8 @@ Future<(ProviderContainer, _FakeApi, StreamController<SocketEvent>,
   final connected = StreamController<bool>.broadcast();
   final container = ProviderContainer(overrides: [
     apiProvider.overrideWithValue(api),
+    currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+    envelopeCacheProvider.overrideWithValue(_MemoryEnvelopeCache()),
     userSocketProvider.overrideWithValue(null),
     userEventsProvider.overrideWithValue(events.stream),
     userConnectedProvider.overrideWithValue(connected.stream),
@@ -288,8 +330,11 @@ void main() {
     final api = _FakeApi()..projectError = true;
     final events = StreamController<SocketEvent>.broadcast();
     final connected = StreamController<bool>.broadcast();
+    final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+      envelopeCacheProvider.overrideWithValue(_MemoryEnvelopeCache()),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -298,6 +343,7 @@ void main() {
         fireImmediately: true);
     addTearDown(subscription.close);
     addTearDown(container.dispose);
+    addTearDown(() => cacheDir.delete(recursive: true));
     addTearDown(events.close);
     addTearDown(connected.close);
 
@@ -318,8 +364,13 @@ void main() {
     final api = _FakeApi()..userError = true;
     final events = StreamController<SocketEvent>.broadcast();
     final connected = StreamController<bool>.broadcast();
+    final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+      envelopeCacheProvider.overrideWithValue(
+        EnvelopeCache(directory: cacheDir),
+      ),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -328,6 +379,7 @@ void main() {
         fireImmediately: true);
     addTearDown(subscription.close);
     addTearDown(container.dispose);
+    addTearDown(() => cacheDir.delete(recursive: true));
     addTearDown(events.close);
     addTearDown(connected.close);
 
@@ -350,8 +402,11 @@ void main() {
     api.projectGate = Completer<void>();
     final events = StreamController<SocketEvent>.broadcast();
     final connected = StreamController<bool>.broadcast();
+    final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+      envelopeCacheProvider.overrideWithValue(_MemoryEnvelopeCache()),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -360,6 +415,7 @@ void main() {
         fireImmediately: true);
     addTearDown(subscription.close);
     addTearDown(container.dispose);
+    addTearDown(() => cacheDir.delete(recursive: true));
     addTearDown(events.close);
     addTearDown(connected.close);
 
@@ -383,8 +439,13 @@ void main() {
     api.userGate = Completer<void>();
     final events = StreamController<SocketEvent>.broadcast();
     final connected = StreamController<bool>.broadcast();
+    final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+      envelopeCacheProvider.overrideWithValue(
+        EnvelopeCache(directory: cacheDir),
+      ),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -393,6 +454,7 @@ void main() {
         fireImmediately: true);
     addTearDown(subscription.close);
     addTearDown(container.dispose);
+    addTearDown(() => cacheDir.delete(recursive: true));
     addTearDown(events.close);
     addTearDown(connected.close);
 
@@ -415,8 +477,13 @@ void main() {
     final api = _FakeApi();
     final events = StreamController<SocketEvent>.broadcast();
     final connected = StreamController<bool>.broadcast();
+    final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
     final container = ProviderContainer(overrides: [
       apiProvider.overrideWithValue(api),
+      currentAccountProvider.overrideWith(_TestAccountNotifier.new),
+      envelopeCacheProvider.overrideWithValue(
+        EnvelopeCache(directory: cacheDir),
+      ),
       userSocketProvider.overrideWithValue(null),
       userEventsProvider.overrideWithValue(events.stream),
       userConnectedProvider.overrideWithValue(connected.stream),
@@ -428,6 +495,7 @@ void main() {
     addTearDown(projectsSubscription.close);
     addTearDown(usersSubscription.close);
     addTearDown(container.dispose);
+    addTearDown(() => cacheDir.delete(recursive: true));
     addTearDown(events.close);
     addTearDown(connected.close);
     await container.read(projectsProvider.future);

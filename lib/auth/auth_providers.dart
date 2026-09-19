@@ -9,6 +9,7 @@ import '../api/repositories.dart';
 import '../cache_lifecycle.dart';
 import '../cache_purge.dart';
 import '../state/envelope_cache.dart';
+import 'account_removal.dart';
 import 'accounts.dart';
 
 final accountStoreProvider = Provider<AccountStore>((ref) {
@@ -29,6 +30,36 @@ String _desktopHome() =>
 final accountsProvider = AsyncNotifierProvider<AccountsNotifier, List<Account>>(
   AccountsNotifier.new,
 );
+
+/// Changes whenever a completed account removal invalidates account-backed
+/// state. State providers watch this epoch so their in-memory values cannot
+/// outlive the cache purge that removed their account.
+final accountStateEpochProvider =
+    NotifierProvider<AccountStateEpochNotifier, int>(
+      AccountStateEpochNotifier.new,
+    );
+
+class AccountStateEpochNotifier extends Notifier<int> {
+  final Set<void Function()> _listeners = {};
+
+  @override
+  int build() => 0;
+
+  void invalidate() {
+    // Clear account-owned state while its current refs are still mounted.
+    // Updating the epoch first would dispose those refs before their local
+    // barrier callbacks could remove the prior account's value.
+    for (final listener in List<void Function()>.of(_listeners)) {
+      listener();
+    }
+    state++;
+  }
+
+  void Function() listen(void Function() listener) {
+    _listeners.add(listener);
+    return () => _listeners.remove(listener);
+  }
+}
 
 final imageCacheProvider = Provider<AccountImageCacheManager>(
   (_) => plankaImageCacheManager,
@@ -81,10 +112,13 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
   });
 
   Future<void> remove(String accountId) => _serializeMutation(() async {
-    // Persist the removal intent before closing the shared barrier. This makes
-    // a crash between barrier establishment and purge fail closed on restart.
     final lifecycle = ref.read(cacheLifecycleProvider);
     final store = ref.read(accountStoreProvider);
+    Object? firstFailure;
+    StackTrace? firstFailureStack;
+    // Persist the removal intent before closing the shared cache barrier. This
+    // makes a crash between barrier establishment and purge fail closed on
+    // restart.
     try {
       // The durable intent must precede the in-memory barrier. A process crash
       // after the barrier and before this write must not reopen the account.
@@ -94,13 +128,17 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     }
     // The barrier covers every cache family and every caller that retained a
     // handle before removal began.
-    Object? firstFailure;
-    StackTrace? firstFailureStack;
+    final removalBarrier = lifecycle.beginRemoval(accountId);
+    // Keep the target selected until local cleanup commits so the user can
+    // switch to another saved account while remote revocation is in flight.
+    // The epoch and lifecycle barrier make the target's state and transports
+    // unavailable during that window without routing the user through login.
+    ref.read(accountStateEpochProvider.notifier).invalidate();
     try {
-      await lifecycle.beginRemoval(accountId);
+      await removalBarrier;
     } catch (e, s) {
-      firstFailure = e;
-      firstFailureStack = s;
+      firstFailure ??= e;
+      firstFailureStack ??= s;
     }
     final list = <Account>[...await future]
       ..removeWhere((a) => a.id == accountId);
@@ -168,8 +206,10 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     state = AsyncData(list);
     lifecycle.completeRemoval(accountId);
     final current = ref.read(currentAccountProvider);
-    if (current?.id == accountId) {
-      await ref.read(currentAccountProvider.notifier).select(null);
+    if (current != null && current.id == accountId) {
+      await ref
+          .read(currentAccountProvider.notifier)
+          .selectIfCurrent(current, null, invalidateState: false);
     }
   });
 }
@@ -179,7 +219,29 @@ final currentAccountProvider =
       CurrentAccountNotifier.new,
     );
 
+final accountApiFactoryProvider = Provider<AccountRemovalApiFactory>(
+  (ref) => (account) => PlankaApi(account.serverUrl, account.token),
+);
+
+final accountRemovalProvider = Provider<AccountRemovalCoordinator>((ref) {
+  return AccountRemovalCoordinator(
+    apiFactory: ref.read(accountApiFactoryProvider),
+    removeLocally: (accountId) =>
+        ref.read(accountsProvider.notifier).remove(accountId),
+    invalidateProviders: (accountId) {
+      // Selected-account removal already invalidates before purge. Keep the
+      // coordinator callback for direct/local-removal flows, while avoiding a
+      // second epoch transition after the selected account is detached.
+      if (ref.read(currentAccountProvider)?.id == accountId) {
+        ref.read(accountStateEpochProvider.notifier).invalidate();
+      }
+    },
+  );
+});
+
 class CurrentAccountNotifier extends Notifier<Account?> {
+  Future<void> _selectionTail = Future<void>.value();
+
   @override
   Account? build() => null;
 
@@ -188,10 +250,82 @@ class CurrentAccountNotifier extends Notifier<Account?> {
     final id = await store.readCurrentId();
     if (id == null) return;
     final accounts = await ref.read(accountsProvider.future);
-    state = accounts.where((a) => a.id == id).firstOrNull;
+    final restored = accounts.where((a) => a.id == id).firstOrNull;
+    if (restored != null) await select(restored);
   }
 
-  Future<void> select(Account? account) async {
+  Future<void> select(Account? account, {bool invalidateState = true}) {
+    return _enqueueSelection(
+      () => _selectNow(account, invalidateState: invalidateState),
+    );
+  }
+
+  /// Selects [account] only if [expected] is still the live account when this
+  /// operation reaches the serialized transition queue. This prevents a
+  /// removal or stale transport callback from signing out a replacement that
+  /// was queued while the outgoing account was being evicted.
+  Future<void> selectIfCurrent(
+    Account expected,
+    Account? account, {
+    bool invalidateState = true,
+  }) {
+    return _enqueueSelection(() async {
+      if (!_sameAccount(state, expected)) return;
+      await _selectNow(account, invalidateState: invalidateState);
+    });
+  }
+
+  /// Expires [expected] only if it remains current when the queued transition
+  /// runs. The expiration marker is committed immediately before the null
+  /// selection so a delayed store write cannot build login without it.
+  Future<void> expireIfCurrent(Account expected) {
+    return _enqueueSelection(() async {
+      if (!_sameAccount(state, expected)) return;
+      await _selectNow(
+        null,
+        invalidateState: true,
+        beforePublish: () =>
+            ref.read(authExpiredProvider.notifier).expire(expected),
+      );
+    });
+  }
+
+  Future<void> _enqueueSelection(Future<void> Function() task) {
+    final operation = _selectionTail.then(
+      (_) => task(),
+    );
+    _selectionTail = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return operation;
+  }
+
+  bool _sameAccount(Account? current, Account expected) =>
+      current != null &&
+      current.id == expected.id &&
+      current.serverUrl == expected.serverUrl &&
+      current.token == expected.token;
+
+  Future<void> _selectNow(
+    Account? account, {
+    required bool invalidateState,
+    void Function()? beforePublish,
+  }) async {
+    final previous = state;
+    final credentialsChanged = previous == null
+        ? account != null
+        : account == null ||
+            previous.id != account.id ||
+            previous.serverUrl != account.serverUrl ||
+            previous.token != account.token;
+    if (invalidateState && credentialsChanged) {
+      ref.read(accountStateEpochProvider.notifier).invalidate();
+    }
+    if (previous != null && credentialsChanged) {
+      await ref.read(imageCacheProvider).evictDecodedAccount(previous.id);
+    }
+    beforePublish?.call();
     state = account;
     final store = ref.read(accountStoreProvider);
     await store.writeCurrentId(account?.id);
@@ -236,14 +370,19 @@ final apiFactoryProvider = Provider<PlankaApi Function(String serverUrl)>(
 );
 
 final apiProvider = Provider<PlankaApi>((ref) {
+  ref.watch(accountStateEpochProvider);
   final account = ref.watch(currentAccountProvider);
   if (account == null) throw StateError('No account selected');
+  if (!ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+    throw AccountCacheClosedException();
+  }
   return PlankaApi(
     account.serverUrl,
     account.token,
     onUnauthorized: () {
-      ref.read(authExpiredProvider.notifier).expire(account);
-      ref.read(currentAccountProvider.notifier).select(null);
+      unawaited(
+        ref.read(currentAccountProvider.notifier).expireIfCurrent(account),
+      );
     },
   );
 });

@@ -30,7 +30,8 @@ class _BoardMembersDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final state = ref.watch(boardProvider(boardId)).value;
+    final board = ref.watch(boardProvider(boardId));
+    final state = board.isLoading || board.hasError ? null : board.value;
     final notifier = ref.read(boardProvider(boardId).notifier);
     if (state == null) return const SizedBox.shrink();
     final memberIds = state.boardMemberships.map((m) => m.userId).toSet();
@@ -105,6 +106,7 @@ class _AddMember extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final users = ref.watch(allUsersProvider);
     return users.when(
+      skipLoadingOnRefresh: false,
       loading: () => const Padding(
         padding: EdgeInsets.all(8),
         child: Center(child: CircularProgressIndicator()),

@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/models.dart';
+import 'package:planka_app/auth/accounts.dart';
+import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/l10n/gen/app_localizations.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/ui/card_sheet.dart';
@@ -42,6 +44,16 @@ class FakeBoardNotifier extends BoardNotifier {
       calls.add(('toggleLabel', labelId));
 }
 
+class _CardAccountNotifier extends CurrentAccountNotifier {
+  @override
+  Account build() => Account(
+        serverUrl: 'http://card-sheet',
+        token: 'tok',
+        userId: 'card-sheet-user',
+        displayName: 'Card sheet user',
+      );
+}
+
 void main() {
   late FakeBoardNotifier notifier;
   late String boardId;
@@ -57,6 +69,7 @@ void main() {
             as String;
     return ProviderScope(
       overrides: [
+        currentAccountProvider.overrideWith(_CardAccountNotifier.new),
         boardProvider.overrideWith2((arg) {
           notifier = FakeBoardNotifier(arg, seed: seed);
           return notifier;
