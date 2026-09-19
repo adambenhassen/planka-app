@@ -239,6 +239,8 @@ final accountRemovalProvider = Provider<AccountRemovalCoordinator>((ref) {
 });
 
 class CurrentAccountNotifier extends Notifier<Account?> {
+  Future<void> _selectionTail = Future<void>.value();
+
   @override
   Account? build() => null;
 
@@ -251,7 +253,21 @@ class CurrentAccountNotifier extends Notifier<Account?> {
     if (restored != null) await select(restored);
   }
 
-  Future<void> select(Account? account, {bool invalidateState = true}) async {
+  Future<void> select(Account? account, {bool invalidateState = true}) {
+    final operation = _selectionTail.then(
+      (_) => _selectNow(account, invalidateState: invalidateState),
+    );
+    _selectionTail = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return operation;
+  }
+
+  Future<void> _selectNow(
+    Account? account, {
+    required bool invalidateState,
+  }) async {
     final previous = state;
     final credentialsChanged = previous == null
         ? account != null

@@ -264,6 +264,90 @@ void main() {
     expect(await store.read('currentAccountId'), accountA.id);
   });
 
+  test('serializes concurrent account transitions before each publish',
+      () async {
+    final accountA = account('http://a');
+    final accountB = account('http://b');
+    final accountC = account('http://c');
+    final evictionAStarted = Completer<void>();
+    final evictionBStarted = Completer<void>();
+    final evictionCStarted = Completer<void>();
+    final releaseA = Completer<void>();
+    final releaseB = Completer<void>();
+    final releaseC = Completer<void>();
+    final imageA = Object();
+    final imageB = Object();
+    final imageC = Object();
+    final store = _MemStore();
+    final images = AccountImageCacheManager(
+      createManager: (_) => _DeterministicCacheManager(),
+      evictImageKey: (key) async {
+        if (identical(key, imageA)) {
+          evictionAStarted.complete();
+          await releaseA.future;
+        } else if (identical(key, imageB)) {
+          evictionBStarted.complete();
+          await releaseB.future;
+        } else if (identical(key, imageC)) {
+          evictionCStarted.complete();
+          await releaseC.future;
+        }
+      },
+    );
+    final container = ProviderContainer(overrides: [
+      accountStoreProvider.overrideWithValue(AccountStore(store)),
+      imageCacheProvider.overrideWithValue(images),
+    ]);
+    addTearDown(container.dispose);
+    addTearDown(() async {
+      if (!releaseA.isCompleted) releaseA.complete();
+      if (!releaseB.isCompleted) releaseB.complete();
+      if (!releaseC.isCompleted) releaseC.complete();
+      await images.dispose();
+    });
+
+    await container.read(currentAccountProvider.notifier).select(accountA);
+    for (final entry in [
+      (accountA, imageA),
+      (accountB, imageB),
+      (accountC, imageC),
+    ]) {
+      images.forAccount(entry.$1.id);
+      images.trackImageKey(entry.$1.id, entry.$2);
+    }
+
+    final toB =
+        container.read(currentAccountProvider.notifier).select(accountB);
+    await evictionAStarted.future;
+    final toC =
+        container.read(currentAccountProvider.notifier).select(accountC);
+    final signedOut = container
+        .read(currentAccountProvider.notifier)
+        .select(null);
+    await pumpEventQueue();
+
+    expect(container.read(currentAccountProvider), same(accountA));
+    expect(await store.read('currentAccountId'), accountA.id);
+    expect(evictionBStarted.isCompleted, isFalse);
+    expect(evictionCStarted.isCompleted, isFalse);
+
+    releaseA.complete();
+    await evictionBStarted.future;
+    expect(container.read(currentAccountProvider), same(accountB));
+    expect(await store.read('currentAccountId'), accountB.id);
+    expect(evictionCStarted.isCompleted, isFalse);
+
+    releaseB.complete();
+    await evictionCStarted.future;
+    expect(container.read(currentAccountProvider), same(accountC));
+    expect(await store.read('currentAccountId'), accountC.id);
+
+    releaseC.complete();
+    await Future.wait([toB, toC, signedOut]);
+    expect(container.read(currentAccountProvider), isNull);
+    expect(await store.read('currentAccountId'), isNull);
+  });
+
   test('switching accounts hides same-board state before the new load',
       () async {
     final accountA = account('http://a');
