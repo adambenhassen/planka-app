@@ -120,6 +120,50 @@ void main() {
     expect(second.projects.map((p) => p.name), ['Project @ http://b']);
   });
 
+  test('account selection waits for outgoing decoded media eviction',
+      () async {
+    final accountA = account('http://a');
+    final accountB = account('http://b');
+    final evictionStarted = Completer<void>();
+    final releaseEviction = Completer<void>();
+    final store = _MemStore();
+    final cacheDir = await Directory.systemTemp.createTemp('selection_media');
+    final images = AccountImageCacheManager(
+      directory: cacheDir,
+      evictImageKey: (_) async {
+        if (!evictionStarted.isCompleted) evictionStarted.complete();
+        await releaseEviction.future;
+      },
+    );
+    final container = ProviderContainer(overrides: [
+      accountStoreProvider.overrideWithValue(AccountStore(store)),
+      imageCacheProvider.overrideWithValue(images),
+    ]);
+    addTearDown(container.dispose);
+    addTearDown(() async {
+      if (!releaseEviction.isCompleted) releaseEviction.complete();
+      await images.dispose();
+      await cacheDir.delete(recursive: true);
+    });
+
+    await container.read(currentAccountProvider.notifier).select(accountA);
+    final imageA = Object();
+    images.forAccount(accountA.id);
+    images.trackImageKey(accountA.id, imageA);
+
+    final selection =
+        container.read(currentAccountProvider.notifier).select(accountB);
+    await evictionStarted.future;
+
+    expect(container.read(currentAccountProvider), same(accountA));
+    expect(await store.read('currentAccountId'), accountA.id);
+
+    releaseEviction.complete();
+    await selection;
+    expect(container.read(currentAccountProvider), same(accountB));
+    expect(await store.read('currentAccountId'), accountB.id);
+  });
+
   test('switching accounts hides same-board state before the new load',
       () async {
     final accountA = account('http://a');

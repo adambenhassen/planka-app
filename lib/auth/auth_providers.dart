@@ -262,10 +262,10 @@ class CurrentAccountNotifier extends Notifier<Account?> {
     if (invalidateState && credentialsChanged) {
       ref.read(accountStateEpochProvider.notifier).invalidate();
     }
-    state = account;
     if (previous != null && credentialsChanged) {
       await ref.read(imageCacheProvider).evictDecodedAccount(previous.id);
     }
+    state = account;
     final store = ref.read(accountStoreProvider);
     await store.writeCurrentId(account?.id);
   }
