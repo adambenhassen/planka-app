@@ -164,6 +164,37 @@ void main() {
     expect(await store.read('currentAccountId'), accountB.id);
   });
 
+  test('failed outgoing media eviction leaves selection unchanged', () async {
+    final accountA = account('http://a');
+    final accountB = account('http://b');
+    final store = _MemStore();
+    final cacheDir = await Directory.systemTemp.createTemp('selection_media');
+    final images = AccountImageCacheManager(
+      directory: cacheDir,
+      evictImageKey: (_) async => throw StateError('decoded eviction failed'),
+    );
+    final container = ProviderContainer(overrides: [
+      accountStoreProvider.overrideWithValue(AccountStore(store)),
+      imageCacheProvider.overrideWithValue(images),
+    ]);
+    addTearDown(container.dispose);
+    addTearDown(() async {
+      await images.dispose();
+      await cacheDir.delete(recursive: true);
+    });
+
+    await container.read(currentAccountProvider.notifier).select(accountA);
+    images.forAccount(accountA.id);
+    images.trackImageKey(accountA.id, Object());
+
+    await expectLater(
+      container.read(currentAccountProvider.notifier).select(accountB),
+      throwsStateError,
+    );
+    expect(container.read(currentAccountProvider), same(accountA));
+    expect(await store.read('currentAccountId'), accountA.id);
+  });
+
   test('switching accounts hides same-board state before the new load',
       () async {
     final accountA = account('http://a');
