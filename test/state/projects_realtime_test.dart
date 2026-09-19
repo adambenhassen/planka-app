@@ -164,17 +164,15 @@ Future<(ProviderContainer, _FakeApi, StreamController<SocketEvent>,
   final api = _FakeApi();
   final events = StreamController<SocketEvent>.broadcast();
   final connected = StreamController<bool>.broadcast();
-  final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
   final container = ProviderContainer(overrides: [
     apiProvider.overrideWithValue(api),
     currentAccountProvider.overrideWith(_TestAccountNotifier.new),
-    envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: cacheDir)),
+    envelopeCacheProvider.overrideWithValue(_MemoryEnvelopeCache()),
     userSocketProvider.overrideWithValue(null),
     userEventsProvider.overrideWithValue(events.stream),
     userConnectedProvider.overrideWithValue(connected.stream),
   ]);
   addTearDown(container.dispose);
-  addTearDown(() => cacheDir.delete(recursive: true));
   addTearDown(events.close);
   addTearDown(connected.close);
   await container.read(projectsProvider.future);
@@ -187,11 +185,10 @@ Future<(ProviderContainer, _FakeApi, StreamController<SocketEvent>,
   final api = _FakeApi();
   final events = StreamController<SocketEvent>.broadcast();
   final connected = StreamController<bool>.broadcast();
-  final cacheDir = await Directory.systemTemp.createTemp('projects_realtime');
   final container = ProviderContainer(overrides: [
     apiProvider.overrideWithValue(api),
     currentAccountProvider.overrideWith(_TestAccountNotifier.new),
-    envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: cacheDir)),
+    envelopeCacheProvider.overrideWithValue(_MemoryEnvelopeCache()),
     userSocketProvider.overrideWithValue(null),
     userEventsProvider.overrideWithValue(events.stream),
     userConnectedProvider.overrideWithValue(connected.stream),
@@ -200,7 +197,6 @@ Future<(ProviderContainer, _FakeApi, StreamController<SocketEvent>,
       container.listen(allUsersProvider, (_, _) {}, fireImmediately: true);
   addTearDown(subscription.close);
   addTearDown(container.dispose);
-  addTearDown(() => cacheDir.delete(recursive: true));
   addTearDown(events.close);
   addTearDown(connected.close);
   await container.read(allUsersProvider.future);

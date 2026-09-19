@@ -169,6 +169,18 @@ void main() {
   Account account(String server) => Account(
       serverUrl: server, token: 'tok', userId: 'u1', displayName: 'User');
 
+  test('cache disposal waits for repository initialization', () async {
+    final directory = await Directory.systemTemp.createTemp('account_cache');
+    final images = AccountImageCacheManager(directory: directory);
+    addTearDown(() async {
+      await images.dispose();
+      await directory.delete(recursive: true);
+    });
+
+    images.forAccount('http://a');
+    await images.dispose();
+  });
+
   test('switching the current account reloads projects for that account',
       () async {
     final container = ProviderContainer(overrides: [

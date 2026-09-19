@@ -935,7 +935,7 @@ class _TrackedCacheInfoRepository extends CacheInfoRepository {
   Future<bool> exists() => _delegate.exists();
 
   @override
-  Future<bool> open() => _delegate.open();
+  Future<bool> open() => _track(_delegate.open());
 
   @override
   Future<dynamic> updateOrInsert(CacheObject cacheObject) {
