@@ -796,6 +796,48 @@ void main() {
     final state = container.read(projectsProvider);
     expect(state.hasError, isFalse);
     expect(state.value!.projects, isNotEmpty);
+    expect(state.value!.isStale, isTrue);
+  });
+
+  test('renders cached projects before the refresh and reconciles them', () async {
+    final cacheDir = Directory.systemTemp.createTempSync(
+      'projects_crud_cache_first',
+    );
+    addTearDown(() => cacheDir.deleteSync(recursive: true));
+    final cachedFixture = _fixture();
+    (cachedFixture['items'] as List).first['name'] = 'Cached Project';
+    await EnvelopeCache(directory: cacheDir).put(
+      _defaultKey,
+      Envelope.parse(cachedFixture),
+    );
+
+    final (container, _, api) = await boot(
+      cacheDir: cacheDir,
+      initialLoad: false,
+    );
+    addTearDown(container.dispose);
+    final refresh = Completer<void>();
+    api.getGate = refresh;
+    container.read(projectsProvider);
+
+    for (var i = 0;
+        i < 100 && container.read(projectsProvider).value == null;
+        i++) {
+      await container.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+
+    final cachedState = container.read(projectsProvider);
+    expect(cachedState.value!.projects.first.name, 'Cached Project');
+    expect(cachedState.value!.isStale, isTrue);
+
+    api.projectName = 'Fresh Project';
+    refresh.complete();
+    await container.read(projectsProvider.future);
+
+    final freshState = container.read(projectsProvider);
+    expect(freshState.value!.projects.first.name, 'Fresh Project');
+    expect(freshState.value!.isStale, isFalse);
   });
 
   test('project and board mutations hit the expected endpoints', () async {

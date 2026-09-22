@@ -508,6 +508,12 @@ abstract class AppLocalizations {
   /// **'Reconnecting…'**
   String get boardReconnecting;
 
+  /// Subtle indicator shown when a screen is rendered from offline cache
+  ///
+  /// In en, this message translates to:
+  /// **'Offline · showing cached data'**
+  String get offlineCached;
+
   /// Button that adds a list to the board
   ///
   /// In en, this message translates to:

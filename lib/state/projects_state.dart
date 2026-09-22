@@ -8,6 +8,7 @@ import '../api/models.dart';
 import '../api/planka_socket.dart';
 import '../api/repositories.dart';
 import '../auth/auth_providers.dart';
+import '../cache_lifecycle.dart';
 import '../security_redaction.dart';
 import 'envelope_cache.dart';
 import 'positions.dart';
@@ -21,6 +22,7 @@ class ProjectsView {
   final List<PlankaBackgroundImage> backgroundImages;
   final List<PlankaProjectManager> managers;
   final List<PlankaUser> users;
+  final bool isStale;
 
   /// The projects' custom field templates and the fields on them. Only the
   /// projects response carries these.
@@ -34,6 +36,7 @@ class ProjectsView {
     this.users = const [],
     this.baseCustomFieldGroups = const [],
     this.customFields = const [],
+    this.isStale = false,
   });
 
   List<PlankaProjectManager> managersOf(String projectId) =>
@@ -71,6 +74,7 @@ class ProjectsView {
     List<PlankaUser>? users,
     List<PlankaBaseCustomFieldGroup>? baseCustomFieldGroups,
     List<PlankaCustomField>? customFields,
+    bool? isStale,
   }) => ProjectsView(
     projects: projects ?? this.projects,
     boards: boards ?? this.boards,
@@ -79,6 +83,7 @@ class ProjectsView {
     users: users ?? this.users,
     baseCustomFieldGroups: baseCustomFieldGroups ?? this.baseCustomFieldGroups,
     customFields: customFields ?? this.customFields,
+    isStale: isStale ?? this.isStale,
   );
 }
 
@@ -533,26 +538,41 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
     }
   }
 
-  /// Ordinary list load: serve the last good copy when the network is down
-  /// (offline read cache). This is the only path that may fall back to the
-  /// cache, and it is safe because a failed confirming refresh has already
-  /// deleted the stale copy (see [_mutate]) — so there is no pre-mutation
-  /// value left to serve. A cold start over the same cache directory takes
-  /// this same path and therefore never resurrects a reverted list.
+  /// Ordinary list load: publish the last good copy immediately, then replace
+  /// it with the server response. A failed refresh leaves the cached view in
+  /// place and marks it stale so an offline start never becomes a blank screen.
   Future<ProjectsView> _fetch({bool fresh = false}) async {
     final accountId = ref.read(currentAccountProvider)?.id;
-    // Initial loads may use the offline cache; reconciliation must bypass it.
-    final env = fresh
-        ? await _freshProjects(accountId)
-        : accountId == null
-        ? await _repo.projects()
-        : await ref
-              .read(envelopeCacheProvider)
-              .fetchOrCached('$accountId-projects', _repo.projects);
-    return _view(env);
+    if (fresh || accountId == null) {
+      return _view(await _freshProjects(accountId));
+    }
+
+    final cache = ref.read(envelopeCacheProvider);
+    final cached = await cache.get('$accountId-projects');
+    if (cached == null) {
+      return _view(await _freshProjects(accountId));
+    }
+
+    final cachedView = _view(cached, isStale: true);
+    if (ref.mounted &&
+        ref.read(currentAccountProvider)?.id == accountId &&
+        ref.read(cacheLifecycleProvider).isUsable(accountId)) {
+      state = AsyncData(cachedView);
+    }
+    try {
+      return _view(await _freshProjects(accountId));
+    } on AccountCacheClosedException {
+      rethrow;
+    } catch (error) {
+      debugPrint(
+        'projects refresh failed, serving cached data: '
+        '${redactDiagnostic(error)}',
+      );
+      return cachedView;
+    }
   }
 
-  ProjectsView _view(Envelope env) => ProjectsView(
+  ProjectsView _view(Envelope env, {bool isStale = false}) => ProjectsView(
     projects: env.items.map(PlankaProject.fromJson).toList(),
     boards: env.included.boards,
     backgroundImages: env.included.backgroundImages,
@@ -560,6 +580,7 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
     users: env.included.users,
     baseCustomFieldGroups: env.included.baseCustomFieldGroups,
     customFields: env.included.customFields,
+    isStale: isStale,
   );
 
   Future<Envelope> _freshProjects(String? accountId) async {
@@ -578,7 +599,9 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
     final current = state.value;
     if (current != null) {
       final next = applyProjectsEvent(current, event);
-      if (!identical(next, current)) state = AsyncData(next);
+      if (!identical(next, current)) {
+        state = AsyncData(next.copyWith(isStale: false));
+      }
     }
     _queueResync(session);
   }

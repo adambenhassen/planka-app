@@ -127,6 +127,9 @@ class _MemoryEnvelopeCache extends EnvelopeCache {
   final _values = <String, Envelope>{};
 
   @override
+  Future<Envelope?> get(String key) async => _values[key];
+
+  @override
   Future<void> put(String key, Envelope env) async {
     _values[key] = env;
   }
