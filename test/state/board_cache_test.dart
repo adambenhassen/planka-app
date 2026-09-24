@@ -87,7 +87,12 @@ void main() {
 
     api.boardName = 'Fresh Board';
     api.gate!.complete();
-    await container.read(provider.future);
+    for (var i = 0;
+        i < 100 && container.read(provider).value?.isStale == true;
+        i++) {
+      await container.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
 
     final freshState = container.read(provider);
     expect(freshState.value!.board.name, 'Fresh Board');

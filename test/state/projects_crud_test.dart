@@ -833,7 +833,12 @@ void main() {
 
     api.projectName = 'Fresh Project';
     refresh.complete();
-    await container.read(projectsProvider.future);
+    for (var i = 0;
+        i < 100 && container.read(projectsProvider).value?.isStale == true;
+        i++) {
+      await container.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
 
     final freshState = container.read(projectsProvider);
     expect(freshState.value!.projects.first.name, 'Fresh Project');
