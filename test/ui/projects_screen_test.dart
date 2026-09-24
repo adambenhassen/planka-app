@@ -120,6 +120,20 @@ void main() {
     expect(find.text('Some words'), findsOneWidget);
   });
 
+  testWidgets('shows a subtle offline indicator for cached projects',
+      (tester) async {
+    final notifier = _FakeProjectsNotifier(const ProjectsView(
+      projects: [],
+      boards: [],
+      backgroundImages: [],
+      isStale: true,
+    ));
+    await tester.pumpWidget(wrap(notifier));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Offline · showing cached data'), findsOneWidget);
+  });
+
   testWidgets('tapping the star toggles the favourite flag', (tester) async {
     final view = ProjectsView(
       projects: [

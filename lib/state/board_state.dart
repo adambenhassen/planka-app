@@ -10,6 +10,7 @@ import '../api/planka_socket.dart';
 import '../api/repositories.dart';
 import '../auth/accounts.dart';
 import '../auth/auth_providers.dart';
+import '../cache_lifecycle.dart';
 import '../security_redaction.dart';
 import 'envelope_cache.dart';
 import 'positions.dart';
@@ -28,6 +29,7 @@ class BoardState {
   final List<PlankaTask> tasks;
   final List<PlankaAttachment> attachments;
   final List<PlankaComment> comments;
+  final bool isStale;
 
   /// Comment ids whose decrement has already been applied to a card's
   /// `commentsTotal` in this session (see [applyCommentDelete]). The board
@@ -58,6 +60,7 @@ class BoardState {
     this.tasks = const [],
     this.attachments = const [],
     this.comments = const [],
+    this.isStale = false,
     this.deletedCommentIds = const {},
     this.customFieldGroups = const [],
     this.customFields = const [],
@@ -307,6 +310,7 @@ class BoardState {
     List<PlankaTask>? tasks,
     List<PlankaAttachment>? attachments,
     List<PlankaComment>? comments,
+    bool? isStale,
     Set<String>? deletedCommentIds,
     List<PlankaCustomFieldGroup>? customFieldGroups,
     List<PlankaCustomField>? customFields,
@@ -326,6 +330,7 @@ class BoardState {
         tasks: tasks ?? this.tasks,
         attachments: attachments ?? this.attachments,
         comments: comments ?? this.comments,
+        isStale: isStale ?? this.isStale,
         deletedCommentIds: deletedCommentIds ?? this.deletedCommentIds,
         customFieldGroups: customFieldGroups ?? this.customFieldGroups,
         customFields: customFields ?? this.customFields,
@@ -1035,13 +1040,46 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   }
 
   Future<BoardState> _loadForAccount(Account account, PlankaApi api) async {
-    final env = await ref.read(envelopeCacheProvider).fetchOrCached(
-        '${account.id}-board-$boardId', () => PlankaRepo(api).board(boardId));
-    return _withBaseCustomFields(
-      BoardState.fromEnvelope(env),
-      accountId: account.id,
-      api: api,
-    );
+    final key = '${account.id}-board-$boardId';
+    final cache = ref.read(envelopeCacheProvider);
+    final cached = await cache.get(key);
+    BoardState? cachedState;
+    if (cached != null) {
+      cachedState = BoardState.fromEnvelope(cached).copyWith(isStale: true);
+      if (ref.mounted &&
+          ref.read(currentAccountProvider)?.id == account.id &&
+          ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+        state = AsyncData(cachedState);
+      }
+      cachedState = await _withBaseCustomFields(
+        cachedState,
+        accountId: account.id,
+        api: api,
+      );
+      cachedState = cachedState.copyWith(isStale: true);
+    }
+
+    try {
+      final env = await PlankaRepo(api).board(boardId);
+      await cache.put(key, env);
+      final loaded = await _withBaseCustomFields(
+        BoardState.fromEnvelope(env),
+        accountId: account.id,
+        api: api,
+      );
+      return loaded.copyWith(isStale: false);
+    } on AccountCacheClosedException {
+      rethrow;
+    } catch (error) {
+      if (cachedState != null) {
+        debugPrint(
+          'board refresh failed, serving cached data: '
+          '${redactDiagnostic(error)}',
+        );
+        return cachedState;
+      }
+      rethrow;
+    }
   }
 
   /// A custom field group instantiated from a project base group takes its

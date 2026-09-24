@@ -283,6 +283,10 @@
   "@boardReconnecting": {
     "description": "Banner shown while the board's realtime socket is down"
   },
+  "offlineCached": "Offline · showing cached data",
+  "@offlineCached": {
+    "description": "Subtle indicator shown when a screen is rendered from offline cache"
+  },
 
   "listAdd": "Add list",
   "@listAdd": {
