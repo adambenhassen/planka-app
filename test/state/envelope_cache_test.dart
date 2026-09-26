@@ -68,6 +68,55 @@ void main() {
     expect(excludedPaths, contains('${dir.path}/envelope_cache_fail_closed'));
   });
 
+  test('iOS backup exclusion failure does not hide a cached envelope', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    await cache.put('k', env('offline'));
+
+    const channel = MethodChannel('app.planka/envelope_cache_backup');
+    final messenger = TestDefaultBinaryMessengerBinding
+        .instance
+        .defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      throw PlatformException(code: 'backup-exclusion-failed');
+    });
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      messenger.setMockMethodCallHandler(channel, null);
+    });
+
+    expect((await cache.get('k'))!.item['name'], 'offline');
+  });
+
+  test(
+    'iOS backup exclusion failure skips cache writes but keeps fetched data',
+    () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('app.planka/envelope_cache_backup');
+      final messenger = TestDefaultBinaryMessengerBinding
+          .instance
+          .defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'backup-exclusion-failed');
+      });
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+        messenger.setMockMethodCallHandler(channel, null);
+      });
+
+      final fetched = await cache.fetchAndCache(
+        'fresh',
+        () async => env('fresh'),
+      );
+      final keyHash = sha256.convert(utf8.encode('fresh'));
+      final cached = File('${dir.path}/envelope_cache/unscoped/$keyHash.json');
+
+      expect(fetched.item['name'], 'fresh');
+      expect(await cached.exists(), isFalse);
+    },
+  );
+
   test('get returns null on a miss and on a corrupt entry', () async {
     expect(await cache.get('missing'), isNull);
     final encoded = base64Url.encode(utf8.encode('bad'));

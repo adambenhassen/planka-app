@@ -31,9 +31,13 @@ class EnvelopeCache {
   final Directory? _override;
   final AccountCacheLifecycle _lifecycle;
 
-  Future<File> _file(String key) async {
+  Future<File> _file(String key, {bool requireBackupExclusion = false}) async {
     final bucket = _bucketForKey(key);
-    final dir = await _cacheDirectory('envelope_cache', bucket);
+    final dir = await _cacheDirectory(
+      'envelope_cache',
+      child: bucket,
+      requireBackupExclusion: requireBackupExclusion,
+    );
     // A digest is intentionally one-way: account URLs, user IDs, and any
     // accidental credential in a caller-provided key never become metadata.
     final safe = sha256.convert(utf8.encode(key));
@@ -43,7 +47,7 @@ class EnvelopeCache {
   Future<File> _invalidationFile(String key) async {
     final dir = await _cacheDirectory(
       'envelope_cache_invalidations',
-      _bucketForKey(key),
+      child: _bucketForKey(key),
     );
     final safe = sha256.convert(utf8.encode(key));
     return File('${dir.path}/$safe.invalidated');
@@ -52,7 +56,7 @@ class EnvelopeCache {
   Future<File> _deletionIntentFile(String key) async {
     final dir = await _cacheDirectory(
       'envelope_cache_delete_intents',
-      _bucketForKey(key),
+      child: _bucketForKey(key),
     );
     final safe = sha256.convert(utf8.encode(key));
     return File('${dir.path}/$safe.pending');
@@ -61,7 +65,7 @@ class EnvelopeCache {
   Future<File> _failClosedFile(String key) async {
     final dir = await _cacheDirectory(
       'envelope_cache_fail_closed',
-      _bucketForKey(key),
+      child: _bucketForKey(key),
     );
     final safe = sha256.convert(utf8.encode(key));
     return File('${dir.path}/$safe.failed');
@@ -70,25 +74,41 @@ class EnvelopeCache {
   Future<Directory> _baseDirectory() async =>
       _override ?? await getApplicationSupportDirectory();
 
-  Future<Directory> _cacheDirectory(String name, [String? child]) async {
+  Future<Directory> _cacheDirectory(
+    String name, {
+    String? child,
+    bool requireBackupExclusion = false,
+  }) async {
     final base = await _baseDirectory();
     final root = Directory('${base.path}/$name');
     await root.create(recursive: true);
-    await _excludeFromBackup(root);
+    if (!await _excludeFromBackup(root) && requireBackupExclusion) {
+      throw StateError('Cache backup exclusion failed');
+    }
     if (child == null) return root;
 
     final directory = Directory('${root.path}/$child');
     await directory.create(recursive: true);
-    await _excludeFromBackup(directory);
+    if (!await _excludeFromBackup(directory) && requireBackupExclusion) {
+      throw StateError('Cache backup exclusion failed');
+    }
     return directory;
   }
 
-  Future<void> _excludeFromBackup(Directory directory) async {
-    if (defaultTargetPlatform != TargetPlatform.iOS) return;
-    await _iosBackupChannel.invokeMethod<void>(
-      'excludeFromBackup',
-      directory.path,
-    );
+  Future<bool> _excludeFromBackup(Directory directory) async {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return true;
+    try {
+      await _iosBackupChannel.invokeMethod<void>(
+        'excludeFromBackup',
+        directory.path,
+      );
+      return true;
+    } catch (e) {
+      debugPrint(
+        'Envelope cache backup exclusion failed: ${redactDiagnostic(e)}',
+      );
+      return false;
+    }
   }
 
   String _bucketForKey(String key) {
@@ -430,7 +450,7 @@ class EnvelopeCache {
     AccountCacheLease lease,
   ) async {
     try {
-      final file = await _file(key);
+      final file = await _file(key, requireBackupExclusion: true);
       // Envelope data normally contains board state, not credentials, but the
       // redaction boundary also protects an accidental server echo.
       await file.writeAsString(redactDiagnostic(jsonEncode(env.raw)));
