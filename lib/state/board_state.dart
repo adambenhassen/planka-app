@@ -10,6 +10,7 @@ import '../api/planka_socket.dart';
 import '../api/repositories.dart';
 import '../auth/accounts.dart';
 import '../auth/auth_providers.dart';
+import '../cache_lifecycle.dart';
 import '../security_redaction.dart';
 import 'envelope_cache.dart';
 import 'positions.dart';
@@ -28,6 +29,7 @@ class BoardState {
   final List<PlankaTask> tasks;
   final List<PlankaAttachment> attachments;
   final List<PlankaComment> comments;
+  final bool isStale;
 
   /// Comment ids whose decrement has already been applied to a card's
   /// `commentsTotal` in this session (see [applyCommentDelete]). The board
@@ -58,6 +60,7 @@ class BoardState {
     this.tasks = const [],
     this.attachments = const [],
     this.comments = const [],
+    this.isStale = false,
     this.deletedCommentIds = const {},
     this.customFieldGroups = const [],
     this.customFields = const [],
@@ -307,6 +310,7 @@ class BoardState {
     List<PlankaTask>? tasks,
     List<PlankaAttachment>? attachments,
     List<PlankaComment>? comments,
+    bool? isStale,
     Set<String>? deletedCommentIds,
     List<PlankaCustomFieldGroup>? customFieldGroups,
     List<PlankaCustomField>? customFields,
@@ -326,6 +330,7 @@ class BoardState {
         tasks: tasks ?? this.tasks,
         attachments: attachments ?? this.attachments,
         comments: comments ?? this.comments,
+        isStale: isStale ?? this.isStale,
         deletedCommentIds: deletedCommentIds ?? this.deletedCommentIds,
         customFieldGroups: customFieldGroups ?? this.customFieldGroups,
         customFields: customFields ?? this.customFields,
@@ -425,6 +430,241 @@ T _mergeById<T>(T? existing, Map<String, dynamic> item,
         T Function(Map<String, dynamic>) fromJson) =>
     fromJson(existing == null ? item : {...toJson(existing), ...item});
 
+/// Removes fields changed only by a rejected optimistic action from current
+/// rows, without discarding unrelated socket updates that arrived meanwhile.
+List<T> _rollbackRows<T>(
+  List<T> confirmed,
+  List<T> optimistic,
+  List<T> current,
+  String collection,
+  String Function(T) idOf,
+  Map<String, dynamic> Function(T) toJson,
+  T Function(Map<String, dynamic>) fromJson,
+  Set<String> deletedRows,
+) {
+  final confirmedById = {for (final row in confirmed) idOf(row): row};
+  final optimisticById = {for (final row in optimistic) idOf(row): row};
+  final result = [...current];
+
+  void restoreAtConfirmedPosition(T row) {
+    final index = confirmed.indexWhere((entry) => idOf(entry) == idOf(row));
+    for (var i = index + 1; i < confirmed.length; i++) {
+      final nextIndex = result.indexWhere(
+          (entry) => idOf(entry) == idOf(confirmed[i]));
+      if (nextIndex >= 0) {
+        result.insert(nextIndex, row);
+        return;
+      }
+    }
+    result.add(row);
+  }
+
+  for (final oldRow in confirmed) {
+    final id = idOf(oldRow);
+    final optimisticRow = optimisticById[id];
+    final currentIndex = result.indexWhere((row) => idOf(row) == id);
+    if (optimisticRow == null) {
+      // This row was optimistically deleted. A socket recreation wins.
+      if (currentIndex < 0 && !deletedRows.contains(_rowKey(collection, id))) {
+        restoreAtConfirmedPosition(oldRow);
+      }
+      continue;
+    }
+
+    final oldJson = toJson(oldRow);
+    final optimisticJson = toJson(optimisticRow);
+    if (_sameJson(oldJson, optimisticJson) || currentIndex < 0) continue;
+
+    final currentJson = toJson(result[currentIndex]);
+    for (final key in {...oldJson.keys, ...optimisticJson.keys}) {
+      if (!_sameJson(oldJson[key], optimisticJson[key]) &&
+          _sameJson(currentJson[key], optimisticJson[key])) {
+        currentJson[key] = oldJson[key];
+      }
+    }
+    result[currentIndex] = fromJson(currentJson);
+  }
+
+  for (final optimisticRow in optimistic) {
+    final id = idOf(optimisticRow);
+    if (confirmedById.containsKey(id)) continue;
+    final currentIndex = result.indexWhere((row) => idOf(row) == id);
+    if (currentIndex >= 0 &&
+        _sameJson(toJson(result[currentIndex]), toJson(optimisticRow))) {
+      result.removeAt(currentIndex);
+    }
+  }
+  return result;
+}
+
+String _rowKey(String collection, String id) => '$collection\u0000$id';
+
+Set<String> _removedRows(BoardState before, BoardState after) {
+  final removed = <String>{};
+  void record<T>(
+    String collection,
+    Iterable<T> oldRows,
+    Iterable<T> newRows,
+    String Function(T) idOf,
+  ) {
+    final retained = newRows.map(idOf).toSet();
+    for (final row in oldRows) {
+      final id = idOf(row);
+      if (!retained.contains(id)) removed.add(_rowKey(collection, id));
+    }
+  }
+
+  record('lists', before.lists, after.lists, (row) => row.id);
+  record('cards', before.cards.values, after.cards.values, (row) => row.id);
+  record('labels', before.labels, after.labels, (row) => row.id);
+  record('cardLabels', before.cardLabels, after.cardLabels, (row) => row.id);
+  record('cardMemberships', before.cardMemberships, after.cardMemberships,
+      (row) => row.id);
+  record('boardMemberships', before.boardMemberships, after.boardMemberships,
+      (row) => row.id);
+  record('users', before.users, after.users, (row) => row.id);
+  record('taskLists', before.taskLists, after.taskLists, (row) => row.id);
+  record('tasks', before.tasks, after.tasks, (row) => row.id);
+  record('attachments', before.attachments, after.attachments, (row) => row.id);
+  record('comments', before.comments, after.comments, (row) => row.id);
+  record('customFieldGroups', before.customFieldGroups, after.customFieldGroups,
+      (row) => row.id);
+  record('customFields', before.customFields, after.customFields,
+      (row) => row.id);
+  record(
+    'customFieldValues',
+    before.customFieldValues,
+    after.customFieldValues,
+    (row) => '${row.cardId}/${row.customFieldGroupId}/${row.customFieldId}',
+  );
+  record('baseCustomFieldGroups', before.baseCustomFieldGroups,
+      after.baseCustomFieldGroups, (row) => row.id);
+  return removed;
+}
+
+bool _sameJson(Object? left, Object? right) {
+  if (identical(left, right) || left == right) return true;
+  if (left is Map && right is Map) {
+    if (left.length != right.length) return false;
+    return left.keys.every((key) =>
+        right.containsKey(key) && _sameJson(left[key], right[key]));
+  }
+  if (left is List && right is List) {
+    if (left.length != right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      if (!_sameJson(left[i], right[i])) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+Set<String> _rollbackSet(
+    Set<String> confirmed, Set<String> optimistic, Set<String> current) {
+  final added = optimistic.difference(confirmed);
+  final removed = confirmed.difference(optimistic);
+  return {
+    ...current.where((value) => !added.contains(value)),
+    ...removed.where((value) => !current.contains(value)),
+  };
+}
+
+BoardState _rollbackOptimisticState(
+  BoardState confirmed,
+  BoardState optimistic,
+  BoardState current,
+  Set<String> deletedRows,
+) {
+  List<T> rows<T>(
+    String collection,
+    List<T> oldRows,
+    List<T> optimisticRows,
+    List<T> currentRows,
+    String Function(T) id,
+    Map<String, dynamic> Function(T) toJson,
+    T Function(Map<String, dynamic>) fromJson,
+  ) => _rollbackRows(oldRows, optimisticRows, currentRows, collection, id,
+      toJson, fromJson, deletedRows);
+
+  final cards = rows(
+    'cards',
+    confirmed.cards.values.toList(),
+    optimistic.cards.values.toList(),
+    current.cards.values.toList(),
+    (x) => x.id,
+    (x) => x.toJson(),
+    PlankaCard.fromJson,
+  );
+  final board = _rollbackRows(
+    [confirmed.board],
+    [optimistic.board],
+    [current.board],
+    'board',
+    (x) => x.id,
+    (x) => x.toJson(),
+    PlankaBoard.fromJson,
+    deletedRows,
+  ).single;
+
+  return current.copyWith(
+    board: board,
+    lists: rows('lists', confirmed.lists, optimistic.lists, current.lists,
+        (x) => x.id, (x) => x.toJson(), PlankaList.fromJson),
+    cards: {for (final x in cards) x.id: x},
+    labels: rows('labels', confirmed.labels, optimistic.labels, current.labels,
+        (x) => x.id, (x) => x.toJson(), PlankaLabel.fromJson),
+    cardLabels: rows(
+        'cardLabels',
+        confirmed.cardLabels, optimistic.cardLabels, current.cardLabels,
+        (x) => x.id, (x) => x.toJson(), PlankaCardLabel.fromJson),
+    cardMemberships: rows(
+        'cardMemberships',
+        confirmed.cardMemberships, optimistic.cardMemberships,
+        current.cardMemberships, (x) => x.id, (x) => x.toJson(),
+        PlankaCardMembership.fromJson),
+    boardMemberships: rows(
+        'boardMemberships',
+        confirmed.boardMemberships, optimistic.boardMemberships,
+        current.boardMemberships, (x) => x.id, (x) => x.toJson(),
+        PlankaBoardMembership.fromJson),
+    users: rows('users', confirmed.users, optimistic.users, current.users,
+        (x) => x.id, (x) => x.toJson(), PlankaUser.fromJson),
+    taskLists: rows('taskLists', confirmed.taskLists, optimistic.taskLists,
+        current.taskLists, (x) => x.id, (x) => x.toJson(),
+        PlankaTaskList.fromJson),
+    tasks: rows('tasks', confirmed.tasks, optimistic.tasks, current.tasks,
+        (x) => x.id, (x) => x.toJson(), PlankaTask.fromJson),
+    attachments: rows(
+        'attachments',
+        confirmed.attachments, optimistic.attachments, current.attachments,
+        (x) => x.id, (x) => x.toJson(), PlankaAttachment.fromJson),
+    comments: rows('comments', confirmed.comments, optimistic.comments,
+        current.comments, (x) => x.id, (x) => x.toJson(),
+        PlankaComment.fromJson),
+    deletedCommentIds: _rollbackSet(confirmed.deletedCommentIds,
+        optimistic.deletedCommentIds, current.deletedCommentIds),
+    customFieldGroups: rows('customFieldGroups', confirmed.customFieldGroups,
+        optimistic.customFieldGroups, current.customFieldGroups, (x) => x.id,
+        (x) => x.toJson(), PlankaCustomFieldGroup.fromJson),
+    customFields: rows(
+        'customFields',
+        confirmed.customFields, optimistic.customFields, current.customFields,
+        (x) => x.id, (x) => x.toJson(), PlankaCustomField.fromJson),
+    customFieldValues: rows(
+        'customFieldValues',
+        confirmed.customFieldValues, optimistic.customFieldValues,
+        current.customFieldValues,
+        (x) => '${x.cardId}/${x.customFieldGroupId}/${x.customFieldId}',
+        (x) => x.toJson(), PlankaCustomFieldValue.fromJson),
+    baseCustomFieldGroups: rows(
+        'baseCustomFieldGroups',
+        confirmed.baseCustomFieldGroups, optimistic.baseCustomFieldGroups,
+        current.baseCustomFieldGroups,
+        (x) => x.id, (x) => x.toJson(), PlankaBaseCustomFieldGroup.fromJson),
+    isStale: true,
+  );
+}
+
 /// Whether a socket payload carries every key [fromJson] casts to a non-null
 /// value. Reposition siblings only send `{id, position}`; a missed create can
 /// still arrive as a complete `*Update`, which should upsert like `*Create`.
@@ -488,7 +728,13 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
           PlankaList.fromJson);
       return s.copyWith(lists: _upsert(s.lists, list, (l) => l.id));
     case 'listDelete':
-      return s.copyWith(lists: s.lists.where((l) => l.id != id).toList());
+      return s.copyWith(
+        lists: s.lists.where((l) => l.id != id).toList(),
+        cards: {
+          for (final card in s.cards.values)
+            if (card.listId != id) card.id: card,
+        },
+      );
     case 'listClear':
       return s.copyWith(cards: {
         for (final c in s.cards.values)
@@ -945,6 +1191,22 @@ final cardCommentsProvider = FutureProvider.autoDispose
   return comments;
 });
 
+class _PendingOptimisticChange {
+  _PendingOptimisticChange({
+    required this.confirmed,
+    required this.optimistic,
+    required this.accountId,
+    required this.buildGeneration,
+    required this.eventSequence,
+  });
+
+  BoardState? confirmed;
+  final BoardState optimistic;
+  final String? accountId;
+  final int buildGeneration;
+  final int eventSequence;
+}
+
 class BoardNotifier extends AsyncNotifier<BoardState?> {
   BoardNotifier(this.boardId);
 
@@ -969,6 +1231,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   void Function()? _removeAccountEpochListener;
   var _buildGeneration = 0;
   final Map<String, int> _activeCommentProviders = {};
+  final List<_PendingOptimisticChange> _pendingOptimisticChanges = [];
+  final Map<String, int> _deletedRowVersions = {};
+  var _eventSequence = 0;
 
   void _disposeAccountResources() {
     _userRoomEvents?.cancel();
@@ -983,6 +1248,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     _stateChangesSeen = 0;
     _baseResyncPending = false;
     _fillingBaseCustomFields = false;
+    _pendingOptimisticChanges.clear();
+    _deletedRowVersions.clear();
+    _eventSequence = 0;
   }
 
   void _invalidateAccountState() {
@@ -1035,13 +1303,52 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   }
 
   Future<BoardState> _loadForAccount(Account account, PlankaApi api) async {
-    final env = await ref.read(envelopeCacheProvider).fetchOrCached(
-        '${account.id}-board-$boardId', () => PlankaRepo(api).board(boardId));
-    return _withBaseCustomFields(
-      BoardState.fromEnvelope(env),
-      accountId: account.id,
-      api: api,
-    );
+    final key = '${account.id}-board-$boardId';
+    final cache = ref.read(envelopeCacheProvider);
+    final cached = await cache.get(key);
+    BoardState? cachedState;
+    if (cached != null) {
+      cachedState = BoardState.fromEnvelope(cached);
+      if (ref.mounted &&
+          ref.read(currentAccountProvider)?.id == account.id &&
+          ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+        state = AsyncData(cachedState);
+      }
+      cachedState = await _withBaseCustomFields(
+        cachedState,
+        accountId: account.id,
+        api: api,
+      );
+      cachedState = cachedState.copyWith(isStale: false);
+    }
+
+    try {
+      final env = await PlankaRepo(api).board(boardId);
+      try {
+        await cache.put(key, env);
+      } on AccountCacheClosedException {
+        rethrow;
+      } catch (error) {
+        debugPrint('board cache write failed: ${redactDiagnostic(error)}');
+      }
+      final loaded = await _withBaseCustomFields(
+        BoardState.fromEnvelope(env),
+        accountId: account.id,
+        api: api,
+      );
+      return loaded.copyWith(isStale: false);
+    } on AccountCacheClosedException {
+      rethrow;
+    } catch (error) {
+      if (cachedState != null) {
+        debugPrint(
+          'board refresh failed, serving cached data: '
+          '${redactDiagnostic(error)}',
+        );
+        return cachedState.copyWith(isStale: true);
+      }
+      rethrow;
+    }
   }
 
   /// A custom field group instantiated from a project base group takes its
@@ -1385,6 +1692,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     final s = state.value;
     if (s == null) return;
     final next = applyEvent(s, event);
+    _recordSocketDeletions(s, next, event);
     // Only an event that actually changed this board bumps the counter —
     // the user room carries every project the account can see, and a busy one
     // must not starve this board's resync by discarding valid responses it
@@ -1396,6 +1704,56 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     if (next.needsBaseCustomFields) unawaited(_fillBaseCustomFields());
   }
 
+  void _recordSocketDeletions(
+    BoardState current,
+    BoardState next,
+    SocketEvent event,
+  ) {
+    if (_pendingOptimisticChanges.isEmpty || identical(next, current)) return;
+    final removed = <String>{};
+    for (final change in _pendingOptimisticChanges) {
+      final confirmed = change.confirmed;
+      if (confirmed == null) continue;
+      final afterEvent = applyEvent(confirmed, event);
+      if (!identical(afterEvent, confirmed)) {
+        removed.addAll(_removedRows(confirmed, afterEvent));
+      }
+    }
+    if (removed.isEmpty) return;
+    final version = ++_eventSequence;
+    for (final key in removed) {
+      _deletedRowVersions[key] = version;
+    }
+  }
+
+  Set<String> _deletedRowsAfter(int sequence) => {
+        for (final entry in _deletedRowVersions.entries)
+          if (entry.value > sequence) entry.key,
+      };
+
+  bool _isCurrentMutation(_PendingOptimisticChange change) {
+    if (_buildGeneration != change.buildGeneration ||
+        _accountId != change.accountId) {
+      return false;
+    }
+    final accountId = change.accountId;
+    return accountId == null ||
+        (ref.read(currentAccountProvider)?.id == accountId &&
+            ref.read(cacheLifecycleProvider).isUsable(accountId));
+  }
+
+  void _pruneDeletedRows() {
+    if (_pendingOptimisticChanges.isEmpty) {
+      _deletedRowVersions.clear();
+      return;
+    }
+    final oldestSequence = _pendingOptimisticChanges
+        .map((change) => change.eventSequence)
+        .reduce((left, right) => left < right ? left : right);
+    _deletedRowVersions
+        .removeWhere((_, version) => version <= oldestSequence);
+  }
+
   Stream<bool>? get socketConnected => _socket?.connected;
 
   /// The banner needs a synchronous initial value while the socket is still
@@ -1404,18 +1762,69 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   bool get socketConnectedNow => _socket?.isConnected ?? true;
 
   Future<void> _optimistic(
-      BoardState next, Future<Envelope> Function() call) async {
+    BoardState next,
+    Future<Envelope> Function() call,
+  ) async {
+    final change = _PendingOptimisticChange(
+      confirmed: state.value,
+      optimistic: next,
+      accountId: _accountId,
+      buildGeneration: _buildGeneration,
+      eventSequence: _eventSequence,
+    );
+    _pendingOptimisticChanges.add(change);
     state = AsyncData(next);
     try {
       await call();
     } catch (_) {
       // Any failure — a rejected request (ApiException) or a parse/decode error
       // on an unexpected response — leaves the optimistic state unconfirmed.
-      // Don't restore a snapshot (concurrent socket events/actions may have
-      // landed since); the server is the source of truth, so refetch. Rethrow
-      // so the caller's guardMutation still surfaces the error.
-      await _refetch();
+      // Refetch first. If reconciliation fails, remove this action's delta
+      // from current state while retaining concurrent socket changes.
+      if (!_isCurrentMutation(change)) rethrow;
+      var refetchFailed = false;
+      try {
+        await _refetch(onApiFailure: () => refetchFailed = true);
+      } on AccountCacheClosedException {
+        rethrow;
+      } catch (error) {
+        refetchFailed = true;
+        debugPrint('board rollback refetch failed: ${redactDiagnostic(error)}');
+      }
+      if (!_isCurrentMutation(change)) rethrow;
+      final current = state.value;
+      final confirmed = change.confirmed;
+      if (confirmed != null) {
+        if (refetchFailed && current != null) {
+          final deletedRows = _deletedRowsAfter(change.eventSequence);
+          final changeIndex = _pendingOptimisticChanges.indexOf(change);
+          for (final later in _pendingOptimisticChanges.skip(changeIndex + 1)) {
+            final laterConfirmed = later.confirmed;
+            if (later.accountId == change.accountId &&
+                later.buildGeneration == change.buildGeneration &&
+                laterConfirmed != null) {
+              later.confirmed = _rollbackOptimisticState(
+                confirmed,
+                change.optimistic,
+                laterConfirmed,
+                deletedRows,
+              );
+            }
+          }
+          state = AsyncData(_rollbackOptimisticState(
+            confirmed,
+            change.optimistic,
+            current,
+            deletedRows,
+          ));
+        } else if (identical(current, change.optimistic)) {
+          state = AsyncData(confirmed.copyWith(isStale: true));
+        }
+      }
       rethrow;
+    } finally {
+      _pendingOptimisticChanges.remove(change);
+      _pruneDeletedRows();
     }
   }
 
@@ -1429,7 +1838,10 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   /// rejected mutation's unconfirmed optimistic state survives forever — the
   /// server pushes no event for a mutation it refused, so nothing would heal
   /// it.
-  Future<void> _refetch({bool discardOnEvent = false}) async {
+  Future<void> _refetch({
+    bool discardOnEvent = false,
+    void Function()? onApiFailure,
+  }) async {
     final currentAccount = ref.read(currentAccountProvider);
     final boundAccountId = _accountId;
     if (boundAccountId != null &&
@@ -1449,9 +1861,15 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         return;
       }
       if (accountId != null) {
-        await ref
-            .read(envelopeCacheProvider)
-            .put('$accountId-board-$boardId', env);
+        try {
+          await ref
+              .read(envelopeCacheProvider)
+              .put('$accountId-board-$boardId', env);
+        } on AccountCacheClosedException {
+          rethrow;
+        } catch (error) {
+          debugPrint('board cache write failed: ${redactDiagnostic(error)}');
+        }
       }
       final prev = state.value;
       var next = BoardState.fromEnvelope(env);
@@ -1485,6 +1903,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         ref.invalidate(cardCommentsProvider((boardId, cardId)));
       }
     } on ApiException {
+      onApiFailure?.call();
       // Keep current state; next socket event or user retry will heal it.
     }
   }

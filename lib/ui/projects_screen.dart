@@ -145,9 +145,27 @@ class ProjectsScreen extends ConsumerWidget {
         () => ref.invalidate(projectsProvider),
         (view) => RefreshIndicator(
           onRefresh: () => ref.refresh(projectsProvider.future),
-          child: _ProjectList(
-            view: view,
-            account: ref.watch(currentAccountProvider),
+          child: Stack(
+            children: [
+              _ProjectList(
+                view: view,
+                account: ref.watch(currentAccountProvider),
+              ),
+              if (view.isStale)
+                Positioned(
+                  top: 8,
+                  left: 0,
+                  right: 0,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: Chip(
+                        avatar: const Icon(Icons.wifi_off, size: 16),
+                        label: Text(l10n.offlineCached),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),

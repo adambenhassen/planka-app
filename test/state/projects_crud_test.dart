@@ -64,6 +64,15 @@ class _FailingDeleteEnvelopeCache extends EnvelopeCache {
   );
 }
 
+class _FailingPutEnvelopeCache extends EnvelopeCache {
+  _FailingPutEnvelopeCache({required Directory directory})
+    : super(directory: directory);
+
+  @override
+  Future<void> put(String key, Envelope env) =>
+      Future<void>.error(StateError('cache write failed'));
+}
+
 Map<String, dynamic> _fixture() =>
     jsonDecode(File('test/fixtures/projects_index.json').readAsStringSync())
         as Map<String, dynamic>;
@@ -785,17 +794,110 @@ void main() {
   });
 
   test('an ordinary list load still falls back to the offline cache', () async {
-    final (container, notifier, api) = await boot();
+    final (container, _, api) = await boot();
     addTearDown(container.dispose);
 
     api.failGets = true;
+    final stalePublished = Completer<ProjectsView>();
+    final subscription = container.listen(projectsProvider, (previous, next) {
+      final value = next.value;
+      if (value?.isStale == true && !stalePublished.isCompleted) {
+        stalePublished.complete(value!);
+      }
+    });
+    addTearDown(subscription.close);
     container.invalidate(projectsProvider);
 
     // The fetch fails, but the last good copy is served from the cache.
-    await expectLater(container.read(projectsProvider.future), completes);
-    final state = container.read(projectsProvider);
-    expect(state.hasError, isFalse);
-    expect(state.value!.projects, isNotEmpty);
+    final state = await stalePublished.future;
+    expect(state.projects, isNotEmpty);
+    expect(state.isStale, isTrue);
+  });
+
+  test('renders cached projects before the refresh and reconciles them', () async {
+    final cacheDir = Directory.systemTemp.createTempSync(
+      'projects_crud_cache_first',
+    );
+    addTearDown(() => cacheDir.deleteSync(recursive: true));
+    final cachedFixture = _fixture();
+    (cachedFixture['items'] as List).first['name'] = 'Cached Project';
+    await EnvelopeCache(directory: cacheDir).put(
+      _defaultKey,
+      Envelope.parse(cachedFixture),
+    );
+
+    final api = _FakeApi()..getGate = Completer<void>();
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        currentAccountProvider.overrideWith(() => _FixedAccount(_fixed)),
+        envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: cacheDir)),
+      ],
+    );
+    addTearDown(container.dispose);
+    final cachedPublished = Completer<ProjectsView>();
+    final freshPublished = Completer<ProjectsView>();
+    final subscription = container.listen(projectsProvider, (previous, next) {
+      final value = next.value;
+      if (value?.projects.firstOrNull?.name == 'Cached Project' &&
+          !cachedPublished.isCompleted) {
+        cachedPublished.complete(value!);
+      }
+      if (value?.projects.firstOrNull?.name == 'Fresh Project' &&
+          !freshPublished.isCompleted) {
+        freshPublished.complete(value!);
+      }
+    });
+    addTearDown(subscription.close);
+    container.read(projectsProvider);
+
+    final cachedState = await cachedPublished.future;
+    expect(cachedState.projects.first.name, 'Cached Project');
+    expect(cachedState.isStale, isFalse);
+
+    api.projectName = 'Fresh Project';
+    api.getGate!.complete();
+
+    final freshState = await freshPublished.future;
+    expect(freshState.isStale, isFalse);
+  });
+
+  test('successful projects fetch is shown when its cache write fails', () async {
+    final cacheDir = Directory.systemTemp.createTempSync(
+      'projects_crud_cache_write_failure',
+    );
+    addTearDown(() => cacheDir.deleteSync(recursive: true));
+    final cachedFixture = _fixture();
+    (cachedFixture['items'] as List).first['name'] = 'Cached Project';
+    await EnvelopeCache(directory: cacheDir).put(
+      _defaultKey,
+      Envelope.parse(cachedFixture),
+    );
+
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(_FakeApi()),
+        currentAccountProvider.overrideWith(() => _FixedAccount(_fixed)),
+        envelopeCacheProvider.overrideWithValue(
+          _FailingPutEnvelopeCache(directory: cacheDir),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final freshPublished = Completer<ProjectsView>();
+    final subscription = container.listen(projectsProvider, (previous, next) {
+      final value = next.value;
+      if (value?.projects.firstOrNull?.name == 'Fixture Project' &&
+          !freshPublished.isCompleted) {
+        freshPublished.complete(value!);
+      }
+    });
+    addTearDown(subscription.close);
+    container.read(projectsProvider);
+
+    final loaded = await freshPublished.future;
+    expect(loaded.projects.first.name, 'Fixture Project');
+    expect(loaded.isStale, isFalse);
   });
 
   test('project and board mutations hit the expected endpoints', () async {

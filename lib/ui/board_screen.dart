@@ -322,7 +322,10 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
         SafeArea(
             child: Column(
           children: [
-            _ConnectionBanner(boardId: widget.boardId),
+            _ConnectionBanner(
+              boardId: widget.boardId,
+              isStale: widget.state.isStale,
+            ),
             if (widget.filterBar != null) widget.filterBar!,
             Expanded(
               child: ListView.builder(
@@ -366,8 +369,9 @@ class _BoardBodyState extends ConsumerState<_BoardBody> {
 }
 
 class _ConnectionBanner extends ConsumerWidget {
-  const _ConnectionBanner({required this.boardId});
+  const _ConnectionBanner({required this.boardId, required this.isStale});
   final String boardId;
+  final bool isStale;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -375,13 +379,25 @@ class _ConnectionBanner extends ConsumerWidget {
     return StreamBuilder<bool>(
       stream: notifier.socketConnected,
       initialData: notifier.socketConnectedNow,
-      builder: (context, snap) => snap.data == false
-          ? MaterialBanner(
-              content: Text(AppLocalizations.of(context).boardReconnecting),
-              leading: const Icon(Icons.wifi_off),
-              actions: const [SizedBox.shrink()],
-            )
-          : const SizedBox.shrink(),
+      builder: (context, snap) {
+        if (snap.data == false) {
+          return MaterialBanner(
+            content: Text(AppLocalizations.of(context).boardReconnecting),
+            leading: const Icon(Icons.wifi_off),
+            actions: const [SizedBox.shrink()],
+          );
+        }
+        if (isStale) {
+          return Align(
+            alignment: Alignment.topCenter,
+            child: Chip(
+              avatar: const Icon(Icons.wifi_off, size: 16),
+              label: Text(AppLocalizations.of(context).offlineCached),
+            ),
+          );
+        }
+        return const SizedBox.shrink();
+      },
     );
   }
 }

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/cache_lifecycle.dart';
@@ -38,6 +40,82 @@ void main() {
     final got = await cache.get('k');
     expect(got!.item['name'], 'hello');
   });
+
+  test('iOS cache and marker directories are excluded from backups', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    const channel = MethodChannel('app.planka/envelope_cache_backup');
+    final excludedPaths = <String>[];
+    final messenger = TestDefaultBinaryMessengerBinding
+        .instance
+        .defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      expect(call.method, 'excludeFromBackup');
+      excludedPaths.add(call.arguments as String);
+      return null;
+    });
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      messenger.setMockMethodCallHandler(channel, null);
+    });
+
+    await cache.put('k', env('private board data'));
+    await cache.get('k');
+
+    expect(excludedPaths, contains('${dir.path}/envelope_cache'));
+    expect(excludedPaths, contains('${dir.path}/envelope_cache_invalidations'));
+    expect(excludedPaths, contains('${dir.path}/envelope_cache_delete_intents'));
+    expect(excludedPaths, contains('${dir.path}/envelope_cache_fail_closed'));
+  });
+
+  test('iOS backup exclusion failure does not hide a cached envelope', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    await cache.put('k', env('offline'));
+
+    const channel = MethodChannel('app.planka/envelope_cache_backup');
+    final messenger = TestDefaultBinaryMessengerBinding
+        .instance
+        .defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      throw PlatformException(code: 'backup-exclusion-failed');
+    });
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      messenger.setMockMethodCallHandler(channel, null);
+    });
+
+    expect((await cache.get('k'))!.item['name'], 'offline');
+  });
+
+  test(
+    'iOS backup exclusion failure skips cache writes but keeps fetched data',
+    () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('app.planka/envelope_cache_backup');
+      final messenger = TestDefaultBinaryMessengerBinding
+          .instance
+          .defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'backup-exclusion-failed');
+      });
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+        messenger.setMockMethodCallHandler(channel, null);
+      });
+
+      final fetched = await cache.fetchAndCache(
+        'fresh',
+        () async => env('fresh'),
+      );
+      final keyHash = sha256.convert(utf8.encode('fresh'));
+      final cached = File('${dir.path}/envelope_cache/unscoped/$keyHash.json');
+
+      expect(fetched.item['name'], 'fresh');
+      expect(await cached.exists(), isFalse);
+    },
+  );
 
   test('get returns null on a miss and on a corrupt entry', () async {
     expect(await cache.get('missing'), isNull);

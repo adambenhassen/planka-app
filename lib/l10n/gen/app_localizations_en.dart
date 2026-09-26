@@ -221,6 +221,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get boardReconnecting => 'Reconnecting…';
 
   @override
+  String get offlineCached => 'Offline · showing cached data';
+
+  @override
   String get listAdd => 'Add list';
 
   @override
