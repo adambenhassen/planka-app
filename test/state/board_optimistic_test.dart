@@ -165,6 +165,50 @@ void main() {
     // server truth unconditionally is the older contract here.
   });
 
+  test(
+      'rejected move restores card and keeps listUpdate when rollback GET fails',
+      () async {
+    final api = _FakeApi(failMove: true)..gate = Completer<void>();
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      boardProvider.overrideWith2((arg) => _SocketlessNotifier(arg)),
+    ]);
+    addTearDown(container.dispose);
+    final boardId = _fixture()['item']['id'] as String;
+    final notifier = container.read(boardProvider(boardId).notifier);
+    await container.read(boardProvider(boardId).future);
+    final initial = container.read(boardProvider(boardId)).value!;
+    final originalPosition = initial.cards[_cardId]!.position;
+    final lists = (_fixture()['included']['lists'] as List)
+        .cast<Map<String, dynamic>>();
+    final bystander = lists
+        .firstWhere((l) => l['id'] != _fromListId && l['id'] != _toListId);
+
+    final move = notifier.moveCard(_cardId, _toListId);
+    await pumpEventQueue();
+    expect(
+      container.read(boardProvider(boardId)).value!.cards[_cardId]!.listId,
+      _toListId,
+    );
+    notifier.applySocketEvent(SocketEvent.parse('listUpdate', {
+      'item': {...bystander, 'name': 'Renamed mid-rollback'}
+    }));
+    api.failGets = true;
+    api.gate!.complete();
+    await expectLater(move, throwsA(isA<ApiException>()));
+
+    final state = container.read(boardProvider(boardId)).value!;
+    expect(state.cards[_cardId]!.listId, _fromListId,
+        reason: 'a rejected move is removed when rollback fetch fails');
+    expect(state.cards[_cardId]!.position, originalPosition,
+        reason: 'the rejected move position is removed too');
+    expect(
+      state.lists.firstWhere((list) => list.id == bystander['id']).name,
+      'Renamed mid-rollback',
+      reason: 'the concurrent server event remains visible',
+    );
+  });
+
   test('createCard folds the server-created card into state (_createInto)',
       () async {
     final (container, notifier, boardId) = await _boot(failMove: false);

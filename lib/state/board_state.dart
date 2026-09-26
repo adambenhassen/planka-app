@@ -1448,7 +1448,11 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   bool get socketConnectedNow => _socket?.isConnected ?? true;
 
   Future<void> _optimistic(
-      BoardState next, Future<Envelope> Function() call) async {
+    BoardState next,
+    Future<Envelope> Function() call, {
+    BoardState? Function(BoardState confirmed, BoardState current)?
+        onRefetchFailure,
+  }) async {
     final confirmed = state.value;
     state = AsyncData(next);
     try {
@@ -1457,17 +1461,27 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       // Any failure — a rejected request (ApiException) or a parse/decode error
       // on an unexpected response — leaves the optimistic state unconfirmed.
       // Refetch first, preserving concurrent server events. If reconciliation
-      // also fails and nothing changed the optimistic value, restore the
-      // confirmed snapshot rather than displaying an unconfirmed write.
+      // fails, restore the confirmed snapshot when nothing changed; a caller
+      // can instead remove only its optimistic fields from the current state.
+      var refetchFailed = false;
       try {
-        await _refetch();
+        await _refetch(onApiFailure: () => refetchFailed = true);
       } on AccountCacheClosedException {
         rethrow;
       } catch (error) {
+        refetchFailed = true;
         debugPrint('board rollback refetch failed: ${redactDiagnostic(error)}');
       }
-      if (confirmed != null && identical(state.value, next)) {
-        state = AsyncData(confirmed.copyWith(isStale: true));
+      final current = state.value;
+      if (confirmed != null) {
+        final fallback = refetchFailed && current != null
+            ? onRefetchFailure?.call(confirmed, current)
+            : null;
+        if (fallback != null) {
+          state = AsyncData(fallback);
+        } else if (identical(current, next)) {
+          state = AsyncData(confirmed.copyWith(isStale: true));
+        }
       }
       rethrow;
     }
@@ -1483,7 +1497,10 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   /// rejected mutation's unconfirmed optimistic state survives forever — the
   /// server pushes no event for a mutation it refused, so nothing would heal
   /// it.
-  Future<void> _refetch({bool discardOnEvent = false}) async {
+  Future<void> _refetch({
+    bool discardOnEvent = false,
+    void Function()? onApiFailure,
+  }) async {
     final currentAccount = ref.read(currentAccountProvider);
     final boundAccountId = _accountId;
     if (boundAccountId != null &&
@@ -1545,6 +1562,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         ref.invalidate(cardCommentsProvider((boardId, cardId)));
       }
     } on ApiException {
+      onApiFailure?.call();
       // Keep current state; next socket event or user retry will heal it.
     }
   }
@@ -1560,6 +1578,24 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     await _optimistic(
       s.copyWith(cards: {...s.cards, cardId: moved}),
       () => _repo.updateCard(cardId, {'listId': toListId, 'position': position}),
+      onRefetchFailure: (confirmed, current) {
+        final confirmedCard = confirmed.cards[cardId];
+        final currentCard = current.cards[cardId];
+        if (confirmedCard == null ||
+            currentCard == null ||
+            currentCard.listId != toListId ||
+            currentCard.position != position) {
+          return null;
+        }
+        final restoredCard = _mergeCard(currentCard, {
+          'listId': confirmedCard.listId,
+          'position': confirmedCard.position,
+        });
+        return current.copyWith(
+          cards: {...current.cards, cardId: restoredCard},
+          isStale: true,
+        );
+      },
     );
   }
 
