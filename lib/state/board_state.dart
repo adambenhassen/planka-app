@@ -728,7 +728,13 @@ BoardState applyEvent(BoardState s, SocketEvent event) {
           PlankaList.fromJson);
       return s.copyWith(lists: _upsert(s.lists, list, (l) => l.id));
     case 'listDelete':
-      return s.copyWith(lists: s.lists.where((l) => l.id != id).toList());
+      return s.copyWith(
+        lists: s.lists.where((l) => l.id != id).toList(),
+        cards: {
+          for (final card in s.cards.values)
+            if (card.listId != id) card.id: card,
+        },
+      );
     case 'listClear':
       return s.copyWith(cards: {
         for (final c in s.cards.values)

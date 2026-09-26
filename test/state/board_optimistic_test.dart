@@ -336,6 +336,56 @@ void main() {
     );
   });
 
+  test(
+      'server listDelete keeps its cards absent when rejected delete rollback GET fails',
+      () async {
+    final api = _FakeApi(failMove: false)
+      ..failDeletes = true
+      ..gate = Completer<void>();
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      boardProvider.overrideWith2((arg) => _SocketlessNotifier(arg)),
+    ]);
+    addTearDown(container.dispose);
+    final boardId = _fixture()['item']['id'] as String;
+    final notifier = container.read(boardProvider(boardId).notifier);
+    await container.read(boardProvider(boardId).future);
+    final initial = container.read(boardProvider(boardId)).value!;
+    final affectedCardIds = initial.cards.values
+        .where((card) => card.listId == _fromListId)
+        .map((card) => card.id)
+        .toSet();
+    final bystander =
+        initial.lists.firstWhere((list) => list.id != _fromListId);
+
+    final deletion = notifier.deleteList(_fromListId);
+    await pumpEventQueue(); // DELETE rejected; rollback GET is gated
+    notifier.applySocketEvent(SocketEvent.parse('listDelete', {
+      'item': {'id': _fromListId}
+    }));
+    notifier.applySocketEvent(SocketEvent.parse('listUpdate', {
+      'item': {...bystander.toJson(), 'name': 'Concurrent server rename'}
+    }));
+    api.failGets = true;
+    api.gate!.complete();
+    await expectLater(deletion, throwsA(isA<ApiException>()));
+
+    final state = container.read(boardProvider(boardId)).value!;
+    expect(state.lists.any((list) => list.id == _fromListId), isFalse);
+    for (final cardId in affectedCardIds) {
+      expect(
+        state.cards.containsKey(cardId),
+        isFalse,
+        reason: 'cards from the server-deleted list must not be restored',
+      );
+    }
+    expect(
+      state.lists.firstWhere((list) => list.id == bystander.id).name,
+      'Concurrent server rename',
+      reason: 'an unrelated socket update remains visible through rollback',
+    );
+  });
+
   for (final firstFailureCompletesFirst in [true, false]) {
     test(
         'overlapping rejected moves leave the original list when the first '
