@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="file" path="envelope_cache/" />
+    <exclude domain="file" path="envelope_cache_invalidations/" />
+    <exclude domain="file" path="envelope_cache_delete_intents/" />
+    <exclude domain="file" path="envelope_cache_fail_closed/" />
+</full-backup-content>

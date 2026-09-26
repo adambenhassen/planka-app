@@ -1045,7 +1045,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     final cached = await cache.get(key);
     BoardState? cachedState;
     if (cached != null) {
-      cachedState = BoardState.fromEnvelope(cached).copyWith(isStale: true);
+      cachedState = BoardState.fromEnvelope(cached);
       if (ref.mounted &&
           ref.read(currentAccountProvider)?.id == account.id &&
           ref.read(cacheLifecycleProvider).isUsable(account.id)) {
@@ -1056,12 +1056,18 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         accountId: account.id,
         api: api,
       );
-      cachedState = cachedState.copyWith(isStale: true);
+      cachedState = cachedState.copyWith(isStale: false);
     }
 
     try {
       final env = await PlankaRepo(api).board(boardId);
-      await cache.put(key, env);
+      try {
+        await cache.put(key, env);
+      } on AccountCacheClosedException {
+        rethrow;
+      } catch (error) {
+        debugPrint('board cache write failed: ${redactDiagnostic(error)}');
+      }
       final loaded = await _withBaseCustomFields(
         BoardState.fromEnvelope(env),
         accountId: account.id,
@@ -1076,7 +1082,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
           'board refresh failed, serving cached data: '
           '${redactDiagnostic(error)}',
         );
-        return cachedState;
+        return cachedState.copyWith(isStale: true);
       }
       rethrow;
     }
@@ -1443,16 +1449,26 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
 
   Future<void> _optimistic(
       BoardState next, Future<Envelope> Function() call) async {
+    final confirmed = state.value;
     state = AsyncData(next);
     try {
       await call();
     } catch (_) {
       // Any failure — a rejected request (ApiException) or a parse/decode error
       // on an unexpected response — leaves the optimistic state unconfirmed.
-      // Don't restore a snapshot (concurrent socket events/actions may have
-      // landed since); the server is the source of truth, so refetch. Rethrow
-      // so the caller's guardMutation still surfaces the error.
-      await _refetch();
+      // Refetch first, preserving concurrent server events. If reconciliation
+      // also fails and nothing changed the optimistic value, restore the
+      // confirmed snapshot rather than displaying an unconfirmed write.
+      try {
+        await _refetch();
+      } on AccountCacheClosedException {
+        rethrow;
+      } catch (error) {
+        debugPrint('board rollback refetch failed: ${redactDiagnostic(error)}');
+      }
+      if (confirmed != null && identical(state.value, next)) {
+        state = AsyncData(confirmed.copyWith(isStale: true));
+      }
       rethrow;
     }
   }
@@ -1487,9 +1503,15 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         return;
       }
       if (accountId != null) {
-        await ref
-            .read(envelopeCacheProvider)
-            .put('$accountId-board-$boardId', env);
+        try {
+          await ref
+              .read(envelopeCacheProvider)
+              .put('$accountId-board-$boardId', env);
+        } on AccountCacheClosedException {
+          rethrow;
+        } catch (error) {
+          debugPrint('board cache write failed: ${redactDiagnostic(error)}');
+        }
       }
       final prev = state.value;
       var next = BoardState.fromEnvelope(env);

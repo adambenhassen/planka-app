@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../api/envelope.dart';
@@ -13,6 +15,8 @@ import '../security_redaction.dart';
 final envelopeCacheProvider = Provider<EnvelopeCache>(
   (_) => EnvelopeCache(lifecycle: accountCacheLifecycle),
 );
+
+const _iosBackupChannel = MethodChannel('app.planka/envelope_cache_backup');
 
 /// Offline read cache: the last successful response envelope per key, stored
 /// as a JSON file. Keys must include the account id so accounts on different
@@ -28,10 +32,8 @@ class EnvelopeCache {
   final AccountCacheLifecycle _lifecycle;
 
   Future<File> _file(String key) async {
-    final base = await _baseDirectory();
     final bucket = _bucketForKey(key);
-    final dir = Directory('${base.path}/envelope_cache/$bucket');
-    await dir.create(recursive: true);
+    final dir = await _cacheDirectory('envelope_cache', bucket);
     // A digest is intentionally one-way: account URLs, user IDs, and any
     // accidental credential in a caller-provided key never become metadata.
     final safe = sha256.convert(utf8.encode(key));
@@ -39,37 +41,55 @@ class EnvelopeCache {
   }
 
   Future<File> _invalidationFile(String key) async {
-    final base = await _baseDirectory();
-    final dir = Directory(
-      '${base.path}/envelope_cache_invalidations/${_bucketForKey(key)}',
+    final dir = await _cacheDirectory(
+      'envelope_cache_invalidations',
+      _bucketForKey(key),
     );
-    await dir.create(recursive: true);
     final safe = sha256.convert(utf8.encode(key));
     return File('${dir.path}/$safe.invalidated');
   }
 
   Future<File> _deletionIntentFile(String key) async {
-    final base = await _baseDirectory();
-    final dir = Directory(
-      '${base.path}/envelope_cache_delete_intents/${_bucketForKey(key)}',
+    final dir = await _cacheDirectory(
+      'envelope_cache_delete_intents',
+      _bucketForKey(key),
     );
-    await dir.create(recursive: true);
     final safe = sha256.convert(utf8.encode(key));
     return File('${dir.path}/$safe.pending');
   }
 
   Future<File> _failClosedFile(String key) async {
-    final base = await _baseDirectory();
-    final dir = Directory(
-      '${base.path}/envelope_cache_fail_closed/${_bucketForKey(key)}',
+    final dir = await _cacheDirectory(
+      'envelope_cache_fail_closed',
+      _bucketForKey(key),
     );
-    await dir.create(recursive: true);
     final safe = sha256.convert(utf8.encode(key));
     return File('${dir.path}/$safe.failed');
   }
 
   Future<Directory> _baseDirectory() async =>
       _override ?? await getApplicationSupportDirectory();
+
+  Future<Directory> _cacheDirectory(String name, [String? child]) async {
+    final base = await _baseDirectory();
+    final root = Directory('${base.path}/$name');
+    await root.create(recursive: true);
+    await _excludeFromBackup(root);
+    if (child == null) return root;
+
+    final directory = Directory('${root.path}/$child');
+    await directory.create(recursive: true);
+    await _excludeFromBackup(directory);
+    return directory;
+  }
+
+  Future<void> _excludeFromBackup(Directory directory) async {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return;
+    await _iosBackupChannel.invokeMethod<void>(
+      'excludeFromBackup',
+      directory.path,
+    );
+  }
 
   String _bucketForKey(String key) {
     final accountId = _lifecycle.accountIdForKey(key);
@@ -479,10 +499,7 @@ class EnvelopeCache {
   }
 
   Future<Directory> _directory() async {
-    final base = await _baseDirectory();
-    final dir = Directory('${base.path}/envelope_cache');
-    await dir.create(recursive: true);
-    return dir;
+    return _cacheDirectory('envelope_cache');
   }
 
   Future<File> _legacyFile(String key) async {

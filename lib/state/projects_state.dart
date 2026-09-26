@@ -553,7 +553,7 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
       return _view(await _freshProjects(accountId));
     }
 
-    final cachedView = _view(cached, isStale: true);
+    final cachedView = _view(cached);
     if (ref.mounted &&
         ref.read(currentAccountProvider)?.id == accountId &&
         ref.read(cacheLifecycleProvider).isUsable(accountId)) {
@@ -568,7 +568,7 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
         'projects refresh failed, serving cached data: '
         '${redactDiagnostic(error)}',
       );
-      return cachedView;
+      return cachedView.copyWith(isStale: true);
     }
   }
 
@@ -586,7 +586,13 @@ class ProjectsNotifier extends AsyncNotifier<ProjectsView> {
   Future<Envelope> _freshProjects(String? accountId) async {
     final env = await _repo.projects();
     if (accountId != null) {
-      await ref.read(envelopeCacheProvider).put('$accountId-projects', env);
+      try {
+        await ref.read(envelopeCacheProvider).put('$accountId-projects', env);
+      } on AccountCacheClosedException {
+        rethrow;
+      } catch (error) {
+        debugPrint('projects cache write failed: ${redactDiagnostic(error)}');
+      }
     }
     return env;
   }

@@ -25,6 +25,7 @@ class _FakeApi extends PlankaApi {
   _FakeApi({required this.failMove}) : super('http://x', 'tok');
   final bool failMove;
   int getCalls = 0;
+  bool failGets = false;
 
   /// Holds every GET while open, so events can land mid-rollback.
   Completer<void>? gate;
@@ -34,6 +35,7 @@ class _FakeApi extends PlankaApi {
     final g = gate;
     if (g != null && !g.isCompleted) await g.future;
     getCalls++;
+    if (failGets) throw ApiException(503, 'server unavailable');
     return Envelope.parse(_fixture());
   }
 
@@ -106,6 +108,23 @@ void main() {
         reason: 'failed move is healed back to the server-truth list');
     expect(api.getCalls, greaterThan(getsBefore),
         reason: 'failure triggers a refetch');
+  });
+
+  test('rejected move restores confirmed state when rollback GET fails',
+      () async {
+    final (container, notifier, boardId) = await _boot(failMove: true);
+    addTearDown(container.dispose);
+    final api = container.read(apiProvider) as _FakeApi;
+    api.failGets = true;
+
+    await expectLater(
+      notifier.moveCard(_cardId, _toListId),
+      throwsA(isA<ApiException>()),
+    );
+
+    final state = container.read(boardProvider(boardId)).value!;
+    expect(state.cards[_cardId]!.listId, _fromListId,
+        reason: 'a failed patch and rollback never leave an unconfirmed move');
   });
 
   test('moveCard heals back even when an unrelated event lands mid-rollback',
