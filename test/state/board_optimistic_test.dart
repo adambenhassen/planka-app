@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/api/planka_socket.dart';
+import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
 
@@ -26,9 +27,12 @@ class _FakeApi extends PlankaApi {
   final bool failMove;
   int getCalls = 0;
   bool failGets = false;
+  bool failDeletes = false;
+  Envelope? boardEnvelope;
 
   /// Holds every GET while open, so events can land mid-rollback.
   Completer<void>? gate;
+  Completer<void>? patchGate;
 
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
@@ -36,13 +40,21 @@ class _FakeApi extends PlankaApi {
     if (g != null && !g.isCompleted) await g.future;
     getCalls++;
     if (failGets) throw ApiException(503, 'server unavailable');
-    return Envelope.parse(_fixture());
+    return boardEnvelope ?? Envelope.parse(_fixture());
   }
 
   @override
   Future<Envelope> patch(String path, Object? body) async {
+    final pending = patchGate;
+    if (pending != null) await pending.future;
     if (failMove) throw ApiException(500, 'rejected');
     return Envelope.parse({'item': (body as Map).cast<String, dynamic>()});
+  }
+
+  @override
+  Future<Envelope> delete(String path) async {
+    if (failDeletes) throw ApiException(500, 'rejected');
+    return Envelope.parse({'item': <String, dynamic>{}});
   }
 
   @override
@@ -56,6 +68,44 @@ class _FakeApi extends PlankaApi {
           'position': 100,
         }
       });
+}
+
+class _ControlledPatchApi extends _FakeApi {
+  _ControlledPatchApi() : super(failMove: false);
+
+  final patchResponses = <Completer<Envelope>>[];
+
+  @override
+  Future<Envelope> patch(String path, Object? body) {
+    final response = Completer<Envelope>();
+    patchResponses.add(response);
+    return response.future;
+  }
+}
+
+class _MutableAccount extends CurrentAccountNotifier {
+  Account? account;
+
+  @override
+  Account? build() => account;
+
+  void switchTo(Account next) => state = account = next;
+}
+
+class _RecordingSocket extends PlankaSocket {
+  _RecordingSocket(super.serverUrl, super.token);
+
+  @override
+  Stream<SocketEvent> get events => const Stream.empty();
+
+  @override
+  Stream<bool> get connected => const Stream.empty();
+
+  @override
+  Future<void> connect() async {}
+
+  @override
+  Future<void> subscribeBoard(String boardId) async {}
 }
 
 /// Real BoardNotifier logic (moveCard/_optimistic/_refetch), but seeded from the
@@ -253,6 +303,147 @@ void main() {
       state.lists.firstWhere((list) => list.id == bystander['id']).name,
       'Renamed mid-rollback',
       reason: 'the concurrent server event remains visible',
+      );
+  });
+
+  test('server cardDelete stays applied when rejected delete rollback GET fails',
+      () async {
+    final api = _FakeApi(failMove: false)
+      ..failDeletes = true
+      ..gate = Completer<void>();
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      boardProvider.overrideWith2((arg) => _SocketlessNotifier(arg)),
+    ]);
+    addTearDown(container.dispose);
+    final boardId = _fixture()['item']['id'] as String;
+    final notifier = container.read(boardProvider(boardId).notifier);
+    await container.read(boardProvider(boardId).future);
+
+    final deletion = notifier.deleteCard(_cardId);
+    await pumpEventQueue(); // DELETE rejected; rollback GET is gated
+    notifier.applySocketEvent(SocketEvent.parse('cardDelete', {
+      'item': {'id': _cardId}
+    }));
+    api.failGets = true;
+    api.gate!.complete();
+    await expectLater(deletion, throwsA(isA<ApiException>()));
+
+    expect(
+      container.read(boardProvider(boardId)).value!.cards,
+      isNot(contains(_cardId)),
+      reason: 'the server deletion must not be resurrected by rollback',
+    );
+  });
+
+  for (final firstFailureCompletesFirst in [true, false]) {
+    test(
+        'overlapping rejected moves leave the original list when the first '
+        'failure completes ${firstFailureCompletesFirst ? 'first' : 'last'}',
+        () async {
+      final api = _ControlledPatchApi();
+      final container = ProviderContainer(overrides: [
+        apiProvider.overrideWithValue(api),
+        boardProvider.overrideWith2((arg) => _SocketlessNotifier(arg)),
+      ]);
+      addTearDown(container.dispose);
+      final boardId = _fixture()['item']['id'] as String;
+      final notifier = container.read(boardProvider(boardId).notifier);
+      await container.read(boardProvider(boardId).future);
+      final thirdListId = (_fixture()['included']['lists'] as List)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((list) =>
+              list['id'] != _fromListId && list['id'] != _toListId)['id'] as String;
+
+      final first = notifier.moveCard(_cardId, _toListId);
+      final second = notifier.moveCard(_cardId, thirdListId);
+      await pumpEventQueue();
+      expect(api.patchResponses, hasLength(2));
+      api.failGets = true;
+
+      final earlier = firstFailureCompletesFirst ? 0 : 1;
+      final later = 1 - earlier;
+      api.patchResponses[earlier].completeError(ApiException(500, 'rejected'));
+      await expectLater(
+        earlier == 0 ? first : second,
+        throwsA(isA<ApiException>()),
+      );
+      api.patchResponses[later].completeError(ApiException(500, 'rejected'));
+      await expectLater(
+        later == 0 ? first : second,
+        throwsA(isA<ApiException>()),
+      );
+
+      expect(
+        container.read(boardProvider(boardId)).value!.cards[_cardId]!.listId,
+        _fromListId,
+        reason: 'both rejected moves must leave the confirmed original list',
+      );
+    });
+  }
+
+  test('failed write from prior account cannot roll back into the same board on new account',
+      () async {
+    final accountA = Account(
+      serverUrl: 'http://account-a',
+      token: 'tok-a',
+      userId: 'u1',
+      displayName: 'A',
+    );
+    final accountB = Account(
+      serverUrl: 'http://account-b',
+      token: 'tok-b',
+      userId: 'u1',
+      displayName: 'B',
+    );
+    final apiA = _FakeApi(failMove: true)..patchGate = Completer<void>();
+    final apiB = _FakeApi(failMove: false);
+    final mutable = _MutableAccount()..account = accountA;
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWith((ref) =>
+          ref.watch(currentAccountProvider)?.id == accountA.id ? apiA : apiB),
+      currentAccountProvider.overrideWith(() => mutable),
+      boardSocketFactoryProvider.overrideWithValue(
+          (serverUrl, token) => _RecordingSocket(serverUrl, token)),
+    ]);
+    addTearDown(container.dispose);
+    final boardId = _fixture()['item']['id'] as String;
+    final board = boardProvider(boardId);
+    await container.read(board.future);
+    final accountBFixture = _fixture();
+    (accountBFixture['item'] as Map<String, dynamic>)['name'] = 'Account B';
+    final bLists = (accountBFixture['included']['lists'] as List)
+        .cast<Map<String, dynamic>>();
+    bLists.firstWhere((list) => list['id'] == _fromListId)['name'] =
+        'Optimistic rename';
+    apiB.boardEnvelope = Envelope.parse(accountBFixture);
+
+    final mutation = container
+        .read(board.notifier)
+        .renameList(_fromListId, 'Optimistic rename');
+    await pumpEventQueue();
+    mutable.switchTo(accountB);
+    await pumpEventQueue();
+    await container.read(board.future);
+    expect(apiB.getCalls, greaterThan(0));
+    expect(container.read(board).value!.board.name, 'Account B');
+    expect(
+      container.read(board).value!.lists
+          .firstWhere((list) => list.id == _fromListId)
+          .name,
+      'Optimistic rename',
+    );
+
+    apiB.failGets = true;
+    apiA.patchGate!.complete();
+    await expectLater(mutation, throwsA(isA<ApiException>()));
+
+    expect(
+      container.read(board).value!.lists
+          .firstWhere((list) => list.id == _fromListId)
+          .name,
+      'Optimistic rename',
+      reason: 'account A failure must not merge its baseline into account B',
     );
   });
 
