@@ -110,6 +110,53 @@ void main() {
         reason: 'failure triggers a refetch');
   });
 
+  test(
+      'rejected rename restores its list and keeps listUpdate when rollback GET fails',
+      () async {
+    final api = _FakeApi(failMove: true)..gate = Completer<void>();
+    final container = ProviderContainer(overrides: [
+      apiProvider.overrideWithValue(api),
+      boardProvider.overrideWith2((arg) => _SocketlessNotifier(arg)),
+    ]);
+    addTearDown(container.dispose);
+    final boardId = _fixture()['item']['id'] as String;
+    final notifier = container.read(boardProvider(boardId).notifier);
+    await container.read(boardProvider(boardId).future);
+    final initial = container.read(boardProvider(boardId)).value!;
+    final originalName =
+        initial.lists.firstWhere((l) => l.id == _fromListId).name;
+    final lists = (_fixture()['included']['lists'] as List)
+        .cast<Map<String, dynamic>>();
+    final bystander = lists.firstWhere((l) => l['id'] != _fromListId);
+
+    final rename = notifier.renameList(_fromListId, 'Optimistic rename');
+    await pumpEventQueue();
+    expect(
+      container.read(boardProvider(boardId)).value!.lists
+          .firstWhere((l) => l.id == _fromListId)
+          .name,
+      'Optimistic rename',
+    );
+    notifier.applySocketEvent(SocketEvent.parse('listUpdate', {
+      'item': {...bystander, 'name': 'Server event remains visible'}
+    }));
+    api.failGets = true;
+    api.gate!.complete();
+    await expectLater(rename, throwsA(isA<ApiException>()));
+
+    final state = container.read(boardProvider(boardId)).value!;
+    expect(
+      state.lists.firstWhere((l) => l.id == _fromListId).name,
+      originalName,
+      reason: 'a rejected rename is removed after rollback fetch failure',
+    );
+    expect(
+      state.lists.firstWhere((l) => l.id == bystander['id']).name,
+      'Server event remains visible',
+      reason: 'the concurrent server event is retained',
+    );
+  });
+
   test('rejected move restores confirmed state when rollback GET fails',
       () async {
     final (container, notifier, boardId) = await _boot(failMove: true);

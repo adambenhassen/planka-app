@@ -430,6 +430,175 @@ T _mergeById<T>(T? existing, Map<String, dynamic> item,
         T Function(Map<String, dynamic>) fromJson) =>
     fromJson(existing == null ? item : {...toJson(existing), ...item});
 
+/// Removes fields changed only by a rejected optimistic action from current
+/// rows, without discarding unrelated socket updates that arrived meanwhile.
+List<T> _rollbackRows<T>(
+  List<T> confirmed,
+  List<T> optimistic,
+  List<T> current,
+  String Function(T) idOf,
+  Map<String, dynamic> Function(T) toJson,
+  T Function(Map<String, dynamic>) fromJson,
+) {
+  final confirmedById = {for (final row in confirmed) idOf(row): row};
+  final optimisticById = {for (final row in optimistic) idOf(row): row};
+  final result = [...current];
+
+  void restoreAtConfirmedPosition(T row) {
+    final index = confirmed.indexWhere((entry) => idOf(entry) == idOf(row));
+    for (var i = index + 1; i < confirmed.length; i++) {
+      final nextIndex = result.indexWhere(
+          (entry) => idOf(entry) == idOf(confirmed[i]));
+      if (nextIndex >= 0) {
+        result.insert(nextIndex, row);
+        return;
+      }
+    }
+    result.add(row);
+  }
+
+  for (final oldRow in confirmed) {
+    final id = idOf(oldRow);
+    final optimisticRow = optimisticById[id];
+    final currentIndex = result.indexWhere((row) => idOf(row) == id);
+    if (optimisticRow == null) {
+      // This row was optimistically deleted. A socket recreation wins.
+      if (currentIndex < 0) restoreAtConfirmedPosition(oldRow);
+      continue;
+    }
+
+    final oldJson = toJson(oldRow);
+    final optimisticJson = toJson(optimisticRow);
+    if (_sameJson(oldJson, optimisticJson) || currentIndex < 0) continue;
+
+    final currentJson = toJson(result[currentIndex]);
+    for (final key in {...oldJson.keys, ...optimisticJson.keys}) {
+      if (!_sameJson(oldJson[key], optimisticJson[key]) &&
+          _sameJson(currentJson[key], optimisticJson[key])) {
+        currentJson[key] = oldJson[key];
+      }
+    }
+    result[currentIndex] = fromJson(currentJson);
+  }
+
+  for (final optimisticRow in optimistic) {
+    final id = idOf(optimisticRow);
+    if (confirmedById.containsKey(id)) continue;
+    final currentIndex = result.indexWhere((row) => idOf(row) == id);
+    if (currentIndex >= 0 &&
+        _sameJson(toJson(result[currentIndex]), toJson(optimisticRow))) {
+      result.removeAt(currentIndex);
+    }
+  }
+  return result;
+}
+
+bool _sameJson(Object? left, Object? right) {
+  if (identical(left, right) || left == right) return true;
+  if (left is Map && right is Map) {
+    if (left.length != right.length) return false;
+    return left.keys.every((key) =>
+        right.containsKey(key) && _sameJson(left[key], right[key]));
+  }
+  if (left is List && right is List) {
+    if (left.length != right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      if (!_sameJson(left[i], right[i])) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+Set<String> _rollbackSet(
+    Set<String> confirmed, Set<String> optimistic, Set<String> current) {
+  final added = optimistic.difference(confirmed);
+  final removed = confirmed.difference(optimistic);
+  return {
+    ...current.where((value) => !added.contains(value)),
+    ...removed.where((value) => !current.contains(value)),
+  };
+}
+
+BoardState _rollbackOptimisticState(
+    BoardState confirmed, BoardState optimistic, BoardState current) {
+  List<T> rows<T>(
+    List<T> oldRows,
+    List<T> optimisticRows,
+    List<T> currentRows,
+    String Function(T) id,
+    Map<String, dynamic> Function(T) toJson,
+    T Function(Map<String, dynamic>) fromJson,
+  ) =>
+      _rollbackRows(oldRows, optimisticRows, currentRows, id, toJson, fromJson);
+
+  final cards = rows(
+    confirmed.cards.values.toList(),
+    optimistic.cards.values.toList(),
+    current.cards.values.toList(),
+    (x) => x.id,
+    (x) => x.toJson(),
+    PlankaCard.fromJson,
+  );
+  final board = _rollbackRows(
+    [confirmed.board],
+    [optimistic.board],
+    [current.board],
+    (x) => x.id,
+    (x) => x.toJson(),
+    PlankaBoard.fromJson,
+  ).single;
+
+  return current.copyWith(
+    board: board,
+    lists: rows(confirmed.lists, optimistic.lists, current.lists, (x) => x.id,
+        (x) => x.toJson(), PlankaList.fromJson),
+    cards: {for (final x in cards) x.id: x},
+    labels: rows(confirmed.labels, optimistic.labels, current.labels, (x) => x.id,
+        (x) => x.toJson(), PlankaLabel.fromJson),
+    cardLabels: rows(
+        confirmed.cardLabels, optimistic.cardLabels, current.cardLabels,
+        (x) => x.id, (x) => x.toJson(), PlankaCardLabel.fromJson),
+    cardMemberships: rows(
+        confirmed.cardMemberships, optimistic.cardMemberships,
+        current.cardMemberships, (x) => x.id, (x) => x.toJson(),
+        PlankaCardMembership.fromJson),
+    boardMemberships: rows(
+        confirmed.boardMemberships, optimistic.boardMemberships,
+        current.boardMemberships, (x) => x.id, (x) => x.toJson(),
+        PlankaBoardMembership.fromJson),
+    users: rows(confirmed.users, optimistic.users, current.users, (x) => x.id,
+        (x) => x.toJson(), PlankaUser.fromJson),
+    taskLists: rows(confirmed.taskLists, optimistic.taskLists, current.taskLists,
+        (x) => x.id, (x) => x.toJson(), PlankaTaskList.fromJson),
+    tasks: rows(confirmed.tasks, optimistic.tasks, current.tasks, (x) => x.id,
+        (x) => x.toJson(), PlankaTask.fromJson),
+    attachments: rows(
+        confirmed.attachments, optimistic.attachments, current.attachments,
+        (x) => x.id, (x) => x.toJson(), PlankaAttachment.fromJson),
+    comments: rows(confirmed.comments, optimistic.comments, current.comments,
+        (x) => x.id, (x) => x.toJson(), PlankaComment.fromJson),
+    deletedCommentIds: _rollbackSet(confirmed.deletedCommentIds,
+        optimistic.deletedCommentIds, current.deletedCommentIds),
+    customFieldGroups: rows(confirmed.customFieldGroups,
+        optimistic.customFieldGroups, current.customFieldGroups, (x) => x.id,
+        (x) => x.toJson(), PlankaCustomFieldGroup.fromJson),
+    customFields: rows(
+        confirmed.customFields, optimistic.customFields, current.customFields,
+        (x) => x.id, (x) => x.toJson(), PlankaCustomField.fromJson),
+    customFieldValues: rows(
+        confirmed.customFieldValues, optimistic.customFieldValues,
+        current.customFieldValues,
+        (x) => '${x.cardId}/${x.customFieldGroupId}/${x.customFieldId}',
+        (x) => x.toJson(), PlankaCustomFieldValue.fromJson),
+    baseCustomFieldGroups: rows(
+        confirmed.baseCustomFieldGroups, optimistic.baseCustomFieldGroups,
+        current.baseCustomFieldGroups,
+        (x) => x.id, (x) => x.toJson(), PlankaBaseCustomFieldGroup.fromJson),
+    isStale: true,
+  );
+}
+
 /// Whether a socket payload carries every key [fromJson] casts to a non-null
 /// value. Reposition siblings only send `{id, position}`; a missed create can
 /// still arrive as a complete `*Update`, which should upsert like `*Create`.
@@ -1449,10 +1618,8 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
 
   Future<void> _optimistic(
     BoardState next,
-    Future<Envelope> Function() call, {
-    BoardState? Function(BoardState confirmed, BoardState current)?
-        onRefetchFailure,
-  }) async {
+    Future<Envelope> Function() call,
+  ) async {
     final confirmed = state.value;
     state = AsyncData(next);
     try {
@@ -1460,9 +1627,8 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     } catch (_) {
       // Any failure — a rejected request (ApiException) or a parse/decode error
       // on an unexpected response — leaves the optimistic state unconfirmed.
-      // Refetch first, preserving concurrent server events. If reconciliation
-      // fails, restore the confirmed snapshot when nothing changed; a caller
-      // can instead remove only its optimistic fields from the current state.
+      // Refetch first. If reconciliation fails, remove this action's delta
+      // from current state while retaining concurrent socket changes.
       var refetchFailed = false;
       try {
         await _refetch(onApiFailure: () => refetchFailed = true);
@@ -1474,11 +1640,8 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       }
       final current = state.value;
       if (confirmed != null) {
-        final fallback = refetchFailed && current != null
-            ? onRefetchFailure?.call(confirmed, current)
-            : null;
-        if (fallback != null) {
-          state = AsyncData(fallback);
+        if (refetchFailed && current != null) {
+          state = AsyncData(_rollbackOptimisticState(confirmed, next, current));
         } else if (identical(current, next)) {
           state = AsyncData(confirmed.copyWith(isStale: true));
         }
@@ -1578,24 +1741,6 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     await _optimistic(
       s.copyWith(cards: {...s.cards, cardId: moved}),
       () => _repo.updateCard(cardId, {'listId': toListId, 'position': position}),
-      onRefetchFailure: (confirmed, current) {
-        final confirmedCard = confirmed.cards[cardId];
-        final currentCard = current.cards[cardId];
-        if (confirmedCard == null ||
-            currentCard == null ||
-            currentCard.listId != toListId ||
-            currentCard.position != position) {
-          return null;
-        }
-        final restoredCard = _mergeCard(currentCard, {
-          'listId': confirmedCard.listId,
-          'position': confirmedCard.position,
-        });
-        return current.copyWith(
-          cards: {...current.cards, cardId: restoredCard},
-          isStale: true,
-        );
-      },
     );
   }
 
