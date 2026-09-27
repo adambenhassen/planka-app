@@ -1103,7 +1103,7 @@ class AllUsersNotifier extends AsyncNotifier<List<PlankaUser>> {
     if (_removeAccountEpochListener == null) {
       _removeAccountEpochListener = ref
           .read(accountStateEpochProvider.notifier)
-          .listen(_invalidateAccountState);
+          .listen((_) => _invalidateAccountState());
       ref.onDispose(() {
         _removeAccountEpochListener?.call();
         _removeAccountEpochListener = null;
@@ -1313,6 +1313,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   Future<void>? _boardCacheWriteFuture;
   final Map<String, Future<void>> _boardCacheFlushesBeforeBuild = {};
   Future<void>? _boardCacheFullEnvelopeWrite;
+  Envelope? _boardCachePendingFullEnvelope;
   var _boardCacheFullEnvelopeWriteCount = 0;
   var _discardBoardCacheWrites = false;
   var _boardCacheGeneration = 0;
@@ -1444,6 +1445,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     final installCompleted = Completer<void>();
     final install = installCompleted.future;
     _boardCacheFullEnvelopeWrite = install;
+    _boardCachePendingFullEnvelope = envelope;
     _boardCacheFullEnvelopeWriteCount++;
     _boardCacheWriteTimer?.cancel();
     _boardCacheWriteTimer = null;
@@ -1474,6 +1476,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       installCompleted.complete();
       if (identical(_boardCacheFullEnvelopeWrite, install)) {
         _boardCacheFullEnvelopeWrite = null;
+        _boardCachePendingFullEnvelope = null;
       }
       _boardCacheFullEnvelopeWriteCount--;
       if (_boardCacheFullEnvelopeWriteCount == 0 &&
@@ -1485,10 +1488,38 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     }
   }
 
-  Future<void> _settleBoardCacheBeforeDispose() async {
-    final fullEnvelopeWrite = _boardCacheFullEnvelopeWrite;
-    if (fullEnvelopeWrite != null) await fullEnvelopeWrite;
-    await _flushBoardCache();
+  Future<void> _settleBoardCacheBeforeDispose({
+    required String accountId,
+    required EnvelopeCache? cache,
+    required AccountCacheLifecycle lifecycle,
+    required BoardState? snapshot,
+    required Envelope? baseEnvelope,
+    required Envelope? pendingFullEnvelope,
+    required Future<void>? fullEnvelopeWrite,
+    required Future<void>? pendingSnapshotWrite,
+  }) async {
+    if (fullEnvelopeWrite != null) {
+      await fullEnvelopeWrite;
+    } else if (pendingSnapshotWrite != null) {
+      await pendingSnapshotWrite;
+    }
+    if (snapshot == null ||
+        cache == null ||
+        !ref.mounted ||
+        ref.read(currentAccountProvider)?.id != accountId ||
+        !lifecycle.isUsable(accountId)) {
+      return;
+    }
+    final base = pendingFullEnvelope ?? baseEnvelope;
+    final envelope = snapshot.toEnvelope(base);
+    if (_sameJson(envelope.raw, base?.raw)) return;
+    try {
+      await cache.put('$accountId-board-$boardId', envelope);
+    } on AccountCacheClosedException {
+      return;
+    } catch (error) {
+      debugPrint('board cache write failed: ${redactDiagnostic(error)}');
+    }
   }
 
   Future<void> _awaitBoardCacheFlushBeforeBuild(String? accountId) async {
@@ -1515,7 +1546,16 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         lifecycle.isUsable(accountId) &&
         _pendingOptimisticChanges.isEmpty) {
       _boardCacheFlushesBeforeBuild[accountId] =
-          _settleBoardCacheBeforeDispose();
+          _settleBoardCacheBeforeDispose(
+        accountId: accountId,
+        cache: _boardEnvelopeCache,
+        lifecycle: lifecycle,
+        snapshot: _boardCacheDirty ? _latestBoardCacheState : null,
+        baseEnvelope: _boardEnvelope,
+        pendingFullEnvelope: _boardCachePendingFullEnvelope,
+        fullEnvelopeWrite: _boardCacheFullEnvelopeWrite,
+        pendingSnapshotWrite: _boardCacheWriteFuture,
+      );
     }
     _boardCacheGeneration++;
     _boardCacheWriteTimer?.cancel();
@@ -1546,9 +1586,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     _eventSequence = 0;
   }
 
-  void _invalidateAccountState() {
+  void _invalidateAccountState({bool preserveBoardCache = false}) {
     _buildGeneration++;
-    _disposeAccountResources();
+    _disposeAccountResources(preserveBoardCache: preserveBoardCache);
     if (ref.mounted) {
       // Riverpod carries the previous AsyncData value into a dependency
       // refresh. A nullable data slot lets the notifier publish an explicit
@@ -1910,7 +1950,11 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     if (_removeAccountEpochListener == null) {
       _removeAccountEpochListener = ref
           .read(accountStateEpochProvider.notifier)
-          .listen(_invalidateAccountState);
+          .listen(
+            (preserveSameAccountState) => _invalidateAccountState(
+              preserveBoardCache: preserveSameAccountState,
+            ),
+          );
       ref.onDispose(() {
         _removeAccountEpochListener?.call();
         _removeAccountEpochListener = null;
@@ -1921,7 +1965,10 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       if (previous?.id != next?.id ||
           previous?.serverUrl != next?.serverUrl ||
           previous?.token != next?.token) {
-        _invalidateAccountState();
+        _invalidateAccountState(
+          preserveBoardCache:
+              previous?.id != null && previous?.id == next?.id,
+        );
       }
     });
     _disposeAccountResources(

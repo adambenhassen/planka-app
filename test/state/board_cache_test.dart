@@ -40,7 +40,10 @@ class _MutableAccount extends CurrentAccountNotifier {
   @override
   Future<void> select(Account? account, {bool invalidateState = true}) async {
     if (invalidateState) {
-      ref.read(accountStateEpochProvider.notifier).invalidate();
+      ref.read(accountStateEpochProvider.notifier).invalidate(
+        preserveSameAccountState:
+            state?.id != null && state?.id == account?.id,
+      );
     }
     state = account;
   }
@@ -103,8 +106,9 @@ class _CountingEnvelopeCache extends EnvelopeCache {
 }
 
 class _GatedEnvelopeCache extends EnvelopeCache {
-  _GatedEnvelopeCache({required super.directory});
+  _GatedEnvelopeCache({required super.directory, this.gateOnPutCall = 1});
 
+  final int gateOnPutCall;
   Completer<void>? putGate;
   final gatedPutStarted = Completer<void>();
   var putCalls = 0;
@@ -113,7 +117,7 @@ class _GatedEnvelopeCache extends EnvelopeCache {
   Future<void> put(String key, Envelope env) async {
     putCalls++;
     final gate = putGate;
-    if (putCalls == 1 && gate != null) {
+    if (putCalls == gateOnPutCall && gate != null) {
       gatedPutStarted.complete();
       await gate.future;
     }
@@ -136,6 +140,12 @@ class _LoadingNotifier extends BoardNotifier {
 
   @override
   Future<BoardState> build() => load();
+}
+
+class _RecoveringNotifier extends BoardNotifier {
+  _RecoveringNotifier(super.boardId);
+
+  void triggerRecovery() => recoverRealtime();
 }
 
 class _FailingPutEnvelopeCache extends EnvelopeCache {
@@ -443,6 +453,121 @@ void main() {
 
     nextApi.gate!.complete();
     await container.read(provider.future);
+  });
+
+  test('a same-account token refresh preserves a debounced socket change offline',
+      () async {
+    final dir = Directory.systemTemp.createTempSync('board_cache_epoch');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final api = _FakeApi();
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        currentAccountProvider.overrideWith(
+          () => _MutableAccount(_account),
+        ),
+        envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: dir)),
+        boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
+        userSocketProvider.overrideWithValue(null),
+        userEventsProvider.overrideWithValue(const Stream.empty()),
+        userConnectedProvider.overrideWithValue(const Stream.empty()),
+      ],
+    );
+    addTearDown(container.dispose);
+    final provider = boardProvider(_boardId);
+    final subscription = container.listen(provider, (previous, next) {});
+    addTearDown(subscription.close);
+    await container.read(provider.future);
+
+    container.read(provider.notifier).applySocketEvent(
+          SocketEvent.parse('cardUpdate', {
+            'item': {'id': _cardId, 'name': 'Epoch socket change'},
+          }),
+        );
+    api.failGets = true;
+    await container.read(currentAccountProvider.notifier).select(
+          Account(
+            serverUrl: _account.serverUrl,
+            token: 'refreshed-token',
+            userId: _account.userId,
+            displayName: _account.displayName,
+          ),
+        );
+    await container.read(provider.future);
+    container.dispose();
+
+    final offlineContainer = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(_FakeApi()..failGets = true),
+        currentAccountProvider.overrideWith(_FixedAccount.new),
+        envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: dir)),
+        boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+      ],
+    );
+    addTearDown(offlineContainer.dispose);
+    final reopened = await offlineContainer.read(
+      boardProvider(_boardId).future,
+    );
+    expect(reopened!.cards[_cardId]!.name, 'Epoch socket change');
+  });
+
+  test('an epoch preserves a socket change received during a full cache write',
+      () async {
+    final dir = Directory.systemTemp.createTempSync(
+      'board_cache_epoch_during_fetch',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final cache = _GatedEnvelopeCache(directory: dir, gateOnPutCall: 2)
+      ..putGate = Completer<void>();
+    final api = _FakeApi();
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        currentAccountProvider.overrideWith(_FixedAccount.new),
+        envelopeCacheProvider.overrideWithValue(cache),
+        boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
+        userSocketProvider.overrideWithValue(null),
+        userEventsProvider.overrideWithValue(const Stream.empty()),
+        userConnectedProvider.overrideWithValue(const Stream.empty()),
+        boardProvider.overrideWith2((id) => _RecoveringNotifier(id)),
+      ],
+    );
+    addTearDown(container.dispose);
+    final provider = boardProvider(_boardId);
+    final subscription = container.listen(provider, (previous, next) {});
+    addTearDown(subscription.close);
+    await container.read(provider.future);
+
+    final notifier = container.read(provider.notifier) as _RecoveringNotifier;
+    notifier.triggerRecovery();
+    await cache.gatedPutStarted.future;
+    notifier.applySocketEvent(
+      SocketEvent.parse('cardUpdate', {
+        'item': {'id': _cardId, 'name': 'Change during full write'},
+      }),
+    );
+    api.failGets = true;
+    container
+        .read(accountStateEpochProvider.notifier)
+        .invalidate(preserveSameAccountState: true);
+    cache.putGate!.complete();
+    await container.read(provider.future);
+    await pumpEventQueue();
+    container.dispose();
+
+    final offlineContainer = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(_FakeApi()..failGets = true),
+        currentAccountProvider.overrideWith(_FixedAccount.new),
+        envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: dir)),
+        boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+      ],
+    );
+    addTearDown(offlineContainer.dispose);
+    final reopened = await offlineContainer.read(
+      boardProvider(_boardId).future,
+    );
+    expect(reopened!.cards[_cardId]!.name, 'Change during full write');
   });
 
   test('a pending snapshot write cannot replace a newer full board fetch',

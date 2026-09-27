@@ -56,7 +56,7 @@ class NotificationsNotifier extends AsyncNotifier<List<PlankaNotification>> {
     if (_removeAccountEpochListener == null) {
       _removeAccountEpochListener = ref
           .read(accountStateEpochProvider.notifier)
-          .listen(_invalidateAccountState);
+          .listen((_) => _invalidateAccountState());
       ref.onDispose(() {
         _removeAccountEpochListener?.call();
         _removeAccountEpochListener = null;
