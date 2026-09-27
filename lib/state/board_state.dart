@@ -1310,6 +1310,10 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   String? _boardCacheAccountId;
   var _boardCacheDirty = false;
   var _boardCacheWriteInProgress = false;
+  Future<void>? _boardCacheWriteFuture;
+  final Map<String, Future<void>> _boardCacheFlushesBeforeBuild = {};
+  Future<void>? _boardCacheFullEnvelopeWrite;
+  var _boardCacheFullEnvelopeWriteCount = 0;
   var _discardBoardCacheWrites = false;
   var _boardCacheGeneration = 0;
 
@@ -1333,7 +1337,10 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       if (identical(previous?.value, current)) return;
       _latestBoardCacheState = current;
       _boardCacheDirty = true;
-      if (_pendingOptimisticChanges.isEmpty) _scheduleBoardCacheWrite();
+      if (_pendingOptimisticChanges.isEmpty &&
+          _boardCacheFullEnvelopeWriteCount == 0) {
+        _scheduleBoardCacheWrite();
+      }
     });
     _boardCacheSelfListener = listener;
     ref.onDispose(() {
@@ -1355,9 +1362,34 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     });
   }
 
-  Future<void> _flushBoardCache() async {
+  Future<void> _flushBoardCache() {
     _boardCacheWriteTimer?.cancel();
     _boardCacheWriteTimer = null;
+    final currentWrite = _boardCacheWriteFuture;
+    if (currentWrite != null) return currentWrite;
+    if (!_boardCacheDirty ||
+        _pendingOptimisticChanges.isNotEmpty ||
+        _boardCacheFullEnvelopeWriteCount != 0) {
+      return Future<void>.value();
+    }
+
+    late final Future<void> write;
+    write = _writeDirtyBoardCache().whenComplete(() {
+      if (identical(_boardCacheWriteFuture, write)) {
+        _boardCacheWriteFuture = null;
+      }
+      if (_boardCacheDirty &&
+          _pendingOptimisticChanges.isEmpty &&
+          !_discardBoardCacheWrites &&
+          _boardCacheFullEnvelopeWriteCount == 0) {
+        _scheduleBoardCacheWrite();
+      }
+    });
+    _boardCacheWriteFuture = write;
+    return write;
+  }
+
+  Future<void> _writeDirtyBoardCache() async {
     if (!_boardCacheDirty || _pendingOptimisticChanges.isNotEmpty) return;
     final cache = _boardEnvelopeCache;
     final lifecycle = _boardCacheLifecycle;
@@ -1377,6 +1409,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     try {
       while (_boardCacheDirty &&
           _pendingOptimisticChanges.isEmpty &&
+          _boardCacheFullEnvelopeWriteCount == 0 &&
           !_discardBoardCacheWrites &&
           generation == _boardCacheGeneration &&
           lifecycle.isUsable(accountId)) {
@@ -1399,7 +1432,52 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       }
     } finally {
       _boardCacheWriteInProgress = false;
-      if (_boardCacheDirty &&
+    }
+  }
+
+  Future<void> _installBoardEnvelope(
+    String accountId,
+    EnvelopeCache cache,
+    Envelope envelope,
+  ) async {
+    final previousInstall = _boardCacheFullEnvelopeWrite;
+    final installCompleted = Completer<void>();
+    final install = installCompleted.future;
+    _boardCacheFullEnvelopeWrite = install;
+    _boardCacheFullEnvelopeWriteCount++;
+    _boardCacheWriteTimer?.cancel();
+    _boardCacheWriteTimer = null;
+    _boardCacheDirty = false;
+    final generation = _boardCacheGeneration;
+    try {
+      if (previousInstall != null) await previousInstall;
+      final pendingSnapshotWrite = _boardCacheWriteFuture;
+      if (pendingSnapshotWrite != null) await pendingSnapshotWrite;
+      final lifecycle = _boardCacheLifecycle;
+      if (generation != _boardCacheGeneration ||
+          _discardBoardCacheWrites ||
+          _boardCacheAccountId != accountId ||
+          lifecycle == null ||
+          !lifecycle.isUsable(accountId)) {
+        return;
+      }
+      _boardEnvelope = envelope;
+      try {
+        await cache.put('$accountId-board-$boardId', envelope);
+      } on AccountCacheClosedException {
+        rethrow;
+      } catch (error) {
+        debugPrint('board cache write failed: ${redactDiagnostic(error)}');
+      }
+      if (generation == _boardCacheGeneration) _boardEnvelope = envelope;
+    } finally {
+      installCompleted.complete();
+      if (identical(_boardCacheFullEnvelopeWrite, install)) {
+        _boardCacheFullEnvelopeWrite = null;
+      }
+      _boardCacheFullEnvelopeWriteCount--;
+      if (_boardCacheFullEnvelopeWriteCount == 0 &&
+          _boardCacheDirty &&
           _pendingOptimisticChanges.isEmpty &&
           !_discardBoardCacheWrites) {
         _scheduleBoardCacheWrite();
@@ -1407,7 +1485,37 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     }
   }
 
+  Future<void> _settleBoardCacheBeforeDispose() async {
+    final fullEnvelopeWrite = _boardCacheFullEnvelopeWrite;
+    if (fullEnvelopeWrite != null) await fullEnvelopeWrite;
+    await _flushBoardCache();
+  }
+
+  Future<void> _awaitBoardCacheFlushBeforeBuild(String? accountId) async {
+    if (accountId == null) return;
+    final flush = _boardCacheFlushesBeforeBuild[accountId];
+    if (flush == null) return;
+    try {
+      await flush;
+    } finally {
+      if (identical(_boardCacheFlushesBeforeBuild[accountId], flush)) {
+        _boardCacheFlushesBeforeBuild.remove(accountId);
+      }
+    }
+  }
+
   void _disposeAccountResources() {
+    final accountId = _boardCacheAccountId;
+    final lifecycle = _boardCacheLifecycle;
+    if (accountId != null &&
+        lifecycle != null &&
+        ref.mounted &&
+        ref.read(currentAccountProvider)?.id == accountId &&
+        lifecycle.isUsable(accountId) &&
+        _pendingOptimisticChanges.isEmpty) {
+      _boardCacheFlushesBeforeBuild[accountId] =
+          _settleBoardCacheBeforeDispose();
+    }
     _boardCacheGeneration++;
     _boardCacheWriteTimer?.cancel();
     _boardCacheWriteTimer = null;
@@ -1514,14 +1622,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       if (ref.mounted &&
           ref.read(currentAccountProvider)?.id == account.id &&
           ref.read(cacheLifecycleProvider).isUsable(account.id)) {
-        _boardEnvelope = env;
-      }
-      try {
-        await cache.put(key, env);
-      } on AccountCacheClosedException {
-        rethrow;
-      } catch (error) {
-        debugPrint('board cache write failed: ${redactDiagnostic(error)}');
+        await _installBoardEnvelope(account.id, cache, env);
       }
       final loaded = await _withBaseCustomFields(
         BoardState.fromEnvelope(env),
@@ -1823,6 +1924,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       }
     });
     _disposeAccountResources();
+    await _awaitBoardCacheFlushBeforeBuild(account?.id);
     if (account == null) {
       _accountId = null;
       _accountApi = null;
@@ -2053,21 +2155,6 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
               !ref.read(cacheLifecycleProvider).isUsable(boundAccountId))) {
         return;
       }
-      if (accountId != null &&
-          ref.read(cacheLifecycleProvider).isUsable(accountId)) {
-        _boardEnvelope = env;
-      }
-      if (accountId != null) {
-        try {
-          await ref
-              .read(envelopeCacheProvider)
-              .put('$accountId-board-$boardId', env);
-        } on AccountCacheClosedException {
-          rethrow;
-        } catch (error) {
-          debugPrint('board cache write failed: ${redactDiagnostic(error)}');
-        }
-      }
       final prev = state.value;
       var next = BoardState.fromEnvelope(env);
       next = await _withBaseCustomFields(
@@ -2090,6 +2177,19 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       // and let the next edge, event or join retry heal.
       if (prev != null && next.needsBaseCustomFields) {
         next = next.withBaseDataFrom(prev);
+      }
+      if (discardOnEvent && _stateChangesSeen != seenBeforeFetch) return;
+      if (accountId != null) {
+        await _installBoardEnvelope(
+          accountId,
+          ref.read(envelopeCacheProvider),
+          env,
+        );
+      }
+      if (boundAccountId != null &&
+          (ref.read(currentAccountProvider)?.id != boundAccountId ||
+              !ref.read(cacheLifecycleProvider).isUsable(boundAccountId))) {
+        return;
       }
       if (discardOnEvent && _stateChangesSeen != seenBeforeFetch) return;
       final activeCardIds = _activeCommentProviders.keys.toSet();
