@@ -59,6 +59,7 @@ class _FakeApi extends PlankaApi {
   var getCalls = 0;
   bool failGets = false;
   var boardName = 'Fresh Board';
+  String? accountMarker;
   String? cardName;
   String? omitCardId;
 
@@ -73,6 +74,7 @@ class _FakeApi extends PlankaApi {
       File('test/fixtures/board_show.json').readAsStringSync(),
     ) as Map<String, dynamic>;
     (json['item'] as Map<String, dynamic>)['name'] = boardName;
+    if (accountMarker != null) json['accountMarker'] = accountMarker;
     final cards = ((json['included'] as Map<String, dynamic>)['cards'] as List)
         .cast<Map<String, dynamic>>();
     if (omitCardId != null) {
@@ -568,6 +570,81 @@ void main() {
       boardProvider(_boardId).future,
     );
     expect(reopened!.cards[_cardId]!.name, 'Change during full write');
+  });
+
+  test('a pending full write from another account is never used as cache base',
+      () async {
+    final dir = Directory.systemTemp.createTempSync('board_cache_isolation');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final accountB = Account(
+      serverUrl: _account.serverUrl,
+      token: 'tok-b',
+      userId: 'u2',
+      displayName: 'Other',
+    );
+    final cache = _GatedEnvelopeCache(directory: dir)
+      ..putGate = Completer<void>();
+    final bSeed = jsonDecode(
+      File('test/fixtures/board_show.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    bSeed['accountMarker'] = 'b-only-marker';
+    await EnvelopeCache(directory: dir).put(
+      '${accountB.id}-board-$_boardId',
+      Envelope.parse(bSeed),
+    );
+
+    final apiA = _FakeApi()..accountMarker = 'a-only-marker';
+    final apiB = _FakeApi()..gate = Completer<void>();
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWith(
+          (ref) => ref.watch(currentAccountProvider)?.id == _account.id
+              ? apiA
+              : apiB,
+        ),
+        currentAccountProvider.overrideWith(
+          () => _MutableAccount(_account),
+        ),
+        envelopeCacheProvider.overrideWithValue(cache),
+        boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
+        userSocketProvider.overrideWithValue(null),
+        userEventsProvider.overrideWithValue(const Stream.empty()),
+        userConnectedProvider.overrideWithValue(const Stream.empty()),
+      ],
+    );
+    addTearDown(container.dispose);
+    final provider = boardProvider(_boardId);
+    final subscription = container.listen(provider, (previous, next) {});
+    addTearDown(subscription.close);
+    container.read(provider);
+    await cache.gatedPutStarted.future;
+
+    await container.read(currentAccountProvider.notifier).select(accountB);
+    container.read(provider);
+    await apiB.getStarted.future;
+    container.read(provider.notifier).applySocketEvent(
+          SocketEvent.parse('cardUpdate', {
+            'item': {'id': _cardId, 'name': 'B confirmed change'},
+          }),
+        );
+
+    apiB.failGets = true;
+    await container.read(currentAccountProvider.notifier).select(
+          accountB.copyWith(token: 'refreshed-token'),
+        );
+    cache.putGate!.complete();
+    apiB.gate!.complete();
+    await container.read(provider.future);
+    await pumpEventQueue();
+
+    final cachedA = await cache.get('${_account.id}-board-$_boardId');
+    final cachedB = await cache.get('${accountB.id}-board-$_boardId');
+    expect(cachedA!.raw['accountMarker'], 'a-only-marker');
+    expect(cachedB!.raw['accountMarker'], 'b-only-marker');
+    expect(
+      BoardState.fromEnvelope(cachedB).cards[_cardId]!.name,
+      'B confirmed change',
+    );
   });
 
   test('a pending snapshot write cannot replace a newer full board fetch',

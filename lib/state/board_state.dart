@@ -1274,6 +1274,18 @@ class _PendingOptimisticChange {
   final int eventSequence;
 }
 
+class _PendingBoardCacheEnvelope {
+  const _PendingBoardCacheEnvelope({
+    required this.accountId,
+    required this.generation,
+    required this.envelope,
+  });
+
+  final String accountId;
+  final int generation;
+  final Envelope envelope;
+}
+
 class BoardNotifier extends AsyncNotifier<BoardState?> {
   BoardNotifier(this.boardId);
 
@@ -1313,7 +1325,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   Future<void>? _boardCacheWriteFuture;
   final Map<String, Future<void>> _boardCacheFlushesBeforeBuild = {};
   Future<void>? _boardCacheFullEnvelopeWrite;
-  Envelope? _boardCachePendingFullEnvelope;
+  _PendingBoardCacheEnvelope? _boardCachePendingFullEnvelope;
   var _boardCacheFullEnvelopeWriteCount = 0;
   var _discardBoardCacheWrites = false;
   var _boardCacheGeneration = 0;
@@ -1445,7 +1457,11 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     final installCompleted = Completer<void>();
     final install = installCompleted.future;
     _boardCacheFullEnvelopeWrite = install;
-    _boardCachePendingFullEnvelope = envelope;
+    _boardCachePendingFullEnvelope = _PendingBoardCacheEnvelope(
+      accountId: accountId,
+      generation: _boardCacheGeneration,
+      envelope: envelope,
+    );
     _boardCacheFullEnvelopeWriteCount++;
     _boardCacheWriteTimer?.cancel();
     _boardCacheWriteTimer = null;
@@ -1494,7 +1510,8 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     required AccountCacheLifecycle lifecycle,
     required BoardState? snapshot,
     required Envelope? baseEnvelope,
-    required Envelope? pendingFullEnvelope,
+    required int cacheGeneration,
+    required _PendingBoardCacheEnvelope? pendingFullEnvelope,
     required Future<void>? fullEnvelopeWrite,
     required Future<void>? pendingSnapshotWrite,
   }) async {
@@ -1510,7 +1527,12 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         !lifecycle.isUsable(accountId)) {
       return;
     }
-    final base = pendingFullEnvelope ?? baseEnvelope;
+    final pending = pendingFullEnvelope;
+    final base = pending != null &&
+            pending.accountId == accountId &&
+            pending.generation == cacheGeneration
+        ? pending.envelope
+        : baseEnvelope;
     final envelope = snapshot.toEnvelope(base);
     if (_sameJson(envelope.raw, base?.raw)) return;
     try {
@@ -1538,6 +1560,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   void _disposeAccountResources({bool preserveBoardCache = false}) {
     final accountId = _boardCacheAccountId;
     final lifecycle = _boardCacheLifecycle;
+    final cacheGeneration = _boardCacheGeneration;
     if (preserveBoardCache &&
         accountId != null &&
         lifecycle != null &&
@@ -1552,11 +1575,13 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         lifecycle: lifecycle,
         snapshot: _boardCacheDirty ? _latestBoardCacheState : null,
         baseEnvelope: _boardEnvelope,
+        cacheGeneration: cacheGeneration,
         pendingFullEnvelope: _boardCachePendingFullEnvelope,
         fullEnvelopeWrite: _boardCacheFullEnvelopeWrite,
         pendingSnapshotWrite: _boardCacheWriteFuture,
       );
     }
+    _boardCachePendingFullEnvelope = null;
     _boardCacheGeneration++;
     _boardCacheWriteTimer?.cancel();
     _boardCacheWriteTimer = null;
