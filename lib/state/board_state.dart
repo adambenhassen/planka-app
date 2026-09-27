@@ -1504,10 +1504,11 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     }
   }
 
-  void _disposeAccountResources() {
+  void _disposeAccountResources({bool preserveBoardCache = false}) {
     final accountId = _boardCacheAccountId;
     final lifecycle = _boardCacheLifecycle;
-    if (accountId != null &&
+    if (preserveBoardCache &&
+        accountId != null &&
         lifecycle != null &&
         ref.mounted &&
         ref.read(currentAccountProvider)?.id == accountId &&
@@ -1923,7 +1924,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         _invalidateAccountState();
       }
     });
-    _disposeAccountResources();
+    _disposeAccountResources(
+      preserveBoardCache: account?.id == _boardCacheAccountId,
+    );
     await _awaitBoardCacheFlushBeforeBuild(account?.id);
     if (account == null) {
       _accountId = null;

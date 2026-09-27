@@ -9,6 +9,7 @@ import 'package:planka_app/api/planka_api.dart';
 import 'package:planka_app/api/planka_socket.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
+import 'package:planka_app/cache_lifecycle.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/state/envelope_cache.dart';
 import 'package:planka_app/state/user_socket.dart';
@@ -28,6 +29,23 @@ class _FixedAccount extends CurrentAccountNotifier {
   Account build() => _account;
 }
 
+class _MutableAccount extends CurrentAccountNotifier {
+  _MutableAccount(this.initial);
+
+  final Account? initial;
+
+  @override
+  Account? build() => initial;
+
+  @override
+  Future<void> select(Account? account, {bool invalidateState = true}) async {
+    if (invalidateState) {
+      ref.read(accountStateEpochProvider.notifier).invalidate();
+    }
+    state = account;
+  }
+}
+
 class _FakeApi extends PlankaApi {
   _FakeApi() : super('https://planka.example.com', 'tok');
 
@@ -35,7 +53,6 @@ class _FakeApi extends PlankaApi {
   Completer<void>? patchGate;
   final patchStarted = Completer<void>();
   final getStarted = Completer<void>();
-  final secondGetStarted = Completer<void>();
   var getCalls = 0;
   bool failGets = false;
   var boardName = 'Fresh Board';
@@ -46,9 +63,6 @@ class _FakeApi extends PlankaApi {
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     getCalls++;
     if (!getStarted.isCompleted) getStarted.complete();
-    if (getCalls == 2 && !secondGetStarted.isCompleted) {
-      secondGetStarted.complete();
-    }
     final pending = gate;
     if (pending != null) await pending.future;
     if (failGets) throw ApiException(503, 'server unavailable');
@@ -388,10 +402,10 @@ void main() {
     final dir = Directory.systemTemp.createTempSync('board_cache_rebuild');
     addTearDown(() => dir.deleteSync(recursive: true));
     final cache = EnvelopeCache(directory: dir);
-    final api = _FakeApi();
+    var api = _FakeApi();
     final container = ProviderContainer(
       overrides: [
-        apiProvider.overrideWithValue(api),
+        apiProvider.overrideWith((ref) => api),
         currentAccountProvider.overrideWith(_FixedAccount.new),
         envelopeCacheProvider.overrideWithValue(cache),
         boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
@@ -410,12 +424,13 @@ void main() {
       }),
     );
 
-    api
+    final nextApi = _FakeApi()
       ..gate = Completer<void>()
       ..cardName = 'Confirmed realtime change';
-    container.read(accountStateEpochProvider.notifier).invalidate();
+    api = nextApi;
+    container.invalidate(apiProvider);
     container.read(provider);
-    await api.secondGetStarted.future;
+    await nextApi.getStarted.future;
 
     final persistedDuringReload = await cache.get(
       '${_account.id}-board-$_boardId',
@@ -426,7 +441,7 @@ void main() {
       reason: 'a same-account rebuild must flush the debounced snapshot first',
     );
 
-    api.gate!.complete();
+    nextApi.gate!.complete();
     await container.read(provider.future);
   });
 
@@ -486,6 +501,103 @@ void main() {
       BoardState.fromEnvelope(persisted).cards.containsKey(_cardId),
       isFalse,
       reason: 'rows deleted by the server must stay absent after fetch install',
+    );
+  });
+
+  test('switching accounts and logging out discard pending snapshots',
+      () async {
+    final dir = Directory.systemTemp.createTempSync('board_cache_switch');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final accountB = Account(
+      serverUrl: 'https://other.example.com',
+      token: 'tok-b',
+      userId: 'u2',
+      displayName: 'Other',
+    );
+    final cache = EnvelopeCache(directory: dir);
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(_FakeApi()),
+        currentAccountProvider.overrideWith(
+          () => _MutableAccount(_account),
+        ),
+        envelopeCacheProvider.overrideWithValue(cache),
+        boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
+        userSocketProvider.overrideWithValue(null),
+        userEventsProvider.overrideWithValue(const Stream.empty()),
+        userConnectedProvider.overrideWithValue(const Stream.empty()),
+      ],
+    );
+    addTearDown(container.dispose);
+    final provider = boardProvider(_boardId);
+    final subscription = container.listen(provider, (previous, next) {});
+    addTearDown(subscription.close);
+    await container.read(provider.future);
+    container.read(provider.notifier).applySocketEvent(
+          SocketEvent.parse('cardUpdate', {
+            'item': {'id': _cardId, 'name': 'Pending before account switch'},
+          }),
+        );
+
+    await container.read(currentAccountProvider.notifier).select(accountB);
+    await container.read(provider.future);
+    final cachedA = await cache.get('${_account.id}-board-$_boardId');
+    expect(
+      BoardState.fromEnvelope(cachedA!).cards[_cardId]!.name,
+      'Fixture card',
+    );
+
+    container.read(provider.notifier).applySocketEvent(
+          SocketEvent.parse('cardUpdate', {
+            'item': {'id': _cardId, 'name': 'Pending before logout'},
+          }),
+        );
+    await container.read(currentAccountProvider.notifier).select(null);
+    await pumpEventQueue();
+
+    final cachedB = await cache.get('${accountB.id}-board-$_boardId');
+    expect(
+      BoardState.fromEnvelope(cachedB!).cards[_cardId]!.name,
+      'Fixture card',
+    );
+  });
+
+  test('account removal purges the board while its debounce timer is armed',
+      () async {
+    final dir = Directory.systemTemp.createTempSync('board_cache_remove');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final lifecycle = AccountCacheLifecycle();
+    final cache = EnvelopeCache(directory: dir, lifecycle: lifecycle);
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(_FakeApi()),
+        currentAccountProvider.overrideWith(_FixedAccount.new),
+        envelopeCacheProvider.overrideWithValue(cache),
+        cacheLifecycleProvider.overrideWithValue(lifecycle),
+        boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
+        userSocketProvider.overrideWithValue(null),
+        userEventsProvider.overrideWithValue(const Stream.empty()),
+        userConnectedProvider.overrideWithValue(const Stream.empty()),
+      ],
+    );
+    addTearDown(container.dispose);
+    final provider = boardProvider(_boardId);
+    await container.read(provider.future);
+    container.read(provider.notifier).applySocketEvent(
+          SocketEvent.parse('cardUpdate', {
+            'item': {'id': _cardId, 'name': 'Pending before removal'},
+          }),
+        );
+
+    await lifecycle.beginRemoval(_account.id);
+    container.read(accountStateEpochProvider.notifier).invalidate();
+    await cache.purgeAccount(_account.id);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    final coldCache = EnvelopeCache(directory: dir);
+    expect(
+      await coldCache.get('${_account.id}-board-$_boardId'),
+      isNull,
     );
   });
 }
