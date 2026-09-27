@@ -6,12 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planka_app/api/envelope.dart';
 import 'package:planka_app/api/planka_api.dart';
+import 'package:planka_app/api/planka_socket.dart';
 import 'package:planka_app/auth/accounts.dart';
 import 'package:planka_app/auth/auth_providers.dart';
 import 'package:planka_app/state/board_state.dart';
 import 'package:planka_app/state/envelope_cache.dart';
 
 const _boardId = '1844338624586318868';
+const _cardId = '1844335858241504267';
 
 final _account = Account(
   serverUrl: 'https://planka.example.com',
@@ -29,6 +31,8 @@ class _FakeApi extends PlankaApi {
   _FakeApi() : super('https://planka.example.com', 'tok');
 
   Completer<void>? gate;
+  Completer<void>? patchGate;
+  final patchStarted = Completer<void>();
   final getStarted = Completer<void>();
   bool failGets = false;
   var boardName = 'Fresh Board';
@@ -44,6 +48,26 @@ class _FakeApi extends PlankaApi {
     ) as Map<String, dynamic>;
     (json['item'] as Map<String, dynamic>)['name'] = boardName;
     return Envelope.parse(json);
+  }
+
+  @override
+  Future<Envelope> patch(String path, Object? body) async {
+    if (!patchStarted.isCompleted) patchStarted.complete();
+    final pending = patchGate;
+    if (pending != null) await pending.future;
+    return Envelope.parse({'item': (body as Map).cast<String, dynamic>()});
+  }
+}
+
+class _CountingEnvelopeCache extends EnvelopeCache {
+  _CountingEnvelopeCache({required super.directory});
+
+  var putCalls = 0;
+
+  @override
+  Future<void> put(String key, Envelope env) {
+    putCalls++;
+    return super.put(key, env);
   }
 }
 
@@ -195,5 +219,121 @@ void main() {
     final loaded = await freshPublished.future;
     expect(loaded.board.name, 'Fresh Board');
     expect(loaded.isStale, isFalse);
+  });
+
+  test('confirmed card edits survive a cold offline reopen', () async {
+    final dir = Directory.systemTemp.createTempSync('board_cache_edit');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final cache = EnvelopeCache(directory: dir);
+    final api = _FakeApi()..patchGate = Completer<void>();
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        currentAccountProvider.overrideWith(_FixedAccount.new),
+        envelopeCacheProvider.overrideWithValue(cache),
+        boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+      ],
+    );
+    final provider = boardProvider(_boardId);
+    await container.read(provider.future);
+    final originalName = container.read(provider).value!.cards[_cardId]!.name;
+
+    final edit = container.read(provider.notifier).renameCard(
+          _cardId,
+          'Saved edit',
+        );
+    await api.patchStarted.future;
+    final persistedWhilePending = await cache.get(
+      '${_account.id}-board-$_boardId',
+    );
+    expect(
+      BoardState.fromEnvelope(persistedWhilePending!).cards[_cardId]!.name,
+      originalName,
+      reason: 'an optimistic value must not reach disk before confirmation',
+    );
+
+    api.patchGate!.complete();
+    await edit;
+    container.dispose();
+
+    final offlineContainer = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(_FakeApi()..failGets = true),
+        currentAccountProvider.overrideWith(_FixedAccount.new),
+        envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: dir)),
+        boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+      ],
+    );
+    addTearDown(offlineContainer.dispose);
+    final reopened = await offlineContainer.read(
+      boardProvider(_boardId).future,
+    );
+    expect(reopened!.cards[_cardId]!.name, 'Saved edit');
+  });
+
+  test('socket-delivered card changes survive a cold offline reopen', () async {
+    final dir = Directory.systemTemp.createTempSync('board_cache_socket');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(_FakeApi()),
+        currentAccountProvider.overrideWith(_FixedAccount.new),
+        envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: dir)),
+        boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+      ],
+    );
+    final provider = boardProvider(_boardId);
+    await container.read(provider.future);
+    container.read(provider.notifier).applySocketEvent(
+          SocketEvent.parse('cardUpdate', {
+            'item': {'id': _cardId, 'name': 'Socket update'},
+          }),
+        );
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    container.dispose();
+
+    final offlineContainer = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(_FakeApi()..failGets = true),
+        currentAccountProvider.overrideWith(_FixedAccount.new),
+        envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: dir)),
+        boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+      ],
+    );
+    addTearDown(offlineContainer.dispose);
+    final reopened = await offlineContainer.read(
+      boardProvider(_boardId).future,
+    );
+    expect(reopened!.cards[_cardId]!.name, 'Socket update');
+  });
+
+  test('a burst of socket changes is coalesced into one cache write', () async {
+    final dir = Directory.systemTemp.createTempSync('board_cache_burst');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final cache = _CountingEnvelopeCache(directory: dir);
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWithValue(_FakeApi()),
+        currentAccountProvider.overrideWith(_FixedAccount.new),
+        envelopeCacheProvider.overrideWithValue(cache),
+        boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+      ],
+    );
+    final provider = boardProvider(_boardId);
+    await container.read(provider.future);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    final writesBeforeBurst = cache.putCalls;
+
+    final notifier = container.read(provider.notifier);
+    for (var index = 0; index < 12; index++) {
+      notifier.applySocketEvent(
+        SocketEvent.parse('cardUpdate', {
+          'item': {'id': _cardId, 'name': 'Update $index'},
+        }),
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    expect(cache.putCalls - writesBeforeBurst, 1);
   });
 }

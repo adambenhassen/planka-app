@@ -223,6 +223,55 @@ class BoardState {
     );
   }
 
+  /// Builds a durable board snapshot from the state currently rendered.
+  /// Unknown server fields and unrelated envelope collections are retained
+  /// from [base], while each collection owned by this state is reconciled.
+  Envelope toEnvelope(Envelope? base) {
+    final raw = Map<String, dynamic>.from(base?.raw ?? const {});
+    final oldItem = (raw['item'] as Map?)?.cast<String, dynamic>() ?? const {};
+    raw['item'] = {...oldItem, ...board.toJson()};
+    final included = Map<String, dynamic>.from(
+        (raw['included'] as Map?)?.cast<String, dynamic>() ?? const {});
+    included['lists'] =
+        _snapshotRows(included['lists'], lists, (row) => row.toJson());
+    included['cards'] =
+        _snapshotRows(included['cards'], cards.values, (row) => row.toJson());
+    included['labels'] =
+        _snapshotRows(included['labels'], labels, (row) => row.toJson());
+    included['cardLabels'] =
+        _snapshotRows(included['cardLabels'], cardLabels,
+            (row) => row.toJson());
+    included['cardMemberships'] = _snapshotRows(
+        included['cardMemberships'], cardMemberships, (row) => row.toJson());
+    included['boardMemberships'] = _snapshotRows(
+        included['boardMemberships'], boardMemberships, (row) => row.toJson());
+    included['users'] =
+        _snapshotRows(included['users'], users, (row) => row.toJson());
+    included['taskLists'] =
+        _snapshotRows(included['taskLists'], taskLists, (row) => row.toJson());
+    included['tasks'] =
+        _snapshotRows(included['tasks'], tasks, (row) => row.toJson());
+    included['attachments'] =
+        _snapshotRows(included['attachments'], attachments,
+            (row) => row.toJson());
+    included['comments'] =
+        _snapshotRows(included['comments'], comments,
+            (row) => row.toJson());
+    included['customFieldGroups'] = _snapshotRows(
+        included['customFieldGroups'], customFieldGroups,
+        (row) => row.toJson());
+    included['customFields'] =
+        _snapshotRows(included['customFields'], customFields,
+            (row) => row.toJson());
+    included['customFieldValues'] = _snapshotRows(
+        included['customFieldValues'], customFieldValues, (row) => row.toJson());
+    included['baseCustomFieldGroups'] = _snapshotRows(
+        included['baseCustomFieldGroups'], baseCustomFieldGroups,
+        (row) => row.toJson());
+    raw['included'] = included;
+    return Envelope.parse(raw);
+  }
+
   /// True while some group was instantiated from a base group this state holds
   /// no template for — its name and fields still have to come from the project.
   bool get needsBaseCustomFields => customFieldGroups.any((g) =>
@@ -338,6 +387,24 @@ class BoardState {
         baseCustomFieldGroups:
             baseCustomFieldGroups ?? this.baseCustomFieldGroups,
       );
+}
+
+List<Map<String, dynamic>> _snapshotRows<T>(
+  Object? rawRows,
+  Iterable<T> rows,
+  Map<String, dynamic> Function(T) toJson,
+) {
+  final oldRows = <String, Map<String, dynamic>>{};
+  for (final raw in rawRows as List? ?? const []) {
+    if (raw is Map && raw['id'] is String) {
+      oldRows[raw['id'] as String] = raw.cast<String, dynamic>();
+    }
+  }
+  return rows.map((row) {
+    final json = toJson(row);
+    final previous = oldRows[json['id']];
+    return {...?previous, ...json};
+  }).toList();
 }
 
 /// Merge a partial socket payload into an existing card (e.g. `{id, position}`).
@@ -1234,8 +1301,125 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   final List<_PendingOptimisticChange> _pendingOptimisticChanges = [];
   final Map<String, int> _deletedRowVersions = {};
   var _eventSequence = 0;
+  void Function()? _boardCacheSelfListener;
+  Timer? _boardCacheWriteTimer;
+  EnvelopeCache? _boardEnvelopeCache;
+  AccountCacheLifecycle? _boardCacheLifecycle;
+  Envelope? _boardEnvelope;
+  BoardState? _latestBoardCacheState;
+  String? _boardCacheAccountId;
+  var _boardCacheDirty = false;
+  var _boardCacheWriteInProgress = false;
+  var _discardBoardCacheWrites = false;
+  var _boardCacheGeneration = 0;
+
+  static const _boardCacheDebounce = Duration(milliseconds: 200);
+
+  void _watchBoardCache(String accountId) {
+    if (_boardCacheSelfListener != null &&
+        _boardCacheAccountId == accountId) {
+      return;
+    }
+    _boardCacheSelfListener?.call();
+    _boardCacheWriteTimer?.cancel();
+    _boardEnvelopeCache = ref.read(envelopeCacheProvider);
+    _boardCacheLifecycle = ref.read(cacheLifecycleProvider);
+    _boardCacheAccountId = accountId;
+    _discardBoardCacheWrites = false;
+    final listener = listenSelf((previous, next) {
+      if (!next.hasValue || _discardBoardCacheWrites) return;
+      final current = next.value;
+      if (current == null) return;
+      if (identical(previous?.value, current)) return;
+      _latestBoardCacheState = current;
+      _boardCacheDirty = true;
+      if (_pendingOptimisticChanges.isEmpty) _scheduleBoardCacheWrite();
+    });
+    _boardCacheSelfListener = listener;
+    ref.onDispose(() {
+      listener();
+      if (!identical(_boardCacheSelfListener, listener)) return;
+      _boardCacheSelfListener = null;
+      _boardCacheWriteTimer?.cancel();
+      if (!_discardBoardCacheWrites && _pendingOptimisticChanges.isEmpty) {
+        unawaited(_flushBoardCache());
+      }
+    });
+  }
+
+  void _scheduleBoardCacheWrite() {
+    _boardCacheWriteTimer?.cancel();
+    _boardCacheWriteTimer = Timer(_boardCacheDebounce, () {
+      _boardCacheWriteTimer = null;
+      unawaited(_flushBoardCache());
+    });
+  }
+
+  Future<void> _flushBoardCache() async {
+    _boardCacheWriteTimer?.cancel();
+    _boardCacheWriteTimer = null;
+    if (!_boardCacheDirty || _pendingOptimisticChanges.isNotEmpty) return;
+    final cache = _boardEnvelopeCache;
+    final lifecycle = _boardCacheLifecycle;
+    final accountId = _boardCacheAccountId;
+    final generation = _boardCacheGeneration;
+    if (_discardBoardCacheWrites ||
+        cache == null ||
+        lifecycle == null ||
+        accountId == null ||
+        !lifecycle.isUsable(accountId)) {
+      _boardCacheDirty = false;
+      return;
+    }
+    if (_boardCacheWriteInProgress) return;
+
+    _boardCacheWriteInProgress = true;
+    try {
+      while (_boardCacheDirty &&
+          _pendingOptimisticChanges.isEmpty &&
+          !_discardBoardCacheWrites &&
+          generation == _boardCacheGeneration &&
+          lifecycle.isUsable(accountId)) {
+        final current = _latestBoardCacheState;
+        if (current == null) {
+          _boardCacheDirty = false;
+          break;
+        }
+        _boardCacheDirty = false;
+        final envelope = current.toEnvelope(_boardEnvelope);
+        if (_sameJson(envelope.raw, _boardEnvelope?.raw)) continue;
+        try {
+          await cache.put('$accountId-board-$boardId', envelope);
+          if (generation == _boardCacheGeneration) _boardEnvelope = envelope;
+        } on AccountCacheClosedException {
+          _boardCacheDirty = false;
+        } catch (error) {
+          debugPrint('board cache write failed: ${redactDiagnostic(error)}');
+        }
+      }
+    } finally {
+      _boardCacheWriteInProgress = false;
+      if (_boardCacheDirty &&
+          _pendingOptimisticChanges.isEmpty &&
+          !_discardBoardCacheWrites) {
+        _scheduleBoardCacheWrite();
+      }
+    }
+  }
 
   void _disposeAccountResources() {
+    _boardCacheGeneration++;
+    _boardCacheWriteTimer?.cancel();
+    _boardCacheWriteTimer = null;
+    _boardCacheSelfListener?.call();
+    _boardCacheSelfListener = null;
+    _boardCacheDirty = false;
+    _discardBoardCacheWrites = true;
+    _boardEnvelopeCache = null;
+    _boardCacheLifecycle = null;
+    _boardCacheAccountId = null;
+    _boardEnvelope = null;
+    _latestBoardCacheState = null;
     _userRoomEvents?.cancel();
     _userRoomConnected?.cancel();
     _userRoomSelfListener?.call();
@@ -1298,11 +1482,13 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
             !ref.read(cacheLifecycleProvider).isUsable(account.id))) {
       throw StateError('Account changed');
     }
+    _watchBoardCache(account.id);
     final PlankaApi api = _accountApi ?? ref.read(apiProvider);
     return _loadForAccount(account, api);
   }
 
   Future<BoardState> _loadForAccount(Account account, PlankaApi api) async {
+    _watchBoardCache(account.id);
     final key = '${account.id}-board-$boardId';
     final cache = ref.read(envelopeCacheProvider);
     final cached = await cache.get(key);
@@ -1312,6 +1498,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       if (ref.mounted &&
           ref.read(currentAccountProvider)?.id == account.id &&
           ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+        _boardEnvelope = cached;
         state = AsyncData(cachedState);
       }
       cachedState = await _withBaseCustomFields(
@@ -1324,6 +1511,11 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
 
     try {
       final env = await PlankaRepo(api).board(boardId);
+      if (ref.mounted &&
+          ref.read(currentAccountProvider)?.id == account.id &&
+          ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+        _boardEnvelope = env;
+      }
       try {
         await cache.put(key, env);
       } on AccountCacheClosedException {
@@ -1825,6 +2017,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     } finally {
       _pendingOptimisticChanges.remove(change);
       _pruneDeletedRows();
+      if (_pendingOptimisticChanges.isEmpty) await _flushBoardCache();
     }
   }
 
@@ -1859,6 +2052,10 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
           (account?.id != boundAccountId ||
               !ref.read(cacheLifecycleProvider).isUsable(boundAccountId))) {
         return;
+      }
+      if (accountId != null &&
+          ref.read(cacheLifecycleProvider).isUsable(accountId)) {
+        _boardEnvelope = env;
       }
       if (accountId != null) {
         try {
@@ -1932,7 +2129,10 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   ) async {
     final env = await create;
     final cur = state.value;
-    if (cur != null) state = AsyncData(upsert(cur, fromJson(env.item)));
+    if (cur != null) {
+      state = AsyncData(upsert(cur, fromJson(env.item)));
+      await _flushBoardCache();
+    }
   }
 
   Future<void> createCard(String listId, String name) async {
@@ -2466,6 +2666,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
           PlankaBoardMembership.fromJson(env.item), (m) => m.id),
       users: users,
     ));
+    await _flushBoardCache();
   }
 
   Future<void> setBoardMemberRole(String membershipId, String role) async {
@@ -2767,6 +2968,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       users: users,
       cards: cards,
     ));
+    await _flushBoardCache();
     return fetched;
   }
 
@@ -2861,6 +3063,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       cards = {...cards, c.id: c};
     }
     state = AsyncData(cur.copyWith(cards: cards));
+    await _flushBoardCache();
   }
 
   Future<void> moveList(String listId,
