@@ -164,7 +164,7 @@ class EnvelopeCache {
         if (!await intent.exists()) {
           throw StateError('Envelope deletion intent was not persisted');
         }
-      } catch (e, _) {
+      } catch (e) {
         if (e is AccountCacheClosedException) rethrow;
         // A malformed or unwritable .pending path cannot be the fail-closed
         // record. Keep a separate durable marker before touching either

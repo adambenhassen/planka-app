@@ -40,22 +40,22 @@ final accountStateEpochProvider =
     );
 
 class AccountStateEpochNotifier extends Notifier<int> {
-  final Set<void Function()> _listeners = {};
+  final Set<void Function(bool)> _listeners = {};
 
   @override
   int build() => 0;
 
-  void invalidate() {
+  void invalidate({bool preserveSameAccountState = false}) {
     // Clear account-owned state while its current refs are still mounted.
     // Updating the epoch first would dispose those refs before their local
     // barrier callbacks could remove the prior account's value.
-    for (final listener in List<void Function()>.of(_listeners)) {
-      listener();
+    for (final listener in List<void Function(bool)>.of(_listeners)) {
+      listener(preserveSameAccountState);
     }
     state++;
   }
 
-  void Function() listen(void Function() listener) {
+  void Function() listen(void Function(bool preserveSameAccountState) listener) {
     _listeners.add(listener);
     return () => _listeners.remove(listener);
   }
@@ -320,7 +320,12 @@ class CurrentAccountNotifier extends Notifier<Account?> {
             previous.serverUrl != account.serverUrl ||
             previous.token != account.token;
     if (invalidateState && credentialsChanged) {
-      ref.read(accountStateEpochProvider.notifier).invalidate();
+      ref.read(accountStateEpochProvider.notifier).invalidate(
+        preserveSameAccountState:
+            previous != null &&
+            account != null &&
+            previous.id == account.id,
+      );
     }
     if (previous != null && credentialsChanged) {
       await ref.read(imageCacheProvider).evictDecodedAccount(previous.id);
