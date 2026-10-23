@@ -1699,6 +1699,11 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     } on AccountCacheClosedException {
       rethrow;
     } catch (error) {
+      if (error is ApiException &&
+          (error.statusCode == 403 || error.statusCode == 404)) {
+        await cache.delete(key);
+        rethrow;
+      }
       if (cachedState != null) {
         debugPrint(
           'board refresh failed, serving cached data: '

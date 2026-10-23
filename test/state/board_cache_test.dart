@@ -58,6 +58,7 @@ class _FakeApi extends PlankaApi {
   final getStarted = Completer<void>();
   var getCalls = 0;
   bool failGets = false;
+  int? getFailureStatusCode = 503;
   var boardName = 'Fresh Board';
   String? accountMarker;
   String? cardName;
@@ -69,7 +70,9 @@ class _FakeApi extends PlankaApi {
     if (!getStarted.isCompleted) getStarted.complete();
     final pending = gate;
     if (pending != null) await pending.future;
-    if (failGets) throw ApiException(503, 'server unavailable');
+    if (failGets) {
+      throw ApiException(getFailureStatusCode, 'server unavailable');
+    }
     final json = jsonDecode(
       File('test/fixtures/board_show.json').readAsStringSync(),
     ) as Map<String, dynamic>;
@@ -210,44 +213,147 @@ void main() {
     expect(freshState.isStale, isFalse);
   });
 
-  test('failed refresh marks the cached board stale', () async {
-    final dir = Directory.systemTemp.createTempSync('board_cache_offline');
-    addTearDown(() => dir.deleteSync(recursive: true));
-    final cachedJson = jsonDecode(
-      File('test/fixtures/board_show.json').readAsStringSync(),
-    ) as Map<String, dynamic>;
-    (cachedJson['item'] as Map<String, dynamic>)['name'] = 'Cached Board';
-    await EnvelopeCache(directory: dir).put(
-      '${_account.id}-board-$_boardId',
-      Envelope.parse(cachedJson),
-    );
+  for (final statusCode in <int?>[null, 503]) {
+    test('transient board failure $statusCode keeps the cached board', () async {
+      final dir = Directory.systemTemp.createTempSync(
+        'board_cache_offline_${statusCode ?? 'network'}',
+      );
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final cache = EnvelopeCache(directory: dir);
+      final key = '${_account.id}-board-$_boardId';
+      final cachedJson = jsonDecode(
+        File('test/fixtures/board_show.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      (cachedJson['item'] as Map<String, dynamic>)['name'] = 'Cached Board';
+      await cache.put(key, Envelope.parse(cachedJson));
 
-    final container = ProviderContainer(
-      overrides: [
-        apiProvider.overrideWithValue(_FakeApi()..failGets = true),
-        currentAccountProvider.overrideWith(_FixedAccount.new),
-        envelopeCacheProvider.overrideWithValue(EnvelopeCache(directory: dir)),
-        boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
-      ],
-    );
-    addTearDown(container.dispose);
-    final stalePublished = Completer<BoardState>();
-    final subscription = container.listen(
-      boardProvider(_boardId),
-      (previous, next) {
-        final value = next.value;
-        if (value?.isStale == true && !stalePublished.isCompleted) {
-          stalePublished.complete(value!);
-        }
-      },
-    );
-    addTearDown(subscription.close);
-    container.read(boardProvider(_boardId));
+      final container = ProviderContainer(
+        overrides: [
+          apiProvider.overrideWithValue(
+            _FakeApi()
+              ..failGets = true
+              ..getFailureStatusCode = statusCode,
+          ),
+          currentAccountProvider.overrideWith(_FixedAccount.new),
+          envelopeCacheProvider.overrideWithValue(cache),
+          boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+        ],
+      );
+      addTearDown(container.dispose);
+      final stalePublished = Completer<BoardState>();
+      final subscription = container.listen(
+        boardProvider(_boardId),
+        (previous, next) {
+          final value = next.value;
+          if (value?.isStale == true && !stalePublished.isCompleted) {
+            stalePublished.complete(value!);
+          }
+        },
+      );
+      addTearDown(subscription.close);
+      container.read(boardProvider(_boardId));
 
-    final stale = await stalePublished.future;
-    expect(stale.board.name, 'Cached Board');
-    expect(stale.isStale, isTrue);
-  });
+      final stale = await stalePublished.future;
+      expect(stale.board.name, 'Cached Board');
+      expect(stale.isStale, isTrue);
+      expect(await cache.get(key), isNotNull);
+
+      container.dispose();
+      final coldContainer = ProviderContainer(
+        overrides: [
+          apiProvider.overrideWithValue(_FakeApi()..failGets = true),
+          currentAccountProvider.overrideWith(_FixedAccount.new),
+          envelopeCacheProvider.overrideWithValue(cache),
+          boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+        ],
+      );
+      addTearDown(coldContainer.dispose);
+      final reopened = await coldContainer.read(
+        boardProvider(_boardId).future,
+      );
+      expect(reopened!.board.name, 'Cached Board');
+      expect(reopened.isStale, isTrue);
+    });
+  }
+
+  for (final statusCode in [403, 404]) {
+    test('$statusCode board load deletes only its account snapshot', () async {
+      final dir = Directory.systemTemp.createTempSync(
+        'board_cache_revoked_$statusCode',
+      );
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final cache = EnvelopeCache(directory: dir);
+      final otherAccount = Account(
+        serverUrl: _account.serverUrl,
+        token: 'tok-other',
+        userId: 'u2',
+        displayName: 'Other',
+      );
+      final targetKey = '${_account.id}-board-$_boardId';
+      final otherBoardKey = '${_account.id}-board-$_boardId-other';
+      final otherAccountKey = '${otherAccount.id}-board-$_boardId';
+      final cachedJson = jsonDecode(
+        File('test/fixtures/board_show.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      await cache.put(targetKey, Envelope.parse(cachedJson));
+      await cache.put(otherBoardKey, Envelope.parse(cachedJson));
+      await cache.put(otherAccountKey, Envelope.parse(cachedJson));
+
+      final container = ProviderContainer(
+        overrides: [
+          apiProvider.overrideWithValue(
+            _FakeApi()
+              ..failGets = true
+              ..getFailureStatusCode = statusCode,
+          ),
+          currentAccountProvider.overrideWith(_FixedAccount.new),
+          envelopeCacheProvider.overrideWithValue(cache),
+          boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+        ],
+      );
+      addTearDown(container.dispose);
+      final provider = boardProvider(_boardId);
+      await expectLater(
+        container.read(provider.future),
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.statusCode,
+            'statusCode',
+            equals(statusCode),
+          ),
+        ),
+      );
+
+      expect(await cache.get(targetKey), isNull);
+      expect(await cache.get(otherBoardKey), isNotNull);
+      expect(await cache.get(otherAccountKey), isNotNull);
+
+      container.dispose();
+      final coldContainer = ProviderContainer(
+        overrides: [
+          apiProvider.overrideWithValue(
+            _FakeApi()
+              ..failGets = true
+              ..getFailureStatusCode = null,
+          ),
+          currentAccountProvider.overrideWith(_FixedAccount.new),
+          envelopeCacheProvider.overrideWithValue(cache),
+          boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+        ],
+      );
+      addTearDown(coldContainer.dispose);
+      final coldProvider = boardProvider(_boardId);
+      await expectLater(
+        coldContainer.read(coldProvider.future),
+        throwsA(isA<ApiException>().having(
+          (error) => error.statusCode,
+          'statusCode',
+          isNull,
+        )),
+      );
+      expect(coldContainer.read(coldProvider).hasValue, isFalse);
+    });
+  }
 
   test('successful board fetch is shown when its cache write fails', () async {
     final dir = Directory.systemTemp.createTempSync(
