@@ -62,7 +62,6 @@ class _FakeApi extends PlankaApi {
   final getStartedByCall = <int, Completer<void>>{};
   var getCalls = 0;
   bool failGets = false;
-  bool failPatches = false;
   int? getFailureStatusCode = 503;
   var boardName = 'Fresh Board';
   String? accountMarker;
@@ -106,9 +105,16 @@ class _FakeApi extends PlankaApi {
     if (!patchStarted.isCompleted) patchStarted.complete();
     final pending = patchGate;
     if (pending != null) await pending.future;
-    if (failPatches) throw ApiException(409, 'mutation rejected');
     return Envelope.parse({'item': (body as Map).cast<String, dynamic>()});
   }
+}
+
+class _EmptySortApi extends _FakeApi {
+  @override
+  Future<Envelope> post(String path, Object? body) async => Envelope.parse({
+        'item': <String, dynamic>{},
+        'included': {'cards': <dynamic>[]},
+      });
 }
 
 class _CountingEnvelopeCache extends EnvelopeCache {
@@ -552,7 +558,7 @@ void main() {
         );
         addTearDown(() => dir.deleteSync(recursive: true));
         final cache = _GatedEnvelopeCache(directory: dir);
-        final api = _FakeApi()..failPatches = true;
+        final api = _EmptySortApi();
         api
           ..getGatesByCall[2] = Completer<void>()
           ..getFailuresByCall[2] = statusCode
@@ -576,12 +582,16 @@ void main() {
         final notifier =
             container.read(provider.notifier) as _RecoveringNotifier;
         notifier.triggerRecovery();
-        await api.getStartedByCall[2]!.future;
+        await api.getStartedByCall[2]!.future.timeout(
+          const Duration(seconds: 5),
+        );
 
         api.boardName = 'Newer Board';
-        final mutation = notifier.moveCard(_cardId, 'next-list');
-        await api.getStartedByCall[3]!.future;
-        await expectLater(mutation, throwsA(isA<ApiException>()));
+        final refetch = notifier.sortList('list', fieldName: 'name');
+        await api.getStartedByCall[3]!.future.timeout(
+          const Duration(seconds: 5),
+        );
+        await refetch.timeout(const Duration(seconds: 5));
 
         final key = '${_account.id}-board-$_boardId';
         expect(container.read(provider).value?.board.name, 'Newer Board');
@@ -591,7 +601,9 @@ void main() {
         );
 
         api.getGatesByCall[2]!.complete();
-        await api.getFailureObserved.future;
+        await api.getFailureObserved.future.timeout(
+          const Duration(seconds: 5),
+        );
         await cache.conditionalDeleteFinished.future.timeout(
           const Duration(seconds: 2),
         );
