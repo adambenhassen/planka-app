@@ -578,20 +578,36 @@ void main() {
         );
         addTearDown(container.dispose);
         final provider = boardProvider(_boardId);
-        await container.read(provider.future);
+        await container.read(provider.future).timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => throw StateError(
+            'initial board load did not finish',
+          ),
+        );
         final notifier =
             container.read(provider.notifier) as _RecoveringNotifier;
         notifier.triggerRecovery();
         await api.getStartedByCall[2]!.future.timeout(
           const Duration(seconds: 5),
+          onTimeout: () => throw StateError(
+            'older reconnect refetch did not start',
+          ),
         );
 
         api.boardName = 'Newer Board';
         final refetch = notifier.sortList('list', fieldName: 'name');
         await api.getStartedByCall[3]!.future.timeout(
           const Duration(seconds: 5),
+          onTimeout: () => throw StateError(
+            'newer fallback refetch did not start',
+          ),
         );
-        await refetch.timeout(const Duration(seconds: 5));
+        await refetch.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => throw StateError(
+            'newer fallback refetch did not finish',
+          ),
+        );
 
         final key = '${_account.id}-board-$_boardId';
         expect(container.read(provider).value?.board.name, 'Newer Board');
@@ -603,6 +619,7 @@ void main() {
         api.getGatesByCall[2]!.complete();
         await api.getFailureObserved.future.timeout(
           const Duration(seconds: 5),
+          onTimeout: () => throw StateError('older denial was not observed'),
         );
         await cache.conditionalDeleteFinished.future.timeout(
           const Duration(seconds: 2),
