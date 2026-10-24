@@ -160,15 +160,13 @@ class _GatedEnvelopeCache extends EnvelopeCache {
   @override
   Future<bool> deleteIfUnchanged(
     String key,
-    int expectedGeneration, {
-    bool Function()? shouldDelete,
-  }) async {
+    int expectedGeneration,
+  ) async {
     conditionalDeleteCalls++;
     try {
       final result = await super.deleteIfUnchanged(
         key,
         expectedGeneration,
-        shouldDelete: shouldDelete,
       );
       conditionalDeleteResult = result;
       if (result) {
@@ -590,6 +588,105 @@ void main() {
       'Replacement write',
     );
   });
+
+  for (final statusCode in [403, 404]) {
+    test(
+      '$statusCode denial after a failed refresh deletes the snapshot',
+      () async {
+        final dir = Directory.systemTemp.createTempSync(
+          'board_cache_late_denial_refresh_failure_$statusCode',
+        );
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final key = '${_account.id}-board-$_boardId';
+        final cachedJson = jsonDecode(
+          File('test/fixtures/board_show.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
+        (cachedJson['item'] as Map<String, dynamic>)['name'] =
+            'Revoked cached board';
+        final cache = _GatedEnvelopeCache(directory: dir);
+        await cache.put(key, Envelope.parse(cachedJson));
+
+        final oldApi = _FakeApi()..gate = Completer<void>();
+        final refreshedApi = _FakeApi()
+          ..failGets = true
+          ..getFailureStatusCode = 503;
+        final container = ProviderContainer(
+          overrides: [
+            apiProvider.overrideWith(
+              (ref) => ref.watch(currentAccountProvider)?.token ==
+                      _account.token
+                  ? oldApi
+                  : refreshedApi,
+            ),
+            currentAccountProvider.overrideWith(
+              () => _MutableAccount(_account),
+            ),
+            envelopeCacheProvider.overrideWithValue(cache),
+            boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
+            userSocketProvider.overrideWithValue(null),
+            userEventsProvider.overrideWithValue(const Stream.empty()),
+            userConnectedProvider.overrideWithValue(const Stream.empty()),
+            boardProvider.overrideWith2((id) => _RecoveringNotifier(id)),
+          ],
+        );
+        addTearDown(container.dispose);
+        final provider = boardProvider(_boardId);
+        final staleRefreshPublished = Completer<BoardState>();
+        final subscription = container.listen(provider, (previous, next) {
+          final value = next.value;
+          if (value?.isStale == true &&
+              !staleRefreshPublished.isCompleted) {
+            staleRefreshPublished.complete(value!);
+          }
+        });
+        addTearDown(subscription.close);
+        container.read(provider);
+        await oldApi.getStarted.future;
+
+        await container.read(currentAccountProvider.notifier).select(
+              _account.copyWith(token: 'refreshed-token'),
+            );
+        container.read(provider);
+        await refreshedApi.getFailureObserved.future;
+        final staleState = await staleRefreshPublished.future;
+        expect(staleState.board.name, 'Revoked cached board');
+
+        oldApi
+          ..failGets = true
+          ..getFailureStatusCode = statusCode
+          ..gate!.complete();
+        await oldApi.getFailureObserved.future;
+        await cache.conditionalDeleteFinished.future.timeout(
+          const Duration(seconds: 2),
+        );
+        await pumpEventQueue();
+
+        expect(cache.conditionalDeleteResult, isTrue);
+        expect(await cache.get(key), isNull);
+        expect(container.read(provider).value, isNull);
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(await EnvelopeCache(directory: dir).get(key), isNull);
+        container.dispose();
+
+        final offlineContainer = ProviderContainer(
+          overrides: [
+            apiProvider.overrideWithValue(_FakeApi()..failGets = true),
+            currentAccountProvider.overrideWith(_FixedAccount.new),
+            envelopeCacheProvider.overrideWithValue(
+              EnvelopeCache(directory: dir),
+            ),
+            boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+          ],
+        );
+        addTearDown(offlineContainer.dispose);
+        await expectLater(
+          offlineContainer.read(boardProvider(_boardId).future),
+          throwsA(isA<ApiException>()),
+        );
+        expect(await EnvelopeCache(directory: dir).get(key), isNull);
+      },
+    );
+  }
 
   test('an old denial cannot delete after the cache write drain', () async {
     final dir = Directory.systemTemp.createTempSync(

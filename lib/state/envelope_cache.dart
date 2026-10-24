@@ -190,14 +190,12 @@ class EnvelopeCache {
   /// cannot be removed by this denial's delayed file operations.
   Future<bool> deleteIfUnchanged(
     String key,
-    int expectedGeneration, {
-    bool Function()? shouldDelete,
-  }) async {
+    int expectedGeneration,
+  ) async {
     final lease = _lifecycle.acquireForKey(key);
     try {
       return await _serializeKeyOperation(key, () async {
-        if (!isGenerationCurrent(key, expectedGeneration) ||
-            (shouldDelete != null && !shouldDelete())) {
+        if (!isGenerationCurrent(key, expectedGeneration)) {
           return false;
         }
         await _deleteWithLease(key, lease);
