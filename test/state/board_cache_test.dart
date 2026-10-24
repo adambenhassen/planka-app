@@ -679,10 +679,21 @@ void main() {
           ],
         );
         addTearDown(offlineContainer.dispose);
-        await expectLater(
-          offlineContainer.read(boardProvider(_boardId).future),
-          throwsA(isA<ApiException>()),
+        final offlineProvider = boardProvider(_boardId);
+        final offlineLoadSettled = Completer<AsyncValue<BoardState?>>();
+        final offlineSubscription = offlineContainer.listen(
+          offlineProvider,
+          (previous, next) {
+            if (next.hasError && !offlineLoadSettled.isCompleted) {
+              offlineLoadSettled.complete(next);
+            }
+          },
         );
+        addTearDown(offlineSubscription.close);
+        offlineContainer.read(offlineProvider);
+        final reopened = await offlineLoadSettled.future;
+        expect(reopened.hasError, isTrue);
+        expect(reopened.value, isNull);
         expect(await EnvelopeCache(directory: dir).get(key), isNull);
       },
     );
