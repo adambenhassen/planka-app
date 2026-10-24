@@ -126,15 +126,25 @@ class _GatedEnvelopeCache extends EnvelopeCache {
   var conditionalDeleteCalls = 0;
   bool? conditionalDeleteResult;
 
-  @override
-  Future<void> put(String key, Envelope env) async {
+  Future<void> _gatePut() async {
     putCalls++;
     final gate = putGate;
     if (putCalls == gateOnPutCall && gate != null) {
-      gatedPutStarted.complete();
+      if (!gatedPutStarted.isCompleted) gatedPutStarted.complete();
       await gate.future;
     }
+  }
+
+  @override
+  Future<void> put(String key, Envelope env) async {
+    await _gatePut();
     await super.put(key, env);
+  }
+
+  @override
+  Future<bool> putReplacement(String key, Envelope env) async {
+    await _gatePut();
+    return super.putReplacement(key, env);
   }
 
   @override
