@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -30,6 +31,8 @@ class EnvelopeCache {
 
   final Directory? _override;
   final AccountCacheLifecycle _lifecycle;
+  final Map<String, int> _replacementGenerations = {};
+  final Map<String, Future<void>> _keyOperationTails = {};
 
   Future<File> _file(String key, {bool requireBackupExclusion = false}) async {
     final bucket = _bucketForKey(key);
@@ -121,8 +124,36 @@ class EnvelopeCache {
   Future<void> put(String key, Envelope env) async {
     final lease = _lifecycle.acquireForKey(key);
     try {
-      await _putWithLease(key, env, lease);
+      await _serializeKeyOperation(
+        key,
+        () => _putWithLease(key, env, lease),
+      );
       lease.ensureOpen();
+    } finally {
+      lease.release();
+    }
+  }
+
+  /// Version of the last successful full replacement written for [key].
+  int replacementGeneration(String key) =>
+      _replacementGenerations[key] ?? 0;
+
+  bool isGenerationCurrent(String key, int generation) =>
+      replacementGeneration(key) == generation;
+
+  /// Writes a full server response and advances its key generation only when
+  /// the envelope reached disk successfully.
+  Future<bool> putReplacement(String key, Envelope env) async {
+    final lease = _lifecycle.acquireForKey(key);
+    try {
+      return await _serializeKeyOperation(key, () async {
+        final written = await _putWithLease(key, env, lease);
+        lease.ensureOpen();
+        if (written) {
+          _replacementGenerations[key] = replacementGeneration(key) + 1;
+        }
+        return written;
+      });
     } finally {
       lease.release();
     }
@@ -144,6 +175,64 @@ class EnvelopeCache {
   /// confirming refresh failed, so the cached value is pre-mutation).
   Future<void> delete(String key) async {
     final lease = _lifecycle.acquireForKey(key);
+    try {
+      await _serializeKeyOperation(key, () async {
+        await _deleteWithLease(key, lease);
+      });
+      lease.ensureOpen();
+    } finally {
+      lease.release();
+    }
+  }
+
+  /// Deletes [key] only when no newer full server response replaced it.
+  /// Writes and deletes for a key are serialized so a later replacement write
+  /// cannot be removed by this denial's delayed file operations.
+  Future<bool> deleteIfUnchanged(
+    String key,
+    int expectedGeneration,
+  ) async {
+    final lease = _lifecycle.acquireForKey(key);
+    try {
+      return await _serializeKeyOperation(key, () async {
+        if (!isGenerationCurrent(key, expectedGeneration)) {
+          return false;
+        }
+        await _deleteWithLease(key, lease);
+        _replacementGenerations[key] = expectedGeneration + 1;
+        lease.ensureOpen();
+        return true;
+      });
+    } finally {
+      lease.release();
+    }
+  }
+
+  Future<T> _serializeKeyOperation<T>(
+    String key,
+    Future<T> Function() operation,
+  ) {
+    final previous = _keyOperationTails[key] ?? Future<void>.value();
+    final finished = Completer<void>();
+    final tail = finished.future;
+    _keyOperationTails[key] = tail;
+
+    Future<T> run() async {
+      await previous;
+      try {
+        return await operation();
+      } finally {
+        if (identical(_keyOperationTails[key], tail)) {
+          _keyOperationTails.remove(key);
+        }
+        finished.complete();
+      }
+    }
+
+    return run();
+  }
+
+  Future<void> _deleteWithLease(String key, AccountCacheLease lease) async {
     Object? firstFailure;
     StackTrace? firstFailureStack;
     void recordFailure(Object error, StackTrace stackTrace) {
@@ -151,115 +240,111 @@ class EnvelopeCache {
       firstFailureStack ??= stackTrace;
     }
 
+    // Record the removal intent before touching either representation. If
+    // one delete and the normal invalidation marker fail together, this
+    // independent durable marker keeps both live and cold readers from
+    // serving the stale envelope.
+    File? intent;
+    File? failClosed;
     try {
-      // Record the removal intent before touching either representation. If
-      // one delete and the normal invalidation marker fail together, this
-      // independent durable marker keeps both live and cold readers from
-      // serving the stale envelope.
-      File? intent;
-      File? failClosed;
+      intent = await _deletionIntentFile(key);
+      await intent.writeAsString('');
+      if (!await intent.exists()) {
+        throw StateError('Envelope deletion intent was not persisted');
+      }
+    } catch (e) {
+      if (e is AccountCacheClosedException) rethrow;
+      // A malformed or unwritable .pending path cannot be the fail-closed
+      // record. Keep a separate durable marker before touching either
+      // envelope representation, and verify that marker independently.
       try {
-        intent = await _deletionIntentFile(key);
-        await intent.writeAsString('');
-        if (!await intent.exists()) {
-          throw StateError('Envelope deletion intent was not persisted');
+        failClosed = await _failClosedFile(key);
+        await failClosed.writeAsString('');
+        if (!await failClosed.exists()) {
+          throw StateError('Envelope fail-closed marker was not persisted');
         }
-      } catch (e) {
-        if (e is AccountCacheClosedException) rethrow;
-        // A malformed or unwritable .pending path cannot be the fail-closed
-        // record. Keep a separate durable marker before touching either
-        // envelope representation, and verify that marker independently.
-        try {
-          failClosed = await _failClosedFile(key);
-          await failClosed.writeAsString('');
-          if (!await failClosed.exists()) {
-            throw StateError('Envelope fail-closed marker was not persisted');
-          }
-        } catch (fallbackError, fallbackStack) {
-          if (fallbackError is AccountCacheClosedException) rethrow;
-          recordFailure(fallbackError, fallbackStack);
-          lease.ensureOpen();
-          throw CachePurgeException(
-            'envelopes',
-            firstFailure!,
-            firstFailureStack ?? StackTrace.current,
-          );
-        }
-      }
-      final files = <File>[];
-      try {
-        files.add(await _file(key));
-      } catch (e, s) {
-        if (e is AccountCacheClosedException) rethrow;
-        recordFailure(e, s);
-      }
-      try {
-        files.add(await _legacyFile(key));
-      } catch (e, s) {
-        if (e is AccountCacheClosedException) rethrow;
-        recordFailure(e, s);
-      }
-      for (final file in files) {
-        try {
-          if (await file.exists()) await file.delete();
-        } catch (e, s) {
-          if (e is AccountCacheClosedException) rethrow;
-          recordFailure(e, s);
-        }
-        try {
-          if (await file.exists()) {
-            recordFailure(
-              StateError('Envelope cache target remains'),
-              StackTrace.current,
-            );
-          }
-        } catch (e, s) {
-          recordFailure(e, s);
-        }
-      }
-      try {
-        final invalidation = await _invalidationFile(key);
-        if (firstFailure != null) {
-          await invalidation.writeAsString('');
-        } else if (await invalidation.exists()) {
-          await invalidation.delete();
-        }
-      } catch (e, s) {
-        if (e is AccountCacheClosedException) rethrow;
-        recordFailure(e, s);
-      }
-      if (firstFailure == null && intent != null) {
-        try {
-          if (await intent.exists()) await intent.delete();
-        } catch (e, s) {
-          if (e is AccountCacheClosedException) rethrow;
-          recordFailure(e, s);
-        }
-      }
-      if (firstFailure == null && failClosed != null) {
-        try {
-          if (await failClosed.exists()) await failClosed.delete();
-          if (await failClosed.exists()) {
-            recordFailure(
-              StateError('Envelope fail-closed marker remains'),
-              StackTrace.current,
-            );
-          }
-        } catch (e, s) {
-          if (e is AccountCacheClosedException) rethrow;
-          recordFailure(e, s);
-        }
-      }
-      lease.ensureOpen();
-      if (firstFailure != null) {
+      } catch (fallbackError, fallbackStack) {
+        if (fallbackError is AccountCacheClosedException) rethrow;
+        recordFailure(fallbackError, fallbackStack);
+        lease.ensureOpen();
         throw CachePurgeException(
           'envelopes',
           firstFailure!,
           firstFailureStack ?? StackTrace.current,
         );
       }
-    } finally {
-      lease.release();
+    }
+    final files = <File>[];
+    try {
+      files.add(await _file(key));
+    } catch (e, s) {
+      if (e is AccountCacheClosedException) rethrow;
+      recordFailure(e, s);
+    }
+    try {
+      files.add(await _legacyFile(key));
+    } catch (e, s) {
+      if (e is AccountCacheClosedException) rethrow;
+      recordFailure(e, s);
+    }
+    for (final file in files) {
+      try {
+        if (await file.exists()) await file.delete();
+      } catch (e, s) {
+        if (e is AccountCacheClosedException) rethrow;
+        recordFailure(e, s);
+      }
+      try {
+        if (await file.exists()) {
+          recordFailure(
+            StateError('Envelope cache target remains'),
+            StackTrace.current,
+          );
+        }
+      } catch (e, s) {
+        recordFailure(e, s);
+      }
+    }
+    try {
+      final invalidation = await _invalidationFile(key);
+      if (firstFailure != null) {
+        await invalidation.writeAsString('');
+      } else if (await invalidation.exists()) {
+        await invalidation.delete();
+      }
+    } catch (e, s) {
+      if (e is AccountCacheClosedException) rethrow;
+      recordFailure(e, s);
+    }
+    if (firstFailure == null && intent != null) {
+      try {
+        if (await intent.exists()) await intent.delete();
+      } catch (e, s) {
+        if (e is AccountCacheClosedException) rethrow;
+        recordFailure(e, s);
+      }
+    }
+    if (firstFailure == null && failClosed != null) {
+      try {
+        if (await failClosed.exists()) await failClosed.delete();
+        if (await failClosed.exists()) {
+          recordFailure(
+            StateError('Envelope fail-closed marker remains'),
+            StackTrace.current,
+          );
+        }
+      } catch (e, s) {
+        if (e is AccountCacheClosedException) rethrow;
+        recordFailure(e, s);
+      }
+    }
+    lease.ensureOpen();
+    if (firstFailure != null) {
+      throw CachePurgeException(
+        'envelopes',
+        firstFailure!,
+        firstFailureStack ?? StackTrace.current,
+      );
     }
   }
 
@@ -409,7 +494,10 @@ class EnvelopeCache {
       try {
         final env = await fetch();
         lease.ensureOpen();
-        await _putWithLease(key, env, lease);
+        await _serializeKeyOperation(
+          key,
+          () => _putWithLease(key, env, lease),
+        );
         lease.ensureOpen();
         return env;
       } catch (e, s) {
@@ -436,7 +524,10 @@ class EnvelopeCache {
     try {
       final env = await fetch();
       lease.ensureOpen();
-      await _putWithLease(key, env, lease);
+      await _serializeKeyOperation(
+        key,
+        () => _putWithLease(key, env, lease),
+      );
       lease.ensureOpen();
       return env;
     } finally {
@@ -444,16 +535,18 @@ class EnvelopeCache {
     }
   }
 
-  Future<void> _putWithLease(
+  Future<bool> _putWithLease(
     String key,
     Envelope env,
     AccountCacheLease lease,
   ) async {
+    var written = false;
     try {
       final file = await _file(key, requireBackupExclusion: true);
       // Envelope data normally contains board state, not credentials, but the
       // redaction boundary also protects an accidental server echo.
       await file.writeAsString(redactDiagnostic(jsonEncode(env.raw)));
+      written = true;
       var invalidationCleared = false;
       try {
         final invalidation = await _invalidationFile(key);
@@ -478,6 +571,7 @@ class EnvelopeCache {
       // A failed cache write must never break the fetch that produced it.
     }
     lease.ensureOpen();
+    return written;
   }
 
   Future<Envelope?> _getWithLease(String key, AccountCacheLease lease) async {
