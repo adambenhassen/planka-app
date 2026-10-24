@@ -1737,7 +1737,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     EnvelopeCache cache,
     String key, {
     required int requestGeneration,
-  ) async {
+  }) async {
     bool isCurrentRequest() =>
         ref.mounted &&
         _buildGeneration == requestGeneration &&
