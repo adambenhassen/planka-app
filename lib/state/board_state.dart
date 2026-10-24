@@ -1324,7 +1324,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   var _boardCacheWriteInProgress = false;
   Future<void>? _boardCacheWriteFuture;
   final Map<String, Future<void>> _boardCacheFlushesBeforeBuild = {};
-  final Map<String, Future<void>> _boardCacheRevocationDeletes = {};
+  final Map<String, Future<bool>> _boardCacheRevocationDeletes = {};
   Future<void>? _boardCacheFullEnvelopeWrite;
   _PendingBoardCacheEnvelope? _boardCachePendingFullEnvelope;
   var _boardCacheFullEnvelopeWriteCount = 0;
@@ -1482,7 +1482,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       }
       _boardEnvelope = envelope;
       try {
-        await cache.put('$accountId-board-$boardId', envelope);
+        await cache.putReplacement('$accountId-board-$boardId', envelope);
       } on AccountCacheClosedException {
         rethrow;
       } catch (error) {
@@ -1694,12 +1694,15 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       cachedState = cachedState.copyWith(isStale: false);
     }
 
+    final cacheGeneration = cache.replacementGeneration(key);
     try {
       final env = await PlankaRepo(api).board(boardId);
       if (ref.mounted &&
           requestGeneration == _buildGeneration &&
+          cache.isGenerationCurrent(key, cacheGeneration) &&
           ref.read(currentAccountProvider)?.id == account.id &&
           ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+        _discardBoardCacheWrites = false;
         await _installBoardEnvelope(account.id, cache, env);
       }
       final loaded = await _withBaseCustomFields(
@@ -1718,6 +1721,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
           cache,
           key,
           requestGeneration: requestGeneration,
+          cacheGeneration: cacheGeneration,
         );
         rethrow;
       }
@@ -1737,18 +1741,17 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     EnvelopeCache cache,
     String key, {
     required int requestGeneration,
+    required int cacheGeneration,
   }) async {
-    bool isCurrentRequest() =>
+    bool isCurrentBuildForAccount() =>
         ref.mounted &&
         _buildGeneration == requestGeneration &&
         ref.read(currentAccountProvider)?.id == accountId &&
         ref.read(cacheLifecycleProvider).isUsable(accountId);
 
-    if (!isCurrentRequest() ||
-        (_boardCacheAccountId != null && _boardCacheAccountId != accountId)) {
-      return;
-    }
-    if (_boardCacheAccountId == accountId) {
+    if (isCurrentBuildForAccount() &&
+        _boardCacheAccountId == accountId &&
+        cache.isGenerationCurrent(key, cacheGeneration)) {
       _discardBoardCacheWrites = true;
       _boardCacheWriteTimer?.cancel();
       _boardCacheWriteTimer = null;
@@ -1758,32 +1761,64 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       final snapshotWrite = _boardCacheWriteFuture;
       if (snapshotWrite != null) await snapshotWrite;
 
-      if (!isCurrentRequest() || _boardCacheAccountId != accountId) return;
-      _boardCacheDirty = false;
-      _latestBoardCacheState = null;
-      _boardEnvelope = null;
+      if (isCurrentBuildForAccount() &&
+          _boardCacheAccountId == accountId &&
+          cache.isGenerationCurrent(key, cacheGeneration)) {
+        _boardCacheDirty = false;
+        _latestBoardCacheState = null;
+        _boardEnvelope = null;
+      } else if (isCurrentBuildForAccount() &&
+          _boardCacheAccountId == accountId) {
+        _discardBoardCacheWrites = false;
+        final current = state.value;
+        if (current != null) {
+          _latestBoardCacheState = current;
+          _boardCacheDirty = true;
+          _scheduleBoardCacheWrite();
+        }
+      }
     }
-    if (!isCurrentRequest()) return;
 
-    final pendingDelete = _boardCacheRevocationDeletes[accountId];
-    if (pendingDelete != null) {
-      await pendingDelete;
-      if (!isCurrentRequest()) return;
-      state = const AsyncData<BoardState?>(null);
-      return;
-    }
-
-    final deletion = cache.delete(key);
+    final deletion = cache.deleteIfUnchanged(
+      key,
+      cacheGeneration,
+      shouldDelete: () {
+        if (!ref.mounted) return true;
+        return ref.read(currentAccountProvider)?.id != accountId ||
+            _buildGeneration == requestGeneration;
+      },
+    );
     _boardCacheRevocationDeletes[accountId] = deletion;
+    var deleted = false;
     try {
-      await deletion;
+      deleted = await deletion;
+    } on AccountCacheClosedException {
+      // Account removal owns cleanup after its lifecycle barrier closes.
+      return;
     } finally {
-      if (identical(_boardCacheRevocationDeletes[accountId], deletion)) {
+      if (identical(
+        _boardCacheRevocationDeletes[accountId],
+        deletion,
+      )) {
         _boardCacheRevocationDeletes.remove(accountId);
       }
     }
-    if (!isCurrentRequest()) return;
-    state = const AsyncData<BoardState?>(null);
+    if (deleted &&
+        isCurrentBuildForAccount() &&
+        _boardCacheAccountId == accountId) {
+      state = const AsyncData<BoardState?>(null);
+    } else if (!deleted &&
+        !cache.isGenerationCurrent(key, cacheGeneration) &&
+        isCurrentBuildForAccount() &&
+        _boardCacheAccountId == accountId) {
+      _discardBoardCacheWrites = false;
+      final current = state.value;
+      if (current != null) {
+        _latestBoardCacheState = current;
+        _boardCacheDirty = true;
+        _scheduleBoardCacheWrite();
+      }
+    }
   }
 
   Future<void> _awaitBoardCacheRevocationDeleteBeforeBuild(
@@ -2316,6 +2351,10 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     }
     final accountId = boundAccountId ?? currentAccount?.id;
     final PlankaApi api = _accountApi ?? ref.read(apiProvider);
+    final cache = ref.read(envelopeCacheProvider);
+    final key = accountId == null ? null : '$accountId-board-$boardId';
+    final cacheGeneration =
+        key == null ? null : cache.replacementGeneration(key);
     final seenBeforeFetch = _stateChangesSeen;
     try {
       final env = await PlankaRepo(api).board(boardId);
@@ -2352,9 +2391,11 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       }
       if (discardOnEvent && _stateChangesSeen != seenBeforeFetch) return;
       if (accountId != null) {
+        if (!cache.isGenerationCurrent(key!, cacheGeneration!)) return;
+        _discardBoardCacheWrites = false;
         await _installBoardEnvelope(
           accountId,
-          ref.read(envelopeCacheProvider),
+          cache,
           env,
         );
       }
@@ -2373,14 +2414,14 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         ref.invalidate(cardCommentsProvider((boardId, cardId)));
       }
     } on ApiException catch (error) {
-      if (!ref.mounted || requestGeneration != _buildGeneration) return;
       if (accountId != null &&
           (error.statusCode == 403 || error.statusCode == 404)) {
         await _deleteRevokedBoardSnapshot(
           accountId,
-          ref.read(envelopeCacheProvider),
-          '$accountId-board-$boardId',
+          cache,
+          key!,
           requestGeneration: requestGeneration,
+          cacheGeneration: cacheGeneration!,
         );
       }
       if (!ref.mounted || requestGeneration != _buildGeneration) return;
