@@ -2477,9 +2477,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       for (final cardId in activeCardIds) {
         ref.invalidate(cardCommentsProvider((boardId, cardId)));
       }
-    } on ApiException catch (error) {
-      if (accountId != null &&
-          (error.statusCode == 403 || error.statusCode == 404)) {
+    } on ApiException catch (error, stackTrace) {
+      final denied = error.statusCode == 403 || error.statusCode == 404;
+      if (accountId != null && denied) {
         await _deleteRevokedBoardSnapshot(
           accountId,
           cache,
@@ -2490,6 +2490,10 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       }
       if (!ref.mounted || requestGeneration != _buildGeneration) return;
       onApiFailure?.call();
+      if (denied) {
+        state = AsyncError<BoardState?>(error, stackTrace);
+        return;
+      }
       // Keep current state on transient failures; next socket event heals it.
     }
   }

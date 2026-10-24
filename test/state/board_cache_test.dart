@@ -492,7 +492,16 @@ void main() {
 
       expect(cache.deleteCalls, 1);
       expect(await cache.get(key), isNull);
-      expect(container.read(provider).value, isNull);
+      final deniedState = container.read(provider);
+      expect(deniedState.hasError, isTrue);
+      expect(
+        deniedState.error,
+        isA<ApiException>().having(
+          (error) => error.statusCode,
+          'statusCode',
+          statusCode,
+        ),
+      );
       container.dispose();
       expect(await cache.get(key), isNull);
 
