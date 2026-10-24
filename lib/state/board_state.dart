@@ -2427,7 +2427,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
           accountId,
           cache,
           env,
-          cacheGeneration!,
+          cacheGeneration,
         );
       }
       if (!ref.mounted || requestGeneration != _buildGeneration) return;
