@@ -56,6 +56,7 @@ class _FakeApi extends PlankaApi {
   Completer<void>? patchGate;
   final patchStarted = Completer<void>();
   final getStarted = Completer<void>();
+  final getFailureObserved = Completer<ApiException>();
   var getCalls = 0;
   bool failGets = false;
   int? getFailureStatusCode = 503;
@@ -71,7 +72,9 @@ class _FakeApi extends PlankaApi {
     final pending = gate;
     if (pending != null) await pending.future;
     if (failGets) {
-      throw ApiException(getFailureStatusCode, 'server unavailable');
+      final error = ApiException(getFailureStatusCode, 'server unavailable');
+      if (!getFailureObserved.isCompleted) getFailureObserved.complete(error);
+      throw error;
     }
     final json = jsonDecode(
       File('test/fixtures/board_show.json').readAsStringSync(),
@@ -116,7 +119,9 @@ class _GatedEnvelopeCache extends EnvelopeCache {
   final int gateOnPutCall;
   Completer<void>? putGate;
   final gatedPutStarted = Completer<void>();
+  final deleteFinished = Completer<void>();
   var putCalls = 0;
+  var deleteCalls = 0;
 
   @override
   Future<void> put(String key, Envelope env) async {
@@ -127,6 +132,16 @@ class _GatedEnvelopeCache extends EnvelopeCache {
       await gate.future;
     }
     await super.put(key, env);
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    deleteCalls++;
+    try {
+      await super.delete(key);
+    } finally {
+      if (!deleteFinished.isCompleted) deleteFinished.complete();
+    }
   }
 }
 
@@ -391,6 +406,221 @@ void main() {
       );
     });
   }
+
+  for (final statusCode in [403, 404]) {
+    test('$statusCode reconnect denial deletes its board snapshot', () async {
+      final dir = Directory.systemTemp.createTempSync(
+        'board_cache_reconnect_denied_$statusCode',
+      );
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final cache = _GatedEnvelopeCache(directory: dir);
+      final api = _FakeApi();
+      final container = ProviderContainer(
+        overrides: [
+          apiProvider.overrideWithValue(api),
+          currentAccountProvider.overrideWith(_FixedAccount.new),
+          envelopeCacheProvider.overrideWithValue(cache),
+          boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
+          userSocketProvider.overrideWithValue(null),
+          userEventsProvider.overrideWithValue(const Stream.empty()),
+          userConnectedProvider.overrideWithValue(const Stream.empty()),
+          boardProvider.overrideWith2((id) => _RecoveringNotifier(id)),
+        ],
+      );
+      addTearDown(container.dispose);
+      final provider = boardProvider(_boardId);
+      final key = '${_account.id}-board-$_boardId';
+      await container.read(provider.future);
+      expect(await cache.get(key), isNotNull);
+
+      api
+        ..failGets = true
+        ..getFailureStatusCode = statusCode;
+      (container.read(provider.notifier) as _RecoveringNotifier)
+          .triggerRecovery();
+      await cache.deleteFinished.future.timeout(const Duration(seconds: 2));
+      await pumpEventQueue();
+
+      expect(cache.deleteCalls, 1);
+      expect(await cache.get(key), isNull);
+      expect(container.read(provider).value, isNull);
+      container.dispose();
+      expect(await cache.get(key), isNull);
+
+      final coldContainer = ProviderContainer(
+        overrides: [
+          apiProvider.overrideWithValue(_FakeApi()..failGets = true),
+          currentAccountProvider.overrideWith(_FixedAccount.new),
+          envelopeCacheProvider.overrideWithValue(cache),
+          boardProvider.overrideWith2((id) => _LoadingNotifier(id)),
+        ],
+      );
+      addTearDown(coldContainer.dispose);
+      final coldProvider = boardProvider(_boardId);
+      final coldLoadSettled = Completer<AsyncValue<BoardState?>>();
+      final coldSubscription = coldContainer.listen(
+        coldProvider,
+        (previous, next) {
+          if ((next.hasError || next.value?.isStale == true) &&
+              !coldLoadSettled.isCompleted) {
+            coldLoadSettled.complete(next);
+          }
+        },
+      );
+      addTearDown(coldSubscription.close);
+      coldContainer.read(coldProvider);
+      final reopened = await coldLoadSettled.future;
+      expect(reopened.hasError, isTrue);
+      expect(reopened.value, isNull);
+    });
+  }
+
+  test('an old denied load preserves a refreshed same-account snapshot',
+      () async {
+    final dir = Directory.systemTemp.createTempSync(
+      'board_cache_old_denial',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final cache = _GatedEnvelopeCache(directory: dir);
+    final oldApi = _FakeApi()..gate = Completer<void>();
+    final refreshedApi = _FakeApi()..boardName = 'Replacement Board';
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWith(
+          (ref) => ref.watch(currentAccountProvider)?.token == _account.token
+              ? oldApi
+              : refreshedApi,
+        ),
+        currentAccountProvider.overrideWith(() => _MutableAccount(_account)),
+        envelopeCacheProvider.overrideWithValue(cache),
+        boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
+        userSocketProvider.overrideWithValue(null),
+        userEventsProvider.overrideWithValue(const Stream.empty()),
+        userConnectedProvider.overrideWithValue(const Stream.empty()),
+        boardProvider.overrideWith2((id) => _RecoveringNotifier(id)),
+      ],
+    );
+    addTearDown(container.dispose);
+    final provider = boardProvider(_boardId);
+    final replacementPublished = Completer<BoardState>();
+    final subscription = container.listen(provider, (previous, next) {
+      final value = next.value;
+      if (value?.board.name == 'Replacement Board' &&
+          !replacementPublished.isCompleted) {
+        replacementPublished.complete(value!);
+      }
+    });
+    addTearDown(subscription.close);
+    container.read(provider);
+    await oldApi.getStarted.future;
+
+    await container.read(currentAccountProvider.notifier).select(
+          _account.copyWith(token: 'refreshed-token'),
+        );
+    container.read(provider);
+    await replacementPublished.future;
+    final key = '${_account.id}-board-$_boardId';
+    expect(
+      BoardState.fromEnvelope((await cache.get(key))!).board.name,
+      'Replacement Board',
+    );
+
+    oldApi
+      ..failGets = true
+      ..getFailureStatusCode = 403
+      ..gate!.complete();
+    await oldApi.getFailureObserved.future;
+    await pumpEventQueue();
+
+    expect(cache.deleteCalls, 0);
+    expect(
+      BoardState.fromEnvelope((await cache.get(key))!).board.name,
+      'Replacement Board',
+    );
+    container.read(provider.notifier).applySocketEvent(
+          SocketEvent.parse('cardUpdate', {
+            'item': {'id': _cardId, 'name': 'Replacement write'},
+          }),
+        );
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(
+      BoardState.fromEnvelope((await cache.get(key))!).cards[_cardId]!.name,
+      'Replacement write',
+    );
+  });
+
+  test('an old denial cannot delete after the cache write drain', () async {
+    final dir = Directory.systemTemp.createTempSync(
+      'board_cache_old_denial_drain',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final cachedJson = jsonDecode(
+      File('test/fixtures/board_show.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    (cachedJson['item'] as Map<String, dynamic>)['name'] = 'Cached Board';
+    final key = '${_account.id}-board-$_boardId';
+    await EnvelopeCache(directory: dir).put(key, Envelope.parse(cachedJson));
+
+    final cache = _GatedEnvelopeCache(directory: dir)
+      ..putGate = Completer<void>();
+    final oldApi = _FakeApi()..gate = Completer<void>();
+    final refreshedApi = _FakeApi()..boardName = 'Replacement Board';
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWith(
+          (ref) => ref.watch(currentAccountProvider)?.token == _account.token
+              ? oldApi
+              : refreshedApi,
+        ),
+        currentAccountProvider.overrideWith(() => _MutableAccount(_account)),
+        envelopeCacheProvider.overrideWithValue(cache),
+        boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
+        userSocketProvider.overrideWithValue(null),
+        userEventsProvider.overrideWithValue(const Stream.empty()),
+        userConnectedProvider.overrideWithValue(const Stream.empty()),
+        boardProvider.overrideWith2((id) => _RecoveringNotifier(id)),
+      ],
+    );
+    addTearDown(container.dispose);
+    final provider = boardProvider(_boardId);
+    final replacementPublished = Completer<BoardState>();
+    final subscription = container.listen(provider, (previous, next) {
+      final value = next.value;
+      if (value?.board.name == 'Replacement Board' &&
+          !replacementPublished.isCompleted) {
+        replacementPublished.complete(value!);
+      }
+    });
+    addTearDown(subscription.close);
+    container.read(provider);
+    await oldApi.getStarted.future;
+    container.read(provider.notifier).applySocketEvent(
+          SocketEvent.parse('cardUpdate', {
+            'item': {'id': _cardId, 'name': 'Pending old update'},
+          }),
+        );
+    await cache.gatedPutStarted.future;
+
+    oldApi
+      ..failGets = true
+      ..getFailureStatusCode = 403
+      ..gate!.complete();
+    await oldApi.getFailureObserved.future;
+    await pumpEventQueue();
+    await container.read(currentAccountProvider.notifier).select(
+          _account.copyWith(token: 'refreshed-token'),
+        );
+    container.read(provider);
+    cache.putGate!.complete();
+    await replacementPublished.future;
+    await pumpEventQueue();
+
+    expect(cache.deleteCalls, 0);
+    expect(
+      BoardState.fromEnvelope((await cache.get(key))!).board.name,
+      'Replacement Board',
+    );
+  });
 
   test('successful board fetch is shown when its cache write fails', () async {
     final dir = Directory.systemTemp.createTempSync(
