@@ -70,15 +70,15 @@ class _FakeApi extends PlankaApi {
 
   @override
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
-    getCalls++;
+    final call = ++getCalls;
     if (!getStarted.isCompleted) getStarted.complete();
-    final started = getStartedByCall[getCalls];
+    final started = getStartedByCall[call];
     if (started != null && !started.isCompleted) started.complete();
-    final pending = getGatesByCall[getCalls] ?? gate;
+    final pending = getGatesByCall[call] ?? gate;
     if (pending != null) await pending.future;
-    if (failGets || getFailuresByCall.containsKey(getCalls)) {
-      final statusCode = getFailuresByCall.containsKey(getCalls)
-          ? getFailuresByCall[getCalls]
+    if (failGets || getFailuresByCall.containsKey(call)) {
+      final statusCode = getFailuresByCall.containsKey(call)
+          ? getFailuresByCall[call]
           : getFailureStatusCode;
       final error = ApiException(statusCode, 'server unavailable');
       if (!getFailureObserved.isCompleted) getFailureObserved.complete(error);
