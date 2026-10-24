@@ -57,8 +57,12 @@ class _FakeApi extends PlankaApi {
   final patchStarted = Completer<void>();
   final getStarted = Completer<void>();
   final getFailureObserved = Completer<ApiException>();
+  final getGatesByCall = <int, Completer<void>>{};
+  final getFailuresByCall = <int, int?>{};
+  final getStartedByCall = <int, Completer<void>>{};
   var getCalls = 0;
   bool failGets = false;
+  bool failPatches = false;
   int? getFailureStatusCode = 503;
   var boardName = 'Fresh Board';
   String? accountMarker;
@@ -69,10 +73,15 @@ class _FakeApi extends PlankaApi {
   Future<Envelope> get(String path, {Map<String, dynamic>? query}) async {
     getCalls++;
     if (!getStarted.isCompleted) getStarted.complete();
-    final pending = gate;
+    final started = getStartedByCall[getCalls];
+    if (started != null && !started.isCompleted) started.complete();
+    final pending = getGatesByCall[getCalls] ?? gate;
     if (pending != null) await pending.future;
-    if (failGets) {
-      final error = ApiException(getFailureStatusCode, 'server unavailable');
+    if (failGets || getFailuresByCall.containsKey(getCalls)) {
+      final statusCode = getFailuresByCall.containsKey(getCalls)
+          ? getFailuresByCall[getCalls]
+          : getFailureStatusCode;
+      final error = ApiException(statusCode, 'server unavailable');
       if (!getFailureObserved.isCompleted) getFailureObserved.complete(error);
       throw error;
     }
@@ -97,6 +106,7 @@ class _FakeApi extends PlankaApi {
     if (!patchStarted.isCompleted) patchStarted.complete();
     final pending = patchGate;
     if (pending != null) await pending.future;
+    if (failPatches) throw ApiException(409, 'mutation rejected');
     return Envelope.parse({'item': (body as Map).cast<String, dynamic>()});
   }
 }
@@ -531,6 +541,71 @@ void main() {
       expect(reopened.hasError, isTrue);
       expect(reopened.value, isNull);
     });
+  }
+
+  for (final statusCode in [403, 404]) {
+    test(
+      '$statusCode older reconnect denial preserves newer refetch state',
+      () async {
+        final dir = Directory.systemTemp.createTempSync(
+          'board_cache_overlapping_refetch_denial_$statusCode',
+        );
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final cache = _GatedEnvelopeCache(directory: dir);
+        final api = _FakeApi()..failPatches = true;
+        api
+          ..getGatesByCall[2] = Completer<void>()
+          ..getFailuresByCall[2] = statusCode
+          ..getStartedByCall[2] = Completer<void>()
+          ..getStartedByCall[3] = Completer<void>();
+        final container = ProviderContainer(
+          overrides: [
+            apiProvider.overrideWithValue(api),
+            currentAccountProvider.overrideWith(_FixedAccount.new),
+            envelopeCacheProvider.overrideWithValue(cache),
+            boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
+            userSocketProvider.overrideWithValue(null),
+            userEventsProvider.overrideWithValue(const Stream.empty()),
+            userConnectedProvider.overrideWithValue(const Stream.empty()),
+            boardProvider.overrideWith2((id) => _RecoveringNotifier(id)),
+          ],
+        );
+        addTearDown(container.dispose);
+        final provider = boardProvider(_boardId);
+        await container.read(provider.future);
+        final notifier =
+            container.read(provider.notifier) as _RecoveringNotifier;
+        notifier.triggerRecovery();
+        await api.getStartedByCall[2]!.future;
+
+        api.boardName = 'Newer Board';
+        final mutation = notifier.moveCard(_cardId, 'next-list');
+        await api.getStartedByCall[3]!.future;
+        await expectLater(mutation, throwsA(isA<ApiException>()));
+
+        final key = '${_account.id}-board-$_boardId';
+        expect(container.read(provider).value?.board.name, 'Newer Board');
+        expect(
+          BoardState.fromEnvelope((await cache.get(key))!).board.name,
+          'Newer Board',
+        );
+
+        api.getGatesByCall[2]!.complete();
+        await api.getFailureObserved.future;
+        await cache.conditionalDeleteFinished.future.timeout(
+          const Duration(seconds: 2),
+        );
+        await pumpEventQueue();
+
+        expect(cache.conditionalDeleteResult, isFalse);
+        expect(container.read(provider).hasError, isFalse);
+        expect(container.read(provider).value?.board.name, 'Newer Board');
+        expect(
+          BoardState.fromEnvelope((await cache.get(key))!).board.name,
+          'Newer Board',
+        );
+      },
+    );
   }
 
   test('an old denied load preserves a refreshed same-account snapshot',

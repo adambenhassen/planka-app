@@ -1757,7 +1757,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     }
   }
 
-  Future<void> _deleteRevokedBoardSnapshot(
+  Future<bool> _deleteRevokedBoardSnapshot(
     String accountId,
     EnvelopeCache cache,
     String key, {
@@ -1811,7 +1811,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
                 : null;
         if (replacementLoad != null) await replacementLoad;
       } on AccountCacheClosedException {
-        return;
+        return false;
       } catch (error) {
         debugPrint(
           'replacement board load failed before revocation cleanup: '
@@ -1833,7 +1833,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       deleted = await deletion;
     } on AccountCacheClosedException {
       // Account removal owns cleanup after its lifecycle barrier closes.
-      return;
+      return false;
     } finally {
       if (identical(
         _boardCacheRevocationDeletes[accountId],
@@ -1855,7 +1855,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       _latestBoardCacheState = null;
       _boardEnvelope = null;
       state = const AsyncData<BoardState?>(null);
+      return true;
     }
+    return false;
   }
 
   Future<void> _awaitBoardCacheRevocationDeleteBeforeBuild(
@@ -2479,8 +2481,9 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       }
     } on ApiException catch (error, stackTrace) {
       final denied = error.statusCode == 403 || error.statusCode == 404;
+      var denialOwnsSnapshot = false;
       if (accountId != null && denied) {
-        await _deleteRevokedBoardSnapshot(
+        denialOwnsSnapshot = await _deleteRevokedBoardSnapshot(
           accountId,
           cache,
           key!,
@@ -2490,7 +2493,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       }
       if (!ref.mounted || requestGeneration != _buildGeneration) return;
       onApiFailure?.call();
-      if (denied) {
+      if (denialOwnsSnapshot) {
         state = AsyncError<BoardState?>(error, stackTrace);
         return;
       }
