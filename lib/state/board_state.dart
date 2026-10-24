@@ -1701,7 +1701,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     } catch (error) {
       if (error is ApiException &&
           (error.statusCode == 403 || error.statusCode == 404)) {
-        await cache.delete(key);
+        await _deleteRevokedBoardSnapshot(account.id, cache, key);
         rethrow;
       }
       if (cachedState != null) {
@@ -1713,6 +1713,28 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
       }
       rethrow;
     }
+  }
+
+  Future<void> _deleteRevokedBoardSnapshot(
+    String accountId,
+    EnvelopeCache cache,
+    String key,
+  ) async {
+    if (_boardCacheAccountId == accountId) {
+      _discardBoardCacheWrites = true;
+      _boardCacheDirty = false;
+      _boardCacheWriteTimer?.cancel();
+      _boardCacheWriteTimer = null;
+
+      final fullEnvelopeWrite = _boardCacheFullEnvelopeWrite;
+      if (fullEnvelopeWrite != null) await fullEnvelopeWrite;
+      final snapshotWrite = _boardCacheWriteFuture;
+      if (snapshotWrite != null) await snapshotWrite;
+
+      _latestBoardCacheState = null;
+      _boardEnvelope = null;
+    }
+    await cache.delete(key);
   }
 
   /// A custom field group instantiated from a project base group takes its

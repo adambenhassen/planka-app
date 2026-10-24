@@ -347,6 +347,11 @@ void main() {
       expect(await cache.get(otherAccountKey), isNotNull);
 
       container.dispose();
+      expect(
+        await cache.get(targetKey),
+        isNull,
+        reason: 'disposing the failed load must not restore the revoked board',
+      );
       final coldContainer = ProviderContainer(
         overrides: [
           apiProvider.overrideWithValue(
@@ -361,15 +366,29 @@ void main() {
       );
       addTearDown(coldContainer.dispose);
       final coldProvider = boardProvider(_boardId);
-      await expectLater(
-        coldContainer.read(coldProvider.future),
-        throwsA(isA<ApiException>().having(
+      final coldLoadSettled = Completer<AsyncValue<BoardState?>>();
+      final coldSubscription = coldContainer.listen(
+        coldProvider,
+        (previous, next) {
+          if ((next.hasError || next.value?.isStale == true) &&
+              !coldLoadSettled.isCompleted) {
+            coldLoadSettled.complete(next);
+          }
+        },
+      );
+      addTearDown(coldSubscription.close);
+      coldContainer.read(coldProvider);
+      final reopened = await coldLoadSettled.future;
+      expect(reopened.hasError, isTrue);
+      expect(reopened.value, isNull);
+      expect(
+        reopened.error,
+        isA<ApiException>().having(
           (error) => error.statusCode,
           'statusCode',
           isNull,
-        )),
+        ),
       );
-      expect(coldContainer.read(coldProvider).hasValue, isFalse);
     });
   }
 
