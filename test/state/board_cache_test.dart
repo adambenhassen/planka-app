@@ -268,11 +268,21 @@ void main() {
         ],
       );
       addTearDown(coldContainer.dispose);
-      final reopened = await coldContainer.read(
-        boardProvider(_boardId).future,
+      final reopened = Completer<BoardState>();
+      final coldSubscription = coldContainer.listen(
+        boardProvider(_boardId),
+        (previous, next) {
+          final value = next.value;
+          if (value?.isStale == true && !reopened.isCompleted) {
+            reopened.complete(value!);
+          }
+        },
       );
-      expect(reopened!.board.name, 'Cached Board');
-      expect(reopened.isStale, isTrue);
+      addTearDown(coldSubscription.close);
+      coldContainer.read(boardProvider(_boardId));
+      final reopenedState = await reopened.future;
+      expect(reopenedState.board.name, 'Cached Board');
+      expect(reopenedState.isStale, isTrue);
     });
   }
 
@@ -313,9 +323,17 @@ void main() {
       );
       addTearDown(container.dispose);
       final provider = boardProvider(_boardId);
+      final loadFailed = Completer<Object?>();
+      final subscription = container.listen(provider, (previous, next) {
+        if (next.hasError && !loadFailed.isCompleted) {
+          loadFailed.complete(next.error);
+        }
+      });
+      addTearDown(subscription.close);
+      container.read(provider);
       await expectLater(
-        container.read(provider.future),
-        throwsA(
+        loadFailed.future,
+        completion(
           isA<ApiException>().having(
             (error) => error.statusCode,
             'statusCode',
