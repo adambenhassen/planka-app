@@ -121,6 +121,8 @@ class _GatedEnvelopeCache extends EnvelopeCache {
   final gatedPutStarted = Completer<void>();
   final deleteFinished = Completer<void>();
   final conditionalDeleteFinished = Completer<void>();
+  final conditionalDeleteStarted = Completer<void>();
+  Completer<void>? conditionalDeleteGate;
   var putCalls = 0;
   var deleteCalls = 0;
   var conditionalDeleteCalls = 0;
@@ -163,6 +165,13 @@ class _GatedEnvelopeCache extends EnvelopeCache {
     int expectedGeneration,
   ) async {
     conditionalDeleteCalls++;
+    final gate = conditionalDeleteGate;
+    if (gate != null) {
+      if (!conditionalDeleteStarted.isCompleted) {
+        conditionalDeleteStarted.complete();
+      }
+      await gate.future;
+    }
     try {
       final result = await super.deleteIfUnchanged(
         key,
@@ -698,6 +707,108 @@ void main() {
       },
     );
   }
+
+  test('an old denial waits for the same-account replacement load',
+      () async {
+    final dir = Directory.systemTemp.createTempSync(
+      'board_cache_old_denial_waits_for_replacement',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final key = '${_account.id}-board-$_boardId';
+    final cachedJson = jsonDecode(
+      File('test/fixtures/board_show.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    (cachedJson['item'] as Map<String, dynamic>)['name'] = 'Cached Board';
+    final cache = _GatedEnvelopeCache(directory: dir, gateOnPutCall: 2);
+    await cache.put(key, Envelope.parse(cachedJson));
+    final snapshotWriteGate = Completer<void>();
+    final deleteGate = Completer<void>();
+    cache
+      ..putGate = snapshotWriteGate
+      ..conditionalDeleteGate = deleteGate;
+    addTearDown(() {
+      if (!snapshotWriteGate.isCompleted) snapshotWriteGate.complete();
+      if (!deleteGate.isCompleted) deleteGate.complete();
+    });
+
+    final oldApi = _FakeApi()..gate = Completer<void>();
+    final refreshedApi = _FakeApi()
+      ..gate = Completer<void>()
+      ..boardName = 'Replacement Board';
+    final container = ProviderContainer(
+      overrides: [
+        apiProvider.overrideWith(
+          (ref) => ref.watch(currentAccountProvider)?.token == _account.token
+              ? oldApi
+              : refreshedApi,
+        ),
+        currentAccountProvider.overrideWith(() => _MutableAccount(_account)),
+        envelopeCacheProvider.overrideWithValue(cache),
+        boardSocketFactoryProvider.overrideWithValue(_NoopSocket.new),
+        userSocketProvider.overrideWithValue(null),
+        userEventsProvider.overrideWithValue(const Stream.empty()),
+        userConnectedProvider.overrideWithValue(const Stream.empty()),
+        boardProvider.overrideWith2((id) => _RecoveringNotifier(id)),
+      ],
+    );
+    addTearDown(container.dispose);
+    final provider = boardProvider(_boardId);
+    final replacementPublished = Completer<BoardState>();
+    final subscription = container.listen(provider, (previous, next) {
+      final value = next.value;
+      if (value?.board.name == 'Replacement Board' &&
+          !replacementPublished.isCompleted) {
+        replacementPublished.complete(value!);
+      }
+    });
+    addTearDown(subscription.close);
+    container.read(provider);
+    await oldApi.getStarted.future;
+    container.read(provider.notifier).applySocketEvent(
+          SocketEvent.parse('cardUpdate', {
+            'item': {'id': _cardId, 'name': 'Pending old update'},
+          }),
+        );
+    await cache.gatedPutStarted.future;
+
+    await container.read(currentAccountProvider.notifier).select(
+          _account.copyWith(token: 'refreshed-token'),
+        );
+    container.read(provider);
+    await pumpEventQueue();
+    expect(refreshedApi.getCalls, 0);
+
+    oldApi
+      ..failGets = true
+      ..getFailureStatusCode = 403
+      ..gate!.complete();
+    await oldApi.getFailureObserved.future;
+    await pumpEventQueue();
+    snapshotWriteGate.complete();
+    await refreshedApi.getStarted.future.timeout(
+      const Duration(seconds: 2),
+    );
+    await pumpEventQueue();
+    final deleteStartedBeforeResponse =
+        cache.conditionalDeleteStarted.isCompleted;
+
+    refreshedApi.gate!.complete();
+    await replacementPublished.future.timeout(const Duration(seconds: 2));
+    deleteGate.complete();
+    await cache.conditionalDeleteFinished.future.timeout(
+      const Duration(seconds: 2),
+    );
+    await pumpEventQueue();
+
+    expect(deleteStartedBeforeResponse, isFalse);
+    expect(cache.conditionalDeleteResult, isFalse);
+    expect(cache.deleteCalls, 0);
+    expect(
+      BoardState.fromEnvelope((await cache.get(key))!).board.name,
+      'Replacement Board',
+    );
+    expect(container.read(provider).value?.board.name, 'Replacement Board');
+  });
 
   test('an old denial cannot delete after the cache write drain', () async {
     final dir = Directory.systemTemp.createTempSync(

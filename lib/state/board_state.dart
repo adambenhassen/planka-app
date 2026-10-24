@@ -1310,6 +1310,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   void Function()? _removeAccountEpochListener;
   var _buildGeneration = 0;
   int? _latestBoardLoadGeneration;
+  Completer<void>? _latestBoardLoadRegistration;
   Future<BoardState>? _latestBoardLoad;
   final Map<String, int> _activeCommentProviders = {};
   final List<_PendingOptimisticChange> _pendingOptimisticChanges = [];
@@ -1791,27 +1792,37 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     }
 
     await suppressCurrentSnapshotWrites();
-    if (isCurrentAccount() && _buildGeneration != requestGeneration) {
-      final pendingFlush = _boardCacheFlushesBeforeBuild[accountId];
-      if (pendingFlush != null) await pendingFlush;
-      final replacementLoad = _latestBoardLoadGeneration == _buildGeneration
-          ? _latestBoardLoad
-          : null;
-      if (replacementLoad != null) {
-        try {
-          await replacementLoad;
-        } on AccountCacheClosedException {
-          return;
-        } catch (error) {
-          debugPrint(
-            'replacement board load failed before revocation cleanup: '
-            '${redactDiagnostic(error)}',
-          );
-        }
-      }
-    }
-    await suppressCurrentSnapshotWrites();
+    while (isCurrentAccount() && _buildGeneration != requestGeneration) {
+      final replacementBuildGeneration = _buildGeneration;
+      try {
+        final pendingFlush = _boardCacheFlushesBeforeBuild[accountId];
+        if (pendingFlush != null) await pendingFlush;
+        if (_buildGeneration != replacementBuildGeneration) continue;
 
+        if (_latestBoardLoadGeneration == replacementBuildGeneration) {
+          final registration = _latestBoardLoadRegistration;
+          if (registration != null) await registration.future;
+        }
+        if (_buildGeneration != replacementBuildGeneration) continue;
+
+        final replacementLoad =
+            _latestBoardLoadGeneration == replacementBuildGeneration
+                ? _latestBoardLoad
+                : null;
+        if (replacementLoad != null) await replacementLoad;
+      } on AccountCacheClosedException {
+        return;
+      } catch (error) {
+        debugPrint(
+          'replacement board load failed before revocation cleanup: '
+          '${redactDiagnostic(error)}',
+        );
+      }
+      await suppressCurrentSnapshotWrites();
+      if (_buildGeneration == replacementBuildGeneration) break;
+    }
+
+    final deleteBuildGeneration = _buildGeneration;
     final deletion = cache.deleteIfUnchanged(
       key,
       cacheGeneration,
@@ -1835,6 +1846,7 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
         isCurrentAccount() && _boardCacheAccountId == accountId;
     if (deleted &&
         currentAccountOwnsBoard &&
+        _buildGeneration == deleteBuildGeneration &&
         cache.isGenerationCurrent(key, cacheGeneration + 1)) {
       _discardBoardCacheWrites = true;
       _boardCacheWriteTimer?.cancel();
@@ -2120,7 +2132,12 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
   Future<BoardState?> build() async {
     state = const AsyncLoading<BoardState?>();
     final buildGeneration = ++_buildGeneration;
+    final loadRegistration = Completer<void>();
+    void completeLoadRegistration() {
+      if (!loadRegistration.isCompleted) loadRegistration.complete();
+    }
     _latestBoardLoadGeneration = buildGeneration;
+    _latestBoardLoadRegistration = loadRegistration;
     _latestBoardLoad = null;
     ref.watch(accountStateEpochProvider);
     if (_removeAccountEpochListener == null) {
@@ -2150,32 +2167,48 @@ class BoardNotifier extends AsyncNotifier<BoardState?> {
     _disposeAccountResources(
       preserveBoardCache: account?.id == _boardCacheAccountId,
     );
-    await _awaitBoardCacheRevocationDeleteBeforeBuild(account?.id);
-    await _awaitBoardCacheFlushBeforeBuild(account?.id);
+    try {
+      await _awaitBoardCacheRevocationDeleteBeforeBuild(account?.id);
+      await _awaitBoardCacheFlushBeforeBuild(account?.id);
+    } catch (_) {
+      completeLoadRegistration();
+      rethrow;
+    }
     if (account == null) {
+      completeLoadRegistration();
       _accountId = null;
       _accountApi = null;
       throw StateError('No account selected');
     }
     if (!ref.read(cacheLifecycleProvider).isUsable(account.id)) {
+      completeLoadRegistration();
       _accountId = account.id;
       _accountApi = null;
       return null;
     }
-    final api = ref.watch(apiProvider);
-    _accountId = account.id;
-    _accountApi = api;
-    // From here the room may deliver at any moment; buffer until the snapshot
-    // is folded (see [listenToUserRoom]).
-    final foldUserRoom = wireUserRoom();
-    final boardLoad = _loadForAccount(
-      account,
-      api,
-      requestGeneration: buildGeneration,
-    );
-    if (_latestBoardLoadGeneration == buildGeneration) {
-      _latestBoardLoad = boardLoad;
+    late final PlankaApi api;
+    late final BoardState Function(BoardState snapshot) foldUserRoom;
+    late final Future<BoardState> boardLoad;
+    try {
+      api = ref.watch(apiProvider);
+      _accountId = account.id;
+      _accountApi = api;
+      // From here the room may deliver at any moment; buffer until the snapshot
+      // is folded (see [listenToUserRoom]).
+      foldUserRoom = wireUserRoom();
+      boardLoad = _loadForAccount(
+        account,
+        api,
+        requestGeneration: buildGeneration,
+      );
+      if (_latestBoardLoadGeneration == buildGeneration) {
+        _latestBoardLoad = boardLoad;
+      }
+    } catch (_) {
+      completeLoadRegistration();
+      rethrow;
     }
+    completeLoadRegistration();
     final loaded = await boardLoad;
     if (!_isCurrentBuild(buildGeneration, account)) {
       throw StateError('Account changed');
